@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to AI coding agents (Claude Code, Codex, and others) when working with code in this repository. `CLAUDE.md` imports this file, so edit it here.
 
 ## Development Commands
 
@@ -41,9 +41,8 @@ This is a React application that visualizes film data using WebGL and a custom V
 - Multi-threaded simulation support
 
 **App Structure:**
-- `app/main.tsx` - Entry point, initializes Voroforce and renders React app
-- `app/app.tsx` - Main App component with space key intro control
-- `app/store.ts` - Zustand store managing app state, Voroforce instance, and film data
+- `app/main.tsx` - Entry point, renders the gallery app (`TestGalleryApp` from `app/cmps/views/test-gallery/`)
+- `app/store/` - Zustand store split into UI, Voroforce, and film-data slices, plus selectors
 - `app/vf/` - Voroforce integration layer connecting the WebGL engine to React
 - `app/cmps/` - React components (UI, layout, views)
 - `voroforce/` - Standalone WebGL simulation engine

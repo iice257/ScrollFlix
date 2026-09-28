@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react({}),
       tailwindcss(),
-      ...(env.VITE_ANALYZE_BUNDLE ? [analyzer()] : []),
+      ...(env.VITE_ANALYZE_BUNDLE || mode === 'analyze' ? [analyzer()] : []),
       // viteBasicSslPlugin()
     ],
     build: {

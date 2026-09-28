@@ -6,7 +6,7 @@
 	"scripts": {
 		"dev": "vite --port 3000 --host 0.0.0.0",
 		"build": "tsc -b && vite build",
-		"analyze": "VITE_ANALYZE_BUNDLE=1 vite build",
+		"analyze": "vite build --mode analyze",
 		"preview": "vite preview --port 3000 --host 0.0.0.0",
 		"lint": "biome lint .",
 		"format": "biome format .",
@@ -23,7 +23,7 @@
 		"test:e2e:debug": "playwright test --debug",
 		"media:posters": "node scripts/generate-poster-thumbnails.mjs",
 		"seo:sitemap": "node scripts/generate-sitemap.js",
-		"seo:validate": "echo '🔍 SEO Validation:' && echo '📄 robots.txt:' && cat public/robots.txt && echo '\\n🗺️  sitemap.xml exists:' && ls -la public/sitemap.xml"
+		"seo:validate": "node -e \"const fs=require('fs');console.log('robots.txt:');console.log(fs.readFileSync('public/robots.txt','utf8'));console.log('sitemap.xml:',fs.statSync('public/sitemap.xml').size,'bytes')\""
 	},
 	"dependencies": {
 		"@hookform/resolvers": "^5.2.0",
@@ -79,10 +79,5 @@
 		"vite-plugin-glsl": "^1.5.1",
 		"vitest": "^3.2.4",
 		"wrangler": "^4.26.0"
-	},
-	"trustedDependencies": [
-		"@biomejs/biome",
-		"@swc/core",
-		"esbuild"
-	]
+	}
 }
