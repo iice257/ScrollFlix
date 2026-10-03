@@ -909,7 +909,7 @@
     width: 150px;
     height: var(--warp-control-height);
     justify-content: space-between;
-    padding: 4px;
+    padding: 3px;
     border: 1px solid rgb(255 255 255 / 0.2);
     box-shadow: 0 14px 44px rgb(0 0 0 / 0.34);
   }
@@ -943,7 +943,6 @@
   .warp-mode-toggle button[aria-pressed="true"] {
     background: #fff;
     opacity: 1;
-    transform: scale(1.02);
   }
 
   .warp-grid-icon,
@@ -1000,7 +999,6 @@
 
   .warp-main-nav button.is-active {
     background: #fff;
-    transform: translateY(-1px);
   }
 
   .warp-main-nav button span,
