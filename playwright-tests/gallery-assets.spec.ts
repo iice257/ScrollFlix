@@ -11,6 +11,13 @@ test('reveals a complete 750-poster local gallery', async ({ page }) => {
 
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 60_000 })
 
+  // Without WebGL2 (e.g. headless Firefox on Linux CI) the app correctly
+  // renders its non-WebGL fallback menu, so there is no canvas to inspect.
+  const hasWebgl2 = await page.evaluate(
+    () => !!document.createElement('canvas').getContext('webgl2'),
+  )
+  test.skip(!hasWebgl2, 'WebGL2 is unavailable in this browser')
+
   const canvas = page.getByLabel('Infinite movie poster menu')
   await expect(canvas).toHaveAttribute('data-item-count', '750', {
     timeout: 30_000,

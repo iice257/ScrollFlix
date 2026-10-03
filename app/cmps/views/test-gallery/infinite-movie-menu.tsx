@@ -31,8 +31,9 @@ type InfiniteMovieMenuProps<T> = {
   scale?: number
   onActiveItemChange: (item: InfiniteMovieMenuItem<T>) => void
   onLoadProgress?: (percent: number) => void
+  onMovingChange?: (moving: boolean) => void
   onReady?: () => void
-  onSelectItem: (item: InfiniteMovieMenuItem<T>) => void
+  onUserSpin?: () => void
 }
 
 type Vec2 = [number, number]
@@ -46,12 +47,25 @@ const ICON_TEXTURE_PADDING = 12
 const ICON_INSTANCE_COUNT = 750
 const ICON_REST_SCALE = 0.18
 const ICON_DETAIL_SCALE = 0.34
-const DETAIL_CLICK_OPEN_DELAY_MS = 0
-const DETAIL_WHEEL_OPEN_DELAY_MS = 0
 const DETAIL_FAST_EASE_MS = 210
 const DETAIL_SLOW_EASE_MS = 900
 const DETAIL_CLOSE_EASE_MS = 460
 const CLICK_MOVE_TOLERANCE_PX = 8
+const NUDGE_RELEASE_MS = 140
+const WHEEL_NUDGE_SCALE = 0.6
+const WHEEL_NUDGE_MAX_PX = 90
+const KEY_NUDGE_PX = 36
+const ARROW_NUDGES: Record<string, Vec2> = {
+  ArrowUp: [0, KEY_NUDGE_PX],
+  ArrowDown: [0, -KEY_NUDGE_PX],
+  ArrowLeft: [KEY_NUDGE_PX, 0],
+  ArrowRight: [-KEY_NUDGE_PX, 0],
+}
+
+const isTypingTarget = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable ||
+    ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
 const FALLBACK_ITEM_COUNT = 128
 const INITIAL_TEXTURE_LOAD_CONCURRENCY = 24
 const PRIMARY_IMAGE_TIMEOUT_MS = 20000
@@ -713,6 +727,8 @@ class InfiniteMovieEngine<T> {
   private atlasSize = 1
   private atlasCellSize = ICON_TEXTURE_CELL_SIZE
   private lastReportedProgress = -1
+  private nudgePos: Vec2 | null = null
+  private nudgeTimer: number | null = null
 
   private readonly handleContextLost = (event: Event) => {
     event.preventDefault()
@@ -820,6 +836,7 @@ class InfiniteMovieEngine<T> {
     if (this.disposed) return
     this.disposed = true
     window.cancelAnimationFrame(this.frameId)
+    if (this.nudgeTimer) window.clearTimeout(this.nudgeTimer)
     this.control.dispose()
     this.canvas.removeEventListener('webglcontextlost', this.handleContextLost)
     if (!this.gl.isContextLost()) {
@@ -834,6 +851,9 @@ class InfiniteMovieEngine<T> {
   }
 
   beginPointerDrag(clientX: number, clientY: number, pointerId?: number) {
+    if (this.nudgeTimer) window.clearTimeout(this.nudgeTimer)
+    this.nudgeTimer = null
+    this.nudgePos = null
     this.control.beginDrag(clientX, clientY, pointerId)
   }
 
@@ -847,6 +867,37 @@ class InfiniteMovieEngine<T> {
 
   cancelPointerDrag(pointerId?: number) {
     this.control.cancelDrag(pointerId)
+  }
+
+  // Wheel and arrow keys drive a short virtual drag so they share the exact
+  // feel (inertia and snapping) of a pointer drag.
+  nudge(dx: number, dy: number) {
+    if (this.control.isPointerDown && !this.nudgePos) return
+    const center: Vec2 = [
+      this.canvas.clientWidth / 2,
+      this.canvas.clientHeight / 2,
+    ]
+    const recenterDistance = Math.min(center[0], center[1]) * 0.4
+    if (
+      !this.nudgePos ||
+      Math.hypot(this.nudgePos[0] - center[0], this.nudgePos[1] - center[1]) >
+        recenterDistance
+    ) {
+      this.nudgePos = center
+      this.control.beginDrag(center[0], center[1])
+    }
+    this.nudgePos = [this.nudgePos[0] + dx, this.nudgePos[1] + dy]
+    this.control.moveDrag(this.nudgePos[0], this.nudgePos[1])
+    if (this.nudgeTimer) window.clearTimeout(this.nudgeTimer)
+    this.nudgeTimer = window.setTimeout(() => this.endNudge(), NUDGE_RELEASE_MS)
+  }
+
+  private endNudge() {
+    if (this.nudgeTimer) window.clearTimeout(this.nudgeTimer)
+    this.nudgeTimer = null
+    if (!this.nudgePos) return
+    this.nudgePos = null
+    this.control.endDrag()
   }
 
   setDetailFocus(
@@ -1443,13 +1494,16 @@ export const InfiniteMovieMenu = <T,>({
   scale = 1,
   onActiveItemChange,
   onLoadProgress,
+  onMovingChange,
   onReady,
-  onSelectItem,
+  onUserSpin,
 }: InfiniteMovieMenuProps<T>) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const engineRef = useRef<InfiniteMovieEngine<T> | null>(null)
   const activeItemRef = useRef<InfiniteMovieMenuItem<T> | null>(null)
-  const openTimerRef = useRef<number | null>(null)
+  // Kept in a ref so a new callback identity never rebuilds the WebGL engine.
+  const onMovingChangeRef = useRef(onMovingChange)
+  onMovingChangeRef.current = onMovingChange
   const pointerDownRef = useRef<{
     moved: boolean
     pointerId: number
@@ -1461,7 +1515,6 @@ export const InfiniteMovieMenu = <T,>({
     null,
   )
   const [isHoldPrimed, setIsHoldPrimed] = useState(false)
-  const [isMoving, setIsMoving] = useState(false)
   const [webglError, setWebglError] = useState('')
 
   useEffect(() => {
@@ -1492,7 +1545,7 @@ export const InfiniteMovieMenu = <T,>({
           setActiveItem(item)
           onActiveItemChange(item)
         },
-        setIsMoving,
+        (moving) => onMovingChangeRef.current?.(moving),
         (percent) => {
           onLoadProgress?.(percent)
           if (percent >= 100) onReady?.()
@@ -1517,7 +1570,6 @@ export const InfiniteMovieMenu = <T,>({
 
     return () => {
       window.removeEventListener('resize', onResize)
-      if (openTimerRef.current) window.clearTimeout(openTimerRef.current)
       engineRef.current = null
       engine?.dispose()
     }
@@ -1531,51 +1583,19 @@ export const InfiniteMovieMenu = <T,>({
     )
   }, [activeId, isDetailsOpen])
 
-  const cancelDetailsFlow = useCallback(() => {
-    if (openTimerRef.current) {
-      window.clearTimeout(openTimerRef.current)
-      openTimerRef.current = null
-    }
-    engineRef.current?.setDetailFocus(null, false, 'close')
-  }, [])
-
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') cancelDetailsFlow()
+      const nudge = ARROW_NUDGES[event.key]
+      if (!nudge || isDetailsOpen || isTypingTarget(event.target)) return
+      if (event.altKey || event.ctrlKey || event.metaKey) return
+      event.preventDefault()
+      engineRef.current?.nudge(nudge[0], nudge[1])
+      onUserSpin?.()
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [cancelDetailsFlow])
-
-  const beginDetailsFlow = useCallback(
-    (
-      item: InfiniteMovieMenuItem<T> | null,
-      motion: Extract<DetailMotion, 'fast' | 'slow'> = 'fast',
-    ) => {
-      if (!item) return
-
-      const delayMs =
-        motion === 'slow'
-          ? DETAIL_WHEEL_OPEN_DELAY_MS
-          : DETAIL_CLICK_OPEN_DELAY_MS
-      if (openTimerRef.current) window.clearTimeout(openTimerRef.current)
-      activeItemRef.current = item
-      setActiveItem(item)
-      onActiveItemChange(item)
-      engineRef.current?.setDetailFocus(item.id, true, motion)
-      if (delayMs === 0) {
-        openTimerRef.current = null
-        onSelectItem(item)
-        return
-      }
-      openTimerRef.current = window.setTimeout(() => {
-        openTimerRef.current = null
-        onSelectItem(item)
-      }, delayMs)
-    },
-    [onActiveItemChange, onSelectItem],
-  )
+  }, [isDetailsOpen, onUserSpin])
 
   const handleFallbackActiveItemChange = useCallback(
     (item: InfiniteMovieMenuItem<T>) => {
@@ -1587,23 +1607,28 @@ export const InfiniteMovieMenu = <T,>({
   )
 
   const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
-    const isDesktopWheel =
-      window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false
-    if (!isDesktopWheel) return
-
-    if (event.deltaY < -10) {
-      event.preventDefault()
-      beginDetailsFlow(activeItemRef.current, 'slow')
-      return
-    }
-
-    if (event.deltaY > 10 && openTimerRef.current) {
-      event.preventDefault()
-      cancelDetailsFlow()
-    }
+    if (isDetailsOpen) return
+    const unit =
+      event.deltaMode === 1
+        ? 16
+        : event.deltaMode === 2
+          ? window.innerHeight
+          : 1
+    const clamp = (value: number) =>
+      Math.max(-WHEEL_NUDGE_MAX_PX, Math.min(WHEEL_NUDGE_MAX_PX, value))
+    // Shift turns a vertical mouse wheel into horizontal spin.
+    const [deltaX, deltaY] = event.shiftKey
+      ? [event.deltaY, event.deltaX]
+      : [event.deltaX, event.deltaY]
+    const dx = clamp(-deltaX * unit * WHEEL_NUDGE_SCALE)
+    const dy = clamp(-deltaY * unit * WHEEL_NUDGE_SCALE)
+    if (!dx && !dy) return
+    engineRef.current?.nudge(dx, dy)
+    onUserSpin?.()
   }
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    onUserSpin?.()
     pointerDownRef.current = {
       moved: false,
       pointerId: event.pointerId,
@@ -1681,18 +1706,6 @@ export const InfiniteMovieMenu = <T,>({
       )}
 
       <div className='warp-infinite-sheen' />
-
-      {activeItem ? (
-        <button
-          type='button'
-          className={cn('warp-focus-card', isMoving && 'is-moving')}
-          onClick={() => beginDetailsFlow(activeItem, 'fast')}
-        >
-          <span>{activeItem.title}</span>
-          <span>{activeItem.meta}</span>
-          <span>{activeItem.description}</span>
-        </button>
-      ) : null}
 
       <div className='warp-wall-loading' data-state={loadState}>
         Loading movies
