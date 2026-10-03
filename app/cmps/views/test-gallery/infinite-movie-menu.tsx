@@ -111,6 +111,7 @@ const isTypingTarget = (target: EventTarget | null) =>
     ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
 const FALLBACK_ITEM_COUNT = 128
 const INITIAL_TEXTURE_LOAD_CONCURRENCY = 24
+const INITIAL_READY_POSTER_COUNT = 72
 const PRIMARY_IMAGE_TIMEOUT_MS = 20000
 
 type DetailMotion = 'fast' | 'slow' | 'close'
@@ -1233,8 +1234,28 @@ class InfiniteMovieEngine<T> {
     uploadCanvas: HTMLCanvasElement,
     uploadContext: CanvasRenderingContext2D,
   ) {
-    const indices = this.items.map((_, index) => index)
+    // Load the posters that face the viewer first, so the initial batch below
+    // is the visible one. Orientation is still identity at this point, and the
+    // snap direction (0, 0, -1) marks the front, as in findNearestVertexIndex.
+    const itemCount = Math.max(1, this.items.length)
+    const facing = this.items.map(() => -2)
+    this.instancePositions.forEach((position, instance) => {
+      const item = instance % itemCount
+      facing[item] = Math.max(facing[item], -position[2] / SPHERE_RADIUS)
+    })
+    const indices = this.items
+      .map((_, index) => index)
+      .sort((a, b) => facing[b] - facing[a])
+    // Show the wall once the first batch is in; the rest stream into the atlas.
+    const readyTarget = Math.min(indices.length, INITIAL_READY_POSTER_COUNT)
     let completed = 0
+    let ready = false
+    const markReady = () => {
+      if (ready || this.disposed || this.contextLost) return
+      ready = true
+      this.canvas.dataset.webglState = 'ready'
+      this.reportProgress(100)
+    }
 
     await this.loadPosterIndices(
       indices,
@@ -1242,7 +1263,12 @@ class InfiniteMovieEngine<T> {
       (index, image) => {
         this.uploadPosterCell(index, image, uploadCanvas, uploadContext)
         completed += 1
-        this.reportProgress(8 + (completed / Math.max(1, indices.length)) * 91)
+        if (ready) return
+        if (completed >= readyTarget) {
+          window.requestAnimationFrame(markReady)
+          return
+        }
+        this.reportProgress(8 + (completed / Math.max(1, readyTarget)) * 91)
       },
     )
 
@@ -1250,9 +1276,7 @@ class InfiniteMovieEngine<T> {
     await new Promise<void>((resolve) =>
       window.requestAnimationFrame(() => resolve()),
     )
-    if (this.disposed || this.contextLost) return
-    this.canvas.dataset.webglState = 'ready'
-    this.reportProgress(100)
+    markReady()
   }
 
   private async loadPosterIndices(
