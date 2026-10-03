@@ -1648,7 +1648,7 @@ const WarpChrome = ({
         <span className='warp-brand-name'>ScrollFlix</span>
       </button>
       <p className='warp-manifesto'>
-        What to Watch is a movie-led discovery wall built for indecisive nights.
+        ScrollFlix is a movie-led discovery wall built for indecisive nights.
       </p>
       <div className='warp-clock'>
         <strong>{timeLabel || '--:--'} WAT</strong>

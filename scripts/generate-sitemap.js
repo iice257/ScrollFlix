@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Sitemap Generator for What to Watch
+ * Sitemap Generator for ScrollFlix
  *
  * This script generates a sitemap.xml for the movie discovery application.
  * Since this is primarily a SPA with dynamic content, the sitemap focuses
@@ -13,7 +13,7 @@ import { resolve } from 'path'
 
 // Configuration
 const config = {
-  baseUrl: process.env.SITE_URL || 'https://what-to-watch.example',
+  baseUrl: process.env.SITE_URL || 'https://scroll-flix.vercel.app',
   outputPath: resolve('public/sitemap.xml'),
   lastModified: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
 }

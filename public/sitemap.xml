@@ -6,7 +6,7 @@
   
   <!-- Main application - Interactive movie discovery visualization -->
   <url>
-    <loc>https://what-to-watch.example/</loc>
+    <loc>https://scroll-flix.vercel.app/</loc>
     <lastmod>2025-08-09</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>

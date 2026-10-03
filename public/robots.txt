@@ -11,7 +11,7 @@ Disallow: /assets/
 # Crawl-delay: 1
 
 # Sitemap location
-Sitemap: https://what-to-watch.example/sitemap.xml
+Sitemap: https://scroll-flix.vercel.app/sitemap.xml
 
 # Block known problematic bots (optional)
 # User-agent: SemrushBot
