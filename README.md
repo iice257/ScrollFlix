@@ -1,20 +1,24 @@
-# What to Watch
+# ScrollFlix — for when you can't pick a movie
 
-A personal movie discovery project by ICE.
+Stop scrolling lists. Spin a wall of 750 films and stop on whatever catches your eye.
 
-What to Watch is built for the exact moment when you want to watch something, but you do not know what to watch. Instead of handing you another flat list, it turns movie discovery into an interactive visual experience: explore a field of films, follow your curiosity, open details, save favorites, and jump out to familiar movie services when something catches your eye.
+![ScrollFlix](docs/media/wall.png)
 
-Landing page: [Coming soon](#coming-soon)
+A custom WebGL wall you scroll, drag and spin. Open any poster for details, save favorites, and jump out to your own streaming or review links.
+
+**[Spin the wall →](https://scroll-flix.vercel.app)** · React · TypeScript · WebGL · Vite
+
+---
 
 ## Why This Exists
 
 Streaming services make it easy to access movies, but they do not always make it easy to choose one. Recommendation rows can feel repetitive, search assumes you already know what you want, and watchlists can become another pile of decisions.
 
-What to Watch is my personal answer to that problem. It is a playful, visual way to browse films when the only thing you know is that you want to watch something. The goal is not to optimize the choice down to a perfect recommendation. The goal is to make browsing feel interesting enough that a choice naturally appears.
+ScrollFlix is my personal answer to that problem. It is a playful, visual way to browse films when the only thing you know is that you want to watch something. The goal is not to optimize the choice down to a perfect recommendation. The goal is to make browsing feel interesting enough that a choice naturally appears.
 
 ## What It Does
 
-What to Watch presents movies inside an interactive WebGL visualization. Film posters are arranged in a force-driven visual space, letting you pan, zoom, inspect, and select movies in a more exploratory way than a normal catalog.
+ScrollFlix presents movies inside an interactive WebGL visualization. Film posters are arranged in a force-driven visual space, letting you pan, zoom, inspect, and select movies in a more exploratory way than a normal catalog.
 
 You can use it to:
 
@@ -66,7 +70,7 @@ Theme, intro state, visual preset, device class, cell limit, and user configurat
 
 ## Who It Is For
 
-What to Watch is for people who:
+ScrollFlix is for people who:
 
 - Want to watch a movie but do not have a title in mind.
 - Prefer browsing and discovery over strict recommendation feeds.
@@ -80,7 +84,6 @@ This is an active personal project. The core app experience is present, with a R
 
 The public landing page is not live yet.
 
-Product link: [Coming soon](#coming-soon)
 
 ## Tech Stack
 
@@ -227,7 +230,7 @@ Movie imagery is loaded and displayed for discovery and preview purposes. The ap
 
 ## Ownership
 
-What to Watch is a personal project by ICE, also known as Kingsley Aremu.
+ScrollFlix is a personal project by ICE, also known as Kingsley Aremu.
 
 The project is built as a personal exploration of movie discovery, visual browsing, and interactive recommendation-adjacent interfaces.
 
@@ -240,6 +243,3 @@ Additional licensing notes:
 - Some shader work is covered by Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported licensing.
 - Film data attribution follows the Open Data Commons Attribution License.
 
-## Coming Soon
-
-The public landing page link will be added here when it is ready.
