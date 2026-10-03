@@ -7,6 +7,7 @@ import {
   getGalleryWindow,
   getGenreOverlap,
   groupMoviesAlphabetically,
+  groupMoviesByRating,
   groupMoviesByYear,
   resolveMoviePosterUrls,
   sortMoviesForList,
@@ -139,6 +140,29 @@ describe('test gallery filtering helpers', () => {
   it('groups list mode by year or title initial', () => {
     expect(Object.keys(groupMoviesByYear(movies))).toContain('2018')
     expect(Object.keys(groupMoviesAlphabetically(movies))).toContain('B')
+  })
+
+  it('sorts and groups list mode by rating, unrated last', () => {
+    const rated = [
+      { ...movies[0], rating: '6.4', ratingValue: 6.4 },
+      { ...movies[1], rating: '8.9', ratingValue: 8.9 },
+      { ...movies[2], rating: '-', ratingValue: null },
+      { ...movies[3], rating: '8.1', ratingValue: 8.1 },
+    ]
+
+    expect(
+      sortMoviesForList(rated, 'rating').map((item) => item.title),
+    ).toEqual([
+      'Before Sunrise',
+      'Zodiac',
+      'A Quiet Place',
+      'Only Lovers Left Alive',
+    ])
+    expect(groupMoviesByRating(rated)).toEqual({
+      '8+': [rated[1], rated[3]],
+      '6+': [rated[0]],
+      Unrated: [rated[2]],
+    })
   })
 
   it('formats movie metadata consistently with explicit missing states', () => {

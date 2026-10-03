@@ -277,6 +277,10 @@
     background-size: 160px 160px;
   }
 
+  .warp-wall[data-active="false"] {
+    visibility: hidden;
+  }
+
   .warp-wall {
     position: fixed;
     inset: 0;
@@ -1142,9 +1146,9 @@
     justify-items: center;
     gap: 6px;
     border: 0;
-    border-radius: 20px;
+    border-radius: 999px;
     background: #fff;
-    padding: 11px 22px 12px;
+    padding: 11px 26px 12px;
     color: #090909;
     cursor: pointer;
     font: inherit;
@@ -2112,8 +2116,9 @@
   }
 
   .warp-list-sort button {
-    min-width: 104px;
+    min-width: 0;
     height: var(--warp-control-inner-height);
+    padding: 0 14px;
     border: 0;
     border-radius: 999px;
     background: transparent;
@@ -3197,8 +3202,8 @@
       width: min(360px, calc(100vw - 24px));
       max-width: none;
       gap: 5px;
-      border-radius: 18px;
-      padding: 9px 16px 10px;
+      border-radius: 999px;
+      padding: 9px 22px 10px;
     }
 
     .warp-title-card-name {
@@ -3249,14 +3254,9 @@
     }
 
     .warp-list-sort {
-      width: auto;
+      width: fit-content;
       grid-column: 1 / -1;
       order: 2;
-    }
-
-    .warp-list-sort button {
-      flex: 1;
-      min-width: 112px;
     }
 
     .warp-list-search {

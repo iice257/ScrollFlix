@@ -49,7 +49,7 @@ type TestMovie = {
 }
 
 type ViewMode = 'wall' | 'list' | 'genres'
-type ListGrouping = 'year' | 'alpha'
+type ListGrouping = 'year' | 'alpha' | 'rating'
 type LoadState = 'loading' | 'ready' | 'error'
 type ContentFilter = 'all' | 'movies' | 'series'
 type RuntimeFilter =
@@ -466,6 +466,13 @@ export const sortMoviesForList = (
     grouping === 'alpha' ? movies.filter(hasLatinLeadingTitle) : movies
 
   return [...sortableMovies].sort((movieA, movieB) => {
+    if (grouping === 'rating') {
+      return (
+        (movieB.ratingValue ?? -1) - (movieA.ratingValue ?? -1) ||
+        movieA.title.localeCompare(movieB.title)
+      )
+    }
+
     if (grouping === 'alpha') {
       return (
         movieA.title.localeCompare(movieB.title) ||
@@ -495,7 +502,33 @@ export const groupMoviesAlphabetically = (movies: TestMovie[]) =>
     return groups
   }, {})
 
+const UNRATED_GROUP = 'Unrated'
+
+const getRatingGroupKey = (movie: TestMovie) => {
+  if (!movie.ratingValue) return UNRATED_GROUP
+  const band = Math.floor(movie.ratingValue)
+  return band >= 10 ? '10' : `${band}+`
+}
+
+export const groupMoviesByRating = (movies: TestMovie[]) =>
+  movies.reduce<Record<string, TestMovie[]>>((groups, movie) => {
+    const key = getRatingGroupKey(movie)
+    groups[key] = [...(groups[key] ?? []), movie]
+    return groups
+  }, {})
+
+// Highest band first; "Unrated" (NaN) always last.
+const compareRatingGroups = (groupA: string, groupB: string) =>
+  (Number.parseFloat(groupB) || -1) - (Number.parseFloat(groupA) || -1)
+
+const LIST_GROUPINGS: Array<{ label: string; value: ListGrouping }> = [
+  { label: 'Year', value: 'year' },
+  { label: 'A–Z', value: 'alpha' },
+  { label: 'Rating', value: 'rating' },
+]
+
 const getMovieListGroupKey = (movie: TestMovie, grouping: ListGrouping) => {
+  if (grouping === 'rating') return getRatingGroupKey(movie)
   if (grouping === 'alpha') {
     const letter = movie.title.charAt(0).toUpperCase() || '#'
     return /[A-Z]/.test(letter) ? letter : '#'
@@ -876,19 +909,19 @@ export const TestGalleryApp = () => {
       data-gallery-ready={initialGalleryReady ? 'true' : 'false'}
       data-mode={mode}
     >
-      {mode === 'wall' ? (
-        <WarpWall
-          activeMovieId={activeMovie?.id ?? null}
-          isDetailsOpen={Boolean(detailsMovieId)}
-          loadState={loadState}
-          movies={visibleMovies}
-          onLoadProgress={handleGalleryLoadProgress}
-          onMovingChange={setIsGlobeMoving}
-          onReady={handleGalleryReady}
-          onSelectMovie={handleSelectMovie}
-          onUserSpin={markSpinHintSeen}
-        />
-      ) : null}
+      {/* Stays mounted in other views so returning to the gallery is instant. */}
+      <WarpWall
+        activeMovieId={activeMovie?.id ?? null}
+        isActive={mode === 'wall'}
+        isDetailsOpen={Boolean(detailsMovieId)}
+        loadState={loadState}
+        movies={visibleMovies}
+        onLoadProgress={handleGalleryLoadProgress}
+        onMovingChange={setIsGlobeMoving}
+        onReady={handleGalleryReady}
+        onSelectMovie={handleSelectMovie}
+        onUserSpin={markSpinHintSeen}
+      />
 
       {mode === 'list' ? (
         <WarpList
@@ -1138,6 +1171,7 @@ export const TestGalleryApp = () => {
 
 type WarpWallProps = {
   activeMovieId: string | null
+  isActive: boolean
   isDetailsOpen: boolean
   loadState: LoadState
   movies: TestMovie[]
@@ -1150,6 +1184,7 @@ type WarpWallProps = {
 
 const WarpWall = ({
   activeMovieId,
+  isActive,
   isDetailsOpen,
   loadState,
   movies,
@@ -1187,9 +1222,15 @@ const WarpWall = ({
   }
 
   return (
-    <section className='warp-wall' aria-label='Warp Wall movie gallery'>
+    <section
+      className='warp-wall'
+      aria-label='Warp Wall movie gallery'
+      data-active={isActive}
+      inert={!isActive}
+    >
       <InfiniteMovieMenu
         activeId={activeMovieId}
+        isActive={isActive}
         isDetailsOpen={isDetailsOpen}
         items={menuItems}
         loadState={loadState}
@@ -1247,11 +1288,15 @@ const WarpList = ({
     const groups =
       grouping === 'alpha'
         ? groupMoviesAlphabetically(movies)
-        : groupMoviesByYear(movies)
+        : grouping === 'rating'
+          ? groupMoviesByRating(movies)
+          : groupMoviesByYear(movies)
     return Object.entries(groups).sort(([groupA], [groupB]) =>
       grouping === 'alpha'
         ? groupA.localeCompare(groupB)
-        : Number(groupA) - Number(groupB),
+        : grouping === 'rating'
+          ? compareRatingGroups(groupA, groupB)
+          : Number(groupA) - Number(groupB),
     )
   }, [grouping, movies])
 
@@ -1352,22 +1397,17 @@ const WarpList = ({
     <section className='warp-list' aria-label='Movie list view'>
       <header className='warp-list-heading'>
         <div className='warp-list-sort' aria-label='Movie index grouping'>
-          <button
-            type='button'
-            className={cn(grouping === 'year' && 'is-active')}
-            aria-pressed={grouping === 'year'}
-            onClick={() => handleGroupingChange('year')}
-          >
-            By year
-          </button>
-          <button
-            type='button'
-            className={cn(grouping === 'alpha' && 'is-active')}
-            aria-pressed={grouping === 'alpha'}
-            onClick={() => handleGroupingChange('alpha')}
-          >
-            Alphabetical
-          </button>
+          {LIST_GROUPINGS.map((option) => (
+            <button
+              type='button'
+              key={option.value}
+              className={cn(grouping === option.value && 'is-active')}
+              aria-pressed={grouping === option.value}
+              onClick={() => handleGroupingChange(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
         <div className='warp-list-title'>
           <h1>Movie Index</h1>

@@ -31,6 +31,7 @@ type InfiniteMovieMenuProps<T> = {
   scale?: number
   onActiveItemChange: (item: InfiniteMovieMenuItem<T>) => void
   onLoadProgress?: (percent: number) => void
+  isActive?: boolean
   onMovingChange?: (moving: boolean) => void
   onReady?: () => void
   onUserSpin?: () => void
@@ -703,6 +704,7 @@ class InfiniteMovieEngine<T> {
   private time = 0
   private frames = 0
   private disposed = false
+  private paused = false
   private contextLost = false
   private movementActive = false
   private smoothRotationVelocity = 0
@@ -809,7 +811,7 @@ class InfiniteMovieEngine<T> {
   }
 
   run(time = 0) {
-    if (this.disposed || this.contextLost) return
+    if (this.disposed || this.contextLost || this.paused) return
     const deltaTime = Math.min(32, time - this.time || TARGET_FRAME_DURATION)
     this.time = time
     this.frames += deltaTime / TARGET_FRAME_DURATION
@@ -818,6 +820,24 @@ class InfiniteMovieEngine<T> {
     this.frameId = window.requestAnimationFrame((nextTime) =>
       this.run(nextTime),
     )
+  }
+
+  // Stops the frame loop while the gallery is hidden (e.g. in list mode) so the
+  // GPU idles but textures and orientation survive for an instant return.
+  pause() {
+    if (this.paused || this.disposed) return
+    this.paused = true
+    window.cancelAnimationFrame(this.frameId)
+  }
+
+  resume() {
+    if (!this.paused || this.disposed || this.contextLost) return
+    this.paused = false
+    this.resize()
+    this.frameId = window.requestAnimationFrame((time) => {
+      this.time = time
+      this.run(time)
+    })
   }
 
   resize() {
@@ -1494,6 +1514,7 @@ export const InfiniteMovieMenu = <T,>({
   scale = 1,
   onActiveItemChange,
   onLoadProgress,
+  isActive = true,
   onMovingChange,
   onReady,
   onUserSpin,
@@ -1504,6 +1525,8 @@ export const InfiniteMovieMenu = <T,>({
   // Kept in a ref so a new callback identity never rebuilds the WebGL engine.
   const onMovingChangeRef = useRef(onMovingChange)
   onMovingChangeRef.current = onMovingChange
+  const isActiveRef = useRef(isActive)
+  isActiveRef.current = isActive
   const pointerDownRef = useRef<{
     moved: boolean
     pointerId: number
@@ -1558,6 +1581,7 @@ export const InfiniteMovieMenu = <T,>({
       )
       engineRef.current = engine
       engine.run()
+      if (!isActiveRef.current) engine.pause()
       window.addEventListener('resize', onResize)
       setWebglError('')
     } catch (error) {
@@ -1586,7 +1610,8 @@ export const InfiniteMovieMenu = <T,>({
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const nudge = ARROW_NUDGES[event.key]
-      if (!nudge || isDetailsOpen || isTypingTarget(event.target)) return
+      if (!nudge || !isActive || isDetailsOpen) return
+      if (isTypingTarget(event.target)) return
       if (event.altKey || event.ctrlKey || event.metaKey) return
       event.preventDefault()
       engineRef.current?.nudge(nudge[0], nudge[1])
@@ -1595,7 +1620,12 @@ export const InfiniteMovieMenu = <T,>({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isDetailsOpen, onUserSpin])
+  }, [isActive, isDetailsOpen, onUserSpin])
+
+  useEffect(() => {
+    if (isActive) engineRef.current?.resume()
+    else engineRef.current?.pause()
+  }, [isActive])
 
   const handleFallbackActiveItemChange = useCallback(
     (item: InfiniteMovieMenuItem<T>) => {
