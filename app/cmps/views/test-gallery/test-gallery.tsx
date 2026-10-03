@@ -1697,32 +1697,38 @@ const WarpChrome = ({
           </button>
         </nav>
 
+        {/* Gallery: Watch + About. Index (and the genres view): Genres only. */}
         <nav className='warp-main-nav' aria-label='Gallery navigation'>
-          <button
-            type='button'
-            className={cn(mode === 'wall' && !aboutOpen && 'is-active')}
-            aria-pressed={mode === 'wall' && !aboutOpen}
-            onClick={onShowWall}
-          >
-            Watch
-          </button>
-          <button
-            type='button'
-            className={cn(aboutOpen && 'is-active')}
-            aria-expanded={aboutOpen}
-            onClick={onOpenAbout}
-          >
-            About
-          </button>
-          <button
-            type='button'
-            className={cn(mode === 'genres' && 'is-active')}
-            aria-pressed={mode === 'genres'}
-            onClick={onOpenGenres}
-          >
-            Genres
-            {selectedFilterCount ? <span>{selectedFilterCount}</span> : null}
-          </button>
+          {mode === 'wall' ? (
+            <>
+              <button
+                type='button'
+                className={cn(!aboutOpen && 'is-active')}
+                aria-pressed={!aboutOpen}
+                onClick={onShowWall}
+              >
+                Watch
+              </button>
+              <button
+                type='button'
+                className={cn(aboutOpen && 'is-active')}
+                aria-expanded={aboutOpen}
+                onClick={onOpenAbout}
+              >
+                About
+              </button>
+            </>
+          ) : (
+            <button
+              type='button'
+              className={cn(mode === 'genres' && 'is-active')}
+              aria-pressed={mode === 'genres'}
+              onClick={onOpenGenres}
+            >
+              Genres
+              {selectedFilterCount ? <span>{selectedFilterCount}</span> : null}
+            </button>
+          )}
         </nav>
         {dockActions}
       </div>

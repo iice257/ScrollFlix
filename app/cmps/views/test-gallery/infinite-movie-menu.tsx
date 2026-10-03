@@ -94,12 +94,15 @@ type PressState = {
 const NUDGE_RELEASE_MS = 140
 const WHEEL_NUDGE_SCALE = 0.6
 const WHEEL_NUDGE_MAX_PX = 90
-const KEY_NUDGE_PX = 36
-const ARROW_NUDGES: Record<string, Vec2> = {
-  ArrowUp: [0, KEY_NUDGE_PX],
-  ArrowDown: [0, -KEY_NUDGE_PX],
-  ArrowLeft: [KEY_NUDGE_PX, 0],
-  ArrowRight: [-KEY_NUDGE_PX, 0],
+// Arrow keys: a press gives an initial nudge, then holding spins at a steady
+// rate every frame until release (OS key-repeat timing is ignored).
+const KEY_NUDGE_PX = 20
+const KEY_HOLD_PX_PER_MS = 0.32
+const ARROW_DIRECTIONS: Record<string, Vec2> = {
+  ArrowUp: [0, 1],
+  ArrowDown: [0, -1],
+  ArrowLeft: [1, 0],
+  ArrowRight: [-1, 0],
 }
 
 const isTypingTarget = (target: EventTarget | null) =>
@@ -645,6 +648,16 @@ class ArcballControl {
     this.endDrag(pointerId)
   }
 
+  // Moves both drag points together, keeping the pending (not yet applied)
+  // movement intact; used to re-centre the virtual wheel/keyboard pointer.
+  shiftDrag(dx: number, dy: number) {
+    this.pointerPos = [this.pointerPos[0] + dx, this.pointerPos[1] + dy]
+    this.previousPointerPos = [
+      this.previousPointerPos[0] + dx,
+      this.previousPointerPos[1] + dy,
+    ]
+  }
+
   update(deltaTime: number) {
     const timeScale = deltaTime / TARGET_FRAME_DURATION + 0.00001
     let angleFactor = timeScale
@@ -947,13 +960,17 @@ class InfiniteMovieEngine<T> {
       this.canvas.clientHeight / 2,
     ]
     const recenterDistance = Math.min(center[0], center[1]) * 0.4
-    if (
-      !this.nudgePos ||
-      Math.hypot(this.nudgePos[0] - center[0], this.nudgePos[1] - center[1]) >
-        recenterDistance
-    ) {
+    if (!this.nudgePos) {
       this.nudgePos = center
       this.control.beginDrag(center[0], center[1])
+    } else if (
+      Math.hypot(this.nudgePos[0] - center[0], this.nudgePos[1] - center[1]) >
+      recenterDistance
+    ) {
+      const shiftX = center[0] - this.nudgePos[0]
+      const shiftY = center[1] - this.nudgePos[1]
+      this.control.shiftDrag(shiftX, shiftY)
+      this.nudgePos = center
     }
     this.nudgePos = [this.nudgePos[0] + dx, this.nudgePos[1] + dy]
     this.control.moveDrag(this.nudgePos[0], this.nudgePos[1])
@@ -1480,7 +1497,7 @@ class InfiniteMovieEngine<T> {
           this.control.orientation,
         ),
       )
-    } else {
+    } else if (!this.nudgePos) {
       cameraTargetZ += this.control.rotationVelocity * 58 + 0.72
       damping = 7 / timeScale
     }
@@ -1712,18 +1729,72 @@ export const InfiniteMovieMenu = <T,>({
   }, [activeId, isDetailsOpen])
 
   useEffect(() => {
+    const heldKeys = new Set<string>()
+    let frameId = 0
+    let lastTime = 0
+
+    const heldDirection = (): Vec2 => {
+      let x = 0
+      let y = 0
+      heldKeys.forEach((key) => {
+        x += ARROW_DIRECTIONS[key][0]
+        y += ARROW_DIRECTIONS[key][1]
+      })
+      return [x, y]
+    }
+
+    const spin = (time: number) => {
+      const elapsed = Math.min(48, time - lastTime)
+      lastTime = time
+      const [x, y] = heldDirection()
+      if (x || y) {
+        engineRef.current?.nudge(
+          x * KEY_HOLD_PX_PER_MS * elapsed,
+          y * KEY_HOLD_PX_PER_MS * elapsed,
+        )
+      }
+      frameId = heldKeys.size ? window.requestAnimationFrame(spin) : 0
+    }
+
+    const releaseAll = () => {
+      heldKeys.clear()
+      if (frameId) window.cancelAnimationFrame(frameId)
+      frameId = 0
+    }
+
     const handleKeyDown = (event: KeyboardEvent) => {
-      const nudge = ARROW_NUDGES[event.key]
-      if (!nudge || !isActive || isDetailsOpen) return
+      const direction = ARROW_DIRECTIONS[event.key]
+      if (!direction || !isActive || isDetailsOpen) return
       if (isTypingTarget(event.target)) return
       if (event.altKey || event.ctrlKey || event.metaKey) return
       event.preventDefault()
-      engineRef.current?.nudge(nudge[0], nudge[1])
+      if (heldKeys.has(event.key)) return
+      heldKeys.add(event.key)
+      engineRef.current?.nudge(
+        direction[0] * KEY_NUDGE_PX,
+        direction[1] * KEY_NUDGE_PX,
+      )
       onUserSpin?.()
+      if (!frameId) {
+        lastTime = performance.now()
+        frameId = window.requestAnimationFrame(spin)
+      }
     }
 
+    const handleKeyUp = (event: KeyboardEvent) => {
+      heldKeys.delete(event.key)
+    }
+
+    if (!isActive || isDetailsOpen) releaseAll()
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('blur', releaseAll)
+    return () => {
+      releaseAll()
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('blur', releaseAll)
+    }
   }, [isActive, isDetailsOpen, onUserSpin])
 
   useEffect(() => {
