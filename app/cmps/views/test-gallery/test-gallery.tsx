@@ -918,6 +918,7 @@ export const TestGalleryApp = () => {
         movies={visibleMovies}
         onLoadProgress={handleGalleryLoadProgress}
         onMovingChange={setIsGlobeMoving}
+        onOpenMovie={handleOpenMovie}
         onReady={handleGalleryReady}
         onSelectMovie={handleSelectMovie}
         onUserSpin={markSpinHintSeen}
@@ -1177,6 +1178,7 @@ type WarpWallProps = {
   movies: TestMovie[]
   onLoadProgress: (percent: number) => void
   onMovingChange: (moving: boolean) => void
+  onOpenMovie: (movie: TestMovie) => void
   onReady: () => void
   onSelectMovie: (movie: TestMovie) => void
   onUserSpin: () => void
@@ -1190,6 +1192,7 @@ const WarpWall = ({
   movies,
   onLoadProgress,
   onMovingChange,
+  onOpenMovie,
   onReady,
   onSelectMovie,
   onUserSpin,
@@ -1211,6 +1214,11 @@ const WarpWall = ({
   const handleActiveItemChange = useCallback(
     (item: (typeof menuItems)[number]) => onSelectMovie(item.payload),
     [onSelectMovie],
+  )
+
+  const handleOpenItem = useCallback(
+    (item: (typeof menuItems)[number]) => onOpenMovie(item.payload),
+    [onOpenMovie],
   )
 
   if (loadState === 'error') {
@@ -1236,6 +1244,7 @@ const WarpWall = ({
         loadState={loadState}
         onLoadProgress={onLoadProgress}
         onMovingChange={onMovingChange}
+        onOpenItem={handleOpenItem}
         onReady={onReady}
         onUserSpin={onUserSpin}
         scale={0.9}

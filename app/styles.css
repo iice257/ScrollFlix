@@ -1145,22 +1145,31 @@
     max-width: min(420px, calc(100vw - 32px));
     justify-items: center;
     gap: 6px;
-    border: 0;
+    border: 1px solid rgb(255 255 255 / 0.2);
     border-radius: 999px;
-    background: #fff;
-    padding: 11px 26px 12px;
-    color: #090909;
+    background: var(--warp-pill-bg);
+    padding: 10px 26px 11px;
+    color: #0b0b0b;
     cursor: pointer;
     font: inherit;
     text-align: center;
-    box-shadow: 0 18px 60px rgb(0 0 0 / 0.5);
+    box-shadow: 0 14px 44px rgb(0 0 0 / 0.34);
+    backdrop-filter: blur(14px) saturate(0.96);
+    -webkit-backdrop-filter: blur(14px) saturate(0.96);
     transition:
+      background 180ms ease,
       opacity 230ms ease,
       transform 230ms ease;
   }
 
-  .warp-title-card:hover {
-    transform: translateY(-1px);
+  .warp-title-card:hover,
+  .warp-title-card:focus-visible {
+    outline: none;
+    background: #fff;
+  }
+
+  .warp-title-card:active {
+    transform: translateY(1px) scale(0.98);
   }
 
   .warp-title-card.is-moving {
@@ -1182,7 +1191,7 @@
   .warp-title-card-meta {
     max-width: 100%;
     overflow: hidden;
-    color: rgb(0 0 0 / 0.62);
+    color: rgb(0 0 0 / 0.58);
     font-size: 9px;
     font-weight: 900;
     letter-spacing: 0.08em;
@@ -1229,6 +1238,59 @@
     width: 17px;
     height: 17px;
     stroke-width: 2.2;
+  }
+
+  .warp-gesture-debug {
+    position: fixed;
+    top: 84px;
+    left: 16px;
+    z-index: 120;
+    display: grid;
+    width: 250px;
+    gap: 8px;
+    border: 1px solid rgb(255 255 255 / 0.16);
+    border-radius: 16px;
+    background: rgb(12 12 12 / 0.92);
+    padding: 12px;
+    color: rgb(255 255 255 / 0.86);
+    font-size: 11px;
+    font-weight: 650;
+  }
+
+  .warp-gesture-debug label {
+    display: grid;
+    gap: 4px;
+  }
+
+  .warp-gesture-debug p,
+  .warp-gesture-debug ol {
+    margin: 0;
+  }
+
+  .warp-gesture-debug ol {
+    display: grid;
+    gap: 2px;
+    padding-left: 16px;
+    color: rgb(255 255 255 / 0.66);
+  }
+
+  .warp-gesture-debug b {
+    color: #fff;
+  }
+
+  .warp-gesture-debug-quad {
+    position: fixed;
+    inset: 0;
+    z-index: 119;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+  }
+
+  .warp-gesture-debug-quad polygon {
+    fill: rgb(255 255 255 / 0.08);
+    stroke: #fff;
+    stroke-width: 2;
   }
 
   .warp-spin-hint {

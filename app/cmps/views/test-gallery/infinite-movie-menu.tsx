@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '../../../utils/tw'
 import {
   type HoneycombVec3 as Vec3,
@@ -33,6 +34,7 @@ type InfiniteMovieMenuProps<T> = {
   onLoadProgress?: (percent: number) => void
   isActive?: boolean
   onMovingChange?: (moving: boolean) => void
+  onOpenItem?: (item: InfiniteMovieMenuItem<T>) => void
   onReady?: () => void
   onUserSpin?: () => void
 }
@@ -51,7 +53,44 @@ const ICON_DETAIL_SCALE = 0.34
 const DETAIL_FAST_EASE_MS = 210
 const DETAIL_SLOW_EASE_MS = 900
 const DETAIL_CLOSE_EASE_MS = 460
+// Gesture tuning: a press released within HOLD_TO_DRAG_MS that moved less
+// than CLICK_MOVE_TOLERANCE_PX is a click (opens the poster); holding longer or
+// moving further turns into a drag. CENTER_HIT_BOOST enlarges hit areas by up
+// to that fraction for posters near the screen centre. Tune live with
+// ?gesture-debug in the URL.
+const HOLD_TO_DRAG_MS = 220
 const CLICK_MOVE_TOLERANCE_PX = 8
+const CENTER_HIT_BOOST = 0.35
+const GESTURE_DEBUG =
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).has('gesture-debug')
+
+type GestureTuning = {
+  centerBoost: number
+  holdMs: number
+  moveTolerancePx: number
+}
+
+type GestureLogEntry = {
+  id: number
+  kind: 'click' | 'miss' | 'hold' | 'drag' | 'catch'
+  ms: number
+  movedPx: number
+  title?: string
+}
+
+type PressState = {
+  dragging: boolean
+  holdTimer: number | null
+  kind: 'hold' | 'drag' | 'catch' | null
+  lastX: number
+  lastY: number
+  maxMovedPx: number
+  pointerId: number
+  startTime: number
+  x: number
+  y: number
+}
 const NUDGE_RELEASE_MS = 140
 const WHEEL_NUDGE_SCALE = 0.6
 const WHEEL_NUDGE_MAX_PX = 90
@@ -72,6 +111,13 @@ const INITIAL_TEXTURE_LOAD_CONCURRENCY = 24
 const PRIMARY_IMAGE_TIMEOUT_MS = 20000
 
 type DetailMotion = 'fast' | 'slow' | 'close'
+
+export type PosterHit<T> = {
+  index: number
+  item: InfiniteMovieMenuItem<T>
+  // Screen-space outline of the hit area, for the gesture debug overlay.
+  quad: Vec2[]
+}
 
 const vertexShaderSource = `#version 300 es
 uniform mat4 uWorldMatrix;
@@ -435,9 +481,12 @@ const transformQuat3 = ([x, y, z]: Vec3, q: Quat): Vec3 => {
   ]
 }
 
+const POSTER_HALF_WIDTH = 0.34
+const POSTER_HALF_HEIGHT = 0.5
+
 const createDiscGeometry = () => {
-  const halfWidth = 0.34
-  const halfHeight = 0.5
+  const halfWidth = POSTER_HALF_WIDTH
+  const halfHeight = POSTER_HALF_HEIGHT
   const vertices = [
     -halfWidth,
     -halfHeight,
@@ -924,6 +973,7 @@ class InfiniteMovieEngine<T> {
     itemId: string | null,
     open: boolean,
     motion: DetailMotion = open ? 'slow' : 'close',
+    instanceIndex?: number,
   ) {
     this.detailEaseMs =
       motion === 'fast'
@@ -933,7 +983,16 @@ class InfiniteMovieEngine<T> {
           : DETAIL_SLOW_EASE_MS
 
     if (open && itemId) {
-      this.detailVertexIndex = this.findBestInstanceIndexForItem(itemId)
+      const focusedItem =
+        this.detailVertexIndex === null
+          ? null
+          : this.items[this.detailVertexIndex % Math.max(1, this.items.length)]
+      // Keep an instance a click already focused; items repeat on small sets.
+      this.detailVertexIndex =
+        instanceIndex ??
+        (focusedItem?.id === itemId && this.detailVertexIndex !== null
+          ? this.detailVertexIndex
+          : this.findBestInstanceIndexForItem(itemId))
       const detailPosition = this.instancePositions[this.detailVertexIndex]
       if (detailPosition) {
         this.control.snapTargetDirection = normalize3(
@@ -946,54 +1005,97 @@ class InfiniteMovieEngine<T> {
     if (!open) this.detailVertexIndex = null
   }
 
-  pickItemAt(clientX: number, clientY: number) {
+  isSpinning() {
+    return Math.abs(this.smoothRotationVelocity) > 0.01
+  }
+
+  // Projects every poster with the same matrices the shader uses and returns
+  // the front-most one under the point. Hit areas grow toward the screen
+  // centre by up to `centerBoost` so the focal posters are easiest to hit.
+  pickInstanceAt(
+    clientX: number,
+    clientY: number,
+    centerBoost = 0,
+  ): PosterHit<T> | null {
     const rect = this.canvas.getBoundingClientRect()
-    const pointerX = ((clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1
-    const pointerY = -(
-      ((clientY - rect.top) / Math.max(rect.height, 1)) * 2 -
-      1
+    const viewProjection = multiplyMat4(
+      identityMat4(),
+      this.projectionMatrix,
+      this.viewMatrix,
     )
-    let nearestIndex: number | null = null
-    let nearestScore = Number.POSITIVE_INFINITY
-    let nearestDepth = Number.NEGATIVE_INFINITY
+    const mvp = identityMat4()
+    const toScreen = (x: number, y: number): Vec2 | null => {
+      const clipX = mvp[0] * x + mvp[4] * y + mvp[12]
+      const clipY = mvp[1] * x + mvp[5] * y + mvp[13]
+      const clipW = mvp[3] * x + mvp[7] * y + mvp[15]
+      if (clipW <= 0.0001) return null
+      return [
+        rect.left + ((clipX / clipW + 1) / 2) * rect.width,
+        rect.top + ((1 - clipY / clipW) / 2) * rect.height,
+      ]
+    }
+    const screenCenter: Vec2 = [
+      rect.left + rect.width / 2,
+      rect.top + rect.height / 2,
+    ]
+    const focusRadius = Math.max(1, Math.min(rect.width, rect.height) / 2)
+    let best: { index: number; quad: Vec2[]; score: number; z: number } | null =
+      null
 
-    this.instancePositions.forEach((position, index) => {
-      const transformed = transformQuat3(position, this.control.orientation)
-      const frontBias = transformed[2] / SPHERE_RADIUS
-      const depthScale =
-        (Math.abs(transformed[2]) / SPHERE_RADIUS) * 0.52 + (1 - 0.52)
-      const projectedX =
-        transformed[0] /
-        (SPHERE_RADIUS * (rect.width > rect.height ? 1.18 : 0.78))
-      const projectedY = transformed[1] / (SPHERE_RADIUS * 1.05)
-      if (frontBias > 0.88) return
-      const centerDepth = -frontBias
-      const center: Vec3 = [projectedX, projectedY, centerDepth]
-      const projectedScale = Math.max(0.07, ICON_REST_SCALE * depthScale)
-      const radiusX = projectedScale * 0.78
-      const radiusY = projectedScale * 1.05
-      if (radiusX <= 0.001 || radiusY <= 0.001) return
+    this.instanceMatrices.forEach((matrix, index) => {
+      // World is identity, so the instance translation is the poster centre;
+      // posters facing away are culled by the renderer.
+      const centerZ = matrix[14]
+      if (centerZ < SPHERE_RADIUS * 0.15) return
 
-      const dx = center[0] - pointerX
-      const dy = center[1] - pointerY
-      const normalizedX = Math.abs(dx) / radiusX
-      const normalizedY = Math.abs(dy) / radiusY
-      if (normalizedX > 1 || normalizedY > 1) return
-      const score = normalizedX * normalizedX + normalizedY * normalizedY
+      multiplyMat4(mvp, viewProjection, matrix)
+      const center = toScreen(0, 0)
+      const right = toScreen(POSTER_HALF_WIDTH, 0)
+      const up = toScreen(0, POSTER_HALF_HEIGHT)
+      if (!center || !right || !up) return
 
+      const u: Vec2 = [right[0] - center[0], right[1] - center[1]]
+      const v: Vec2 = [up[0] - center[0], up[1] - center[1]]
+      const det = u[0] * v[1] - u[1] * v[0]
+      if (Math.abs(det) < 0.0001) return
+
+      const proximity = Math.max(
+        0,
+        1 -
+          Math.hypot(center[0] - screenCenter[0], center[1] - screenCenter[1]) /
+            focusRadius,
+      )
+      const pad = 1 + centerBoost * proximity
+      const dx = clientX - center[0]
+      const dy = clientY - center[1]
+      // Express the pointer in the poster's own (u, v) axes: |a|,|b| <= 1 is inside.
+      const a = (dx * v[1] - dy * v[0]) / det
+      const b = (u[0] * dy - u[1] * dx) / det
+      if (Math.abs(a) > pad || Math.abs(b) > pad) return
+
+      const score = a * a + b * b
       if (
-        score < nearestScore - 0.08 ||
-        (Math.abs(score - nearestScore) < 0.08 &&
-          center[2] > nearestDepth + 0.0001)
+        !best ||
+        score < best.score - 0.05 ||
+        (Math.abs(score - best.score) <= 0.05 && centerZ > best.z)
       ) {
-        nearestScore = score
-        nearestDepth = center[2]
-        nearestIndex = index
+        const corner = (sa: number, sb: number): Vec2 => [
+          center[0] + (u[0] * sa + v[0] * sb) * pad,
+          center[1] + (u[1] * sa + v[1] * sb) * pad,
+        ]
+        best = {
+          index,
+          quad: [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)],
+          score,
+          z: centerZ,
+        }
       }
     })
 
-    if (nearestIndex === null) return null
-    return this.items[nearestIndex % Math.max(1, this.items.length)] ?? null
+    if (!best) return null
+    const { index, quad } = best
+    const item = this.items[index % Math.max(1, this.items.length)]
+    return item ? { index, item, quad } : null
   }
 
   private initGeometry() {
@@ -1516,6 +1618,7 @@ export const InfiniteMovieMenu = <T,>({
   onLoadProgress,
   isActive = true,
   onMovingChange,
+  onOpenItem,
   onReady,
   onUserSpin,
 }: InfiniteMovieMenuProps<T>) => {
@@ -1527,13 +1630,14 @@ export const InfiniteMovieMenu = <T,>({
   onMovingChangeRef.current = onMovingChange
   const isActiveRef = useRef(isActive)
   isActiveRef.current = isActive
-  const pointerDownRef = useRef<{
-    moved: boolean
-    pointerId: number
-    x: number
-    y: number
-  } | null>(null)
-  const suppressNextClickRef = useRef(false)
+  const pressRef = useRef<PressState | null>(null)
+  const tuningRef = useRef<GestureTuning>({
+    centerBoost: CENTER_HIT_BOOST,
+    holdMs: HOLD_TO_DRAG_MS,
+    moveTolerancePx: CLICK_MOVE_TOLERANCE_PX,
+  })
+  const [gestureLog, setGestureLog] = useState<GestureLogEntry[]>([])
+  const [debugQuad, setDebugQuad] = useState<Vec2[] | null>(null)
   const [activeItem, setActiveItem] = useState<InfiniteMovieMenuItem<T> | null>(
     null,
   )
@@ -1657,45 +1761,139 @@ export const InfiniteMovieMenu = <T,>({
     onUserSpin?.()
   }
 
+  const logGesture = useCallback((entry: Omit<GestureLogEntry, 'id'>) => {
+    if (!GESTURE_DEBUG) return
+    setGestureLog((log) =>
+      [{ ...entry, id: performance.now() }, ...log].slice(0, 8),
+    )
+  }, [])
+
+  const startDrag = useCallback(
+    (press: PressState, kind: 'hold' | 'drag' | 'catch') => {
+      if (press.dragging) return
+      press.dragging = true
+      press.kind = kind
+      if (press.holdTimer) window.clearTimeout(press.holdTimer)
+      press.holdTimer = null
+      // Start from the press point so movement before the drag isn't lost.
+      engineRef.current?.beginPointerDrag(press.x, press.y, press.pointerId)
+      if (press.lastX !== press.x || press.lastY !== press.y) {
+        engineRef.current?.movePointerDrag(press.lastX, press.lastY)
+      }
+      setIsHoldPrimed(true)
+      onUserSpin?.()
+    },
+    [onUserSpin],
+  )
+
+  const openHit = useCallback(
+    (hit: PosterHit<T>) => {
+      activeItemRef.current = hit.item
+      setActiveItem(hit.item)
+      onActiveItemChange(hit.item)
+      engineRef.current?.setDetailFocus(hit.item.id, true, 'fast', hit.index)
+      onOpenItem?.(hit.item)
+    },
+    [onActiveItemChange, onOpenItem],
+  )
+
+  const releasePress = () => {
+    const press = pressRef.current
+    if (press?.holdTimer) window.clearTimeout(press.holdTimer)
+    pressRef.current = null
+    setIsHoldPrimed(false)
+    return press
+  }
+
+  useEffect(
+    () => () => {
+      const timer = pressRef.current?.holdTimer
+      if (timer) window.clearTimeout(timer)
+    },
+    [],
+  )
+
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    onUserSpin?.()
-    pointerDownRef.current = {
-      moved: false,
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    releasePress()
+    const press: PressState = {
+      dragging: false,
+      holdTimer: null,
+      kind: null,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      maxMovedPx: 0,
       pointerId: event.pointerId,
+      startTime: performance.now(),
       x: event.clientX,
       y: event.clientY,
     }
-    engineRef.current?.beginPointerDrag(
-      event.clientX,
-      event.clientY,
-      event.pointerId,
+    pressRef.current = press
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Capture can fail if the pointer is already gone.
+    }
+
+    // Pressing a still-spinning globe catches it instead of opening a poster.
+    if (engineRef.current?.isSpinning()) {
+      startDrag(press, 'catch')
+      return
+    }
+    press.holdTimer = window.setTimeout(
+      () => startDrag(press, 'hold'),
+      tuningRef.current.holdMs,
     )
-    setIsHoldPrimed(true)
   }
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    const pointerDown = pointerDownRef.current
-    if (!pointerDown) return
+    const press = pressRef.current
+    if (!press || press.pointerId !== event.pointerId) return
+    press.lastX = event.clientX
+    press.lastY = event.clientY
+    const movedPx = Math.hypot(event.clientX - press.x, event.clientY - press.y)
+    press.maxMovedPx = Math.max(press.maxMovedPx, movedPx)
 
-    const dx = event.clientX - pointerDown.x
-    const dy = event.clientY - pointerDown.y
-    if (Math.hypot(dx, dy) > CLICK_MOVE_TOLERANCE_PX) {
-      pointerDown.moved = true
-      suppressNextClickRef.current = true
+    if (press.dragging) {
+      engineRef.current?.movePointerDrag(event.clientX, event.clientY)
+      return
     }
-    engineRef.current?.movePointerDrag(event.clientX, event.clientY)
+    if (movedPx > tuningRef.current.moveTolerancePx) startDrag(press, 'drag')
   }
 
-  const clearHoldState = useCallback(() => {
-    setIsHoldPrimed(false)
-  }, [])
+  const handlePointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (pressRef.current?.pointerId !== event.pointerId) return
+    const press = releasePress()
+    if (!press) return
+    const ms = Math.round(performance.now() - press.startTime)
+    const movedPx = Math.round(press.maxMovedPx)
 
-  const finishPointerInteraction = () => {
-    const pointerDown = pointerDownRef.current
-    if (pointerDown) engineRef.current?.endPointerDrag(pointerDown.pointerId)
-    if (pointerDown?.moved) suppressNextClickRef.current = true
-    pointerDownRef.current = null
-    clearHoldState()
+    if (press.dragging) {
+      engineRef.current?.endPointerDrag(press.pointerId)
+      logGesture({ kind: press.kind ?? 'drag', ms, movedPx })
+      return
+    }
+
+    const hit =
+      engineRef.current?.pickInstanceAt(
+        event.clientX,
+        event.clientY,
+        tuningRef.current.centerBoost,
+      ) ?? null
+    if (GESTURE_DEBUG) setDebugQuad(hit?.quad ?? null)
+    logGesture({
+      kind: hit ? 'click' : 'miss',
+      ms,
+      movedPx,
+      title: hit?.item.title,
+    })
+    if (hit && !isDetailsOpen) openHit(hit)
+  }
+
+  const handlePointerCancel = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (pressRef.current?.pointerId !== event.pointerId) return
+    const press = releasePress()
+    if (press?.dragging) engineRef.current?.cancelPointerDrag(press.pointerId)
   }
 
   return (
@@ -1716,22 +1914,8 @@ export const InfiniteMovieMenu = <T,>({
           aria-label='Infinite movie poster menu'
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
-          onPointerCancel={() => {
-            const pointerDown = pointerDownRef.current
-            if (pointerDown)
-              engineRef.current?.cancelPointerDrag(pointerDown.pointerId)
-            if (pointerDown?.moved) suppressNextClickRef.current = true
-            clearHoldState()
-            pointerDownRef.current = null
-          }}
-          onPointerUp={finishPointerInteraction}
-          onClick={() => {
-            pointerDownRef.current = null
-            clearHoldState()
-            if (suppressNextClickRef.current) {
-              suppressNextClickRef.current = false
-            }
-          }}
+          onPointerCancel={handlePointerCancel}
+          onPointerUp={handlePointerUp}
         />
       )}
 
@@ -1740,6 +1924,107 @@ export const InfiniteMovieMenu = <T,>({
       <div className='warp-wall-loading' data-state={loadState}>
         Loading movies
       </div>
+
+      {GESTURE_DEBUG && isActive
+        ? createPortal(
+            <GestureDebugPanel
+              log={gestureLog}
+              quad={debugQuad}
+              tuningRef={tuningRef}
+            />,
+            document.body,
+          )
+        : null}
     </div>
+  )
+}
+
+type GestureDebugPanelProps = {
+  log: GestureLogEntry[]
+  quad: Vec2[] | null
+  tuningRef: { current: GestureTuning }
+}
+
+// Dev-only (?gesture-debug): shows real press timings and lets the click/hold
+// thresholds be tuned live. Values are not persisted.
+const GestureDebugPanel = ({
+  log,
+  quad,
+  tuningRef,
+}: GestureDebugPanelProps) => {
+  const [tuning, setTuning] = useState(tuningRef.current)
+  const update = (patch: Partial<GestureTuning>) => {
+    const next = { ...tuningRef.current, ...patch }
+    tuningRef.current = next
+    setTuning(next)
+  }
+  const clicks = log.filter(
+    (entry) => entry.kind === 'click' || entry.kind === 'miss',
+  )
+  const averageClickMs = clicks.length
+    ? Math.round(
+        clicks.reduce((sum, entry) => sum + entry.ms, 0) / clicks.length,
+      )
+    : null
+
+  return (
+    <>
+      {quad ? (
+        <svg className='warp-gesture-debug-quad' aria-hidden='true'>
+          <polygon points={quad.map(([x, y]) => `${x},${y}`).join(' ')} />
+        </svg>
+      ) : null}
+      <aside className='warp-gesture-debug' aria-label='Gesture tuning'>
+        <strong>Gesture tuning</strong>
+        <label>
+          Hold to drag: {tuning.holdMs} ms
+          <input
+            type='range'
+            min={80}
+            max={500}
+            step={10}
+            value={tuning.holdMs}
+            onChange={(event) => update({ holdMs: Number(event.target.value) })}
+          />
+        </label>
+        <label>
+          Move tolerance: {tuning.moveTolerancePx} px
+          <input
+            type='range'
+            min={2}
+            max={24}
+            step={1}
+            value={tuning.moveTolerancePx}
+            onChange={(event) =>
+              update({ moveTolerancePx: Number(event.target.value) })
+            }
+          />
+        </label>
+        <label>
+          Centre boost: {Math.round(tuning.centerBoost * 100)}%
+          <input
+            type='range'
+            min={0}
+            max={1}
+            step={0.05}
+            value={tuning.centerBoost}
+            onChange={(event) =>
+              update({ centerBoost: Number(event.target.value) })
+            }
+          />
+        </label>
+        <p>
+          Avg click: {averageClickMs === null ? '-' : `${averageClickMs} ms`}
+        </p>
+        <ol>
+          {log.map((entry) => (
+            <li key={entry.id}>
+              <b>{entry.kind}</b> {entry.ms} ms, {entry.movedPx} px
+              {entry.title ? ` - ${entry.title}` : ''}
+            </li>
+          ))}
+        </ol>
+      </aside>
+    </>
   )
 }
