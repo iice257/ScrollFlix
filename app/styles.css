@@ -3419,7 +3419,7 @@
     position: fixed;
     right: 24px;
     bottom: calc(28px + var(--warp-control-height) + 12px);
-    z-index: 56;
+    z-index: 120;
     display: grid;
     width: min(340px, calc(100vw - 32px));
     gap: 16px;
@@ -3501,6 +3501,10 @@
     list-style: none;
   }
 
+  .warp-about-controls.is-mobile-controls {
+    display: none;
+  }
+
   .warp-about-controls li {
     display: flex;
     align-items: center;
@@ -3535,18 +3539,13 @@
     white-space: nowrap;
   }
 
-  .warp-about-keys .is-touch {
-    display: none;
-  }
-
   @media (hover: none) {
-    .warp-about-keys .is-pointer,
-    .warp-about-controls .is-pointer-only {
+    .warp-about-controls.is-desktop-controls {
       display: none;
     }
 
-    .warp-about-keys .is-touch {
-      display: inline;
+    .warp-about-controls.is-mobile-controls {
+      display: grid;
     }
   }
 
