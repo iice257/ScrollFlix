@@ -2812,6 +2812,10 @@
       transform 220ms ease;
   }
 
+  .warp-list-chunk-placeholder {
+    height: calc(var(--chunk-row-count, 1) * var(--warp-list-row-estimate, 69px));
+  }
+
   .warp-list-group.is-collapsed .warp-list-rows {
     max-height: 0;
     opacity: 0;
@@ -4220,6 +4224,10 @@
       gap: 10px;
       min-height: 62px;
       padding: 8px 0;
+    }
+
+    .warp-list-chunk-placeholder {
+      --warp-list-row-estimate: 63px;
     }
 
     .warp-list-row-poster {

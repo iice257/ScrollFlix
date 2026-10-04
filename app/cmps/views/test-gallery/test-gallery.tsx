@@ -22,6 +22,7 @@ import {
   type CSSProperties,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -55,6 +56,12 @@ type TestMovie = {
   ratingValue: number | null
   countries: string
   posterUrl: string
+  // Catalogue films (beyond the local set) use TMDB-hosted posters: a larger
+  // one for the details card, and an average colour while they load.
+  posterDetailUrl?: string
+  placeholderColor?: string
+  // Position in the catalogue's lazily loaded overview/tagline chunks.
+  textIndex?: number
 }
 
 type ViewMode = 'wall' | 'list' | 'genres'
@@ -86,7 +93,8 @@ type PosterLoadState = 'loading' | 'loaded' | 'error'
 type MotionPhase = 'enter' | 'exit'
 
 const DATASET_FILE_COUNT = 5
-const LIST_WINDOW_SIZE = 10000
+const CATALOG_URL = '/json/catalog'
+const TMDB_IMAGE_URL = 'https://image.tmdb.org/t/p'
 const GALLERY_WINDOW_SIZE = 900
 const LEGACY_LOCAL_POSTER_COUNT = 216
 const MIN_DECISION_FILTER_RESULTS = 24
@@ -309,16 +317,36 @@ const hasLatinLeadingTitle = (movie: TestMovie) =>
 type MoviePosterProps = {
   movie: TestMovie
   loading?: 'eager' | 'lazy'
+  size?: 'thumb' | 'detail'
 }
 
-const MoviePoster = ({ movie, loading = 'lazy' }: MoviePosterProps) => {
+const MoviePoster = ({
+  movie,
+  loading = 'lazy',
+  size = 'thumb',
+}: MoviePosterProps) => {
   const [loadState, setLoadState] = useState<PosterLoadState>('loading')
 
   return (
-    <span className='warp-poster-frame' data-poster-state={loadState}>
+    <span
+      className='warp-poster-frame'
+      data-poster-state={loadState}
+      style={
+        movie.placeholderColor && loadState !== 'loaded'
+          ? { backgroundColor: movie.placeholderColor }
+          : undefined
+      }
+    >
       <img
-        src={movie.posterUrl}
+        src={
+          size === 'detail'
+            ? (movie.posterDetailUrl ?? movie.posterUrl)
+            : movie.posterUrl
+        }
         alt=''
+        // TMDB only sends CORS headers when asked and does not vary on it, so
+        // a plain request would cache a copy the globe's WebGL cannot use.
+        crossOrigin={movie.posterDetailUrl ? 'anonymous' : undefined}
         loading={loading}
         onError={() => setLoadState('error')}
         onLoad={() => setLoadState('loaded')}
@@ -480,6 +508,46 @@ export const getGalleryWindow = (
     .slice(0, limit)
     .map(({ movie }) => movie)
 
+// Rank follows the dataset's vote order, so it stands in for popularity: a
+// well-known 7.8 should beat an obscure 9.5 rated by a handful of people.
+const similarityScore = (movie: TestMovie) =>
+  (movie.ratingValue ?? 0) - movie.rank / 2500
+
+// One pass over the catalogue, keeping only the best few, so it stays cheap
+// with tens of thousands of films.
+export const getSimilarMovies = (
+  movie: TestMovie,
+  movies: TestMovie[],
+  limit = 6,
+) => {
+  const currentGenres = new Set(movie.genres)
+  const best: Array<{ movie: TestMovie; overlap: number; score: number }> = []
+  const isBetter = (
+    a: { overlap: number; score: number },
+    b: { overlap: number; score: number },
+  ) => a.overlap > b.overlap || (a.overlap === b.overlap && a.score > b.score)
+
+  for (const candidate of movies) {
+    if (candidate.id === movie.id) continue
+    let overlap = 0
+    for (const genre of candidate.genres) {
+      if (currentGenres.has(genre)) overlap += 1
+    }
+    if (!overlap) continue
+    const entry = {
+      movie: candidate,
+      overlap,
+      score: similarityScore(candidate),
+    }
+    if (best.length === limit && !isBetter(entry, best[limit - 1])) continue
+    let position = best.length
+    while (position > 0 && isBetter(entry, best[position - 1])) position -= 1
+    best.splice(position, 0, entry)
+    if (best.length > limit) best.pop()
+  }
+  return best.map((entry) => entry.movie)
+}
+
 export type SortDirection = 'asc' | 'desc'
 // A rule without a direction is "pending": picked in the sort panel but not
 // applied until the viewer chooses ascending or descending.
@@ -560,20 +628,27 @@ export const applySortDirection = (
     ? rules.map((rule) => (rule.key === key ? { ...rule, direction } : rule))
     : [...rules, { key, direction }]
 
-export const groupMoviesByYear = (movies: TestMovie[]) =>
+// Appends in place: copying each group per film is quadratic at catalogue size.
+const groupMoviesBy = (
+  movies: TestMovie[],
+  getKey: (movie: TestMovie) => string,
+) =>
   movies.reduce<Record<string, TestMovie[]>>((groups, movie) => {
-    const year = movie.year || '----'
-    groups[year] = [...(groups[year] ?? []), movie]
+    const key = getKey(movie)
+    const group = groups[key]
+    if (group) group.push(movie)
+    else groups[key] = [movie]
     return groups
   }, {})
 
+export const groupMoviesByYear = (movies: TestMovie[]) =>
+  groupMoviesBy(movies, (movie) => movie.year || '----')
+
 export const groupMoviesAlphabetically = (movies: TestMovie[]) =>
-  movies.reduce<Record<string, TestMovie[]>>((groups, movie) => {
+  groupMoviesBy(movies, (movie) => {
     const letter = movie.title.charAt(0).toUpperCase() || '#'
-    const key = /[A-Z]/.test(letter) ? letter : '#'
-    groups[key] = [...(groups[key] ?? []), movie]
-    return groups
-  }, {})
+    return /[A-Z]/.test(letter) ? letter : '#'
+  })
 
 const UNRATED_GROUP = 'Unrated'
 
@@ -584,11 +659,7 @@ const getRatingGroupKey = (movie: TestMovie) => {
 }
 
 export const groupMoviesByRating = (movies: TestMovie[]) =>
-  movies.reduce<Record<string, TestMovie[]>>((groups, movie) => {
-    const key = getRatingGroupKey(movie)
-    groups[key] = [...(groups[key] ?? []), movie]
-    return groups
-  }, {})
+  groupMoviesBy(movies, getRatingGroupKey)
 
 // Highest band first; "Unrated" (NaN) always last.
 const compareRatingGroups = (groupA: string, groupB: string) =>
@@ -712,7 +783,6 @@ const loadMovieDataset = () => {
         .flat()
         .map((raw, index) => mapMovie(raw, index, localPosterIds))
         .filter((movie) => Boolean(movie.posterUrl))
-        .slice(0, LIST_WINDOW_SIZE)
       return cachedMovieDataset
     })
     .catch((error: unknown) => {
@@ -723,8 +793,190 @@ const loadMovieDataset = () => {
   return movieDatasetPromise
 }
 
+// The wider catalogue (scripts/build-catalog.mjs): compact rows of
+// [tmdbId, title, year, rating x10, genre indices, country index, poster path,
+// colour], with the genre and country names in the manifest.
+export type CatalogRow = [
+  number,
+  string,
+  number,
+  number,
+  number[],
+  number,
+  string,
+  string,
+]
+export type CatalogTables = { countries: string[]; genres: string[] }
+type CatalogManifest = CatalogTables & {
+  chunks: string[]
+  count: number
+  textChunkSize: number
+}
+
+export const mapCatalogRow = (
+  [tmdbId, title, year, rating10, genres, country, poster, colour]: CatalogRow,
+  textIndex: number,
+  rank: number,
+  tables: CatalogTables,
+): TestMovie => {
+  const rating = rating10 > 0 ? rating10 / 10 : null
+  return {
+    id: `c${tmdbId}`,
+    rank,
+    title,
+    tagline: '',
+    overview: '',
+    genres: genres
+      .map((genre) => tables.genres[genre])
+      .filter((genre): genre is string => Boolean(genre)),
+    year: year ? String(year) : '----',
+    runtime: '',
+    runtimeMinutes: null,
+    rating: rating ? rating.toFixed(1) : '',
+    ratingValue: rating,
+    countries: tables.countries[country] ?? '',
+    posterUrl: `${TMDB_IMAGE_URL}/w154/${poster}.jpg`,
+    posterDetailUrl: `${TMDB_IMAGE_URL}/w342/${poster}.jpg`,
+    placeholderColor: `#${colour}`,
+    textIndex,
+  }
+}
+
+const prefersSavedData = () =>
+  Boolean(
+    (navigator as Navigator & { connection?: { saveData?: boolean } })
+      .connection?.saveData,
+  )
+
+let catalogManifestPromise: Promise<CatalogManifest> | null = null
+const loadCatalogManifest = () => {
+  catalogManifestPromise ??= fetch(`${CATALOG_URL}/manifest.json`)
+    .then((response) => {
+      if (!response.ok) throw new Error(`Catalogue ${response.status}`)
+      return response.json() as Promise<CatalogManifest>
+    })
+    .catch((error: unknown) => {
+      catalogManifestPromise = null
+      throw error
+    })
+  return catalogManifestPromise
+}
+
+let cachedCatalogMovies: TestMovie[] | null = null
+let catalogMoviesPromise: Promise<TestMovie[]> | null = null
+
+// Loaded after the globe is up; the local films keep their ranks and the
+// catalogue follows them, so the default globe window never changes.
+const loadCatalogMovies = (rankOffset: number) => {
+  if (cachedCatalogMovies) return Promise.resolve(cachedCatalogMovies)
+  catalogMoviesPromise ??= loadCatalogManifest()
+    .then(async (manifest) => {
+      const chunks = await Promise.all(
+        manifest.chunks.map((chunk) =>
+          fetch(`${CATALOG_URL}/${chunk}`).then((response) => {
+            if (!response.ok) throw new Error(`Catalogue ${response.status}`)
+            return response.json() as Promise<CatalogRow[]>
+          }),
+        ),
+      )
+      cachedCatalogMovies = chunks
+        .flat()
+        .map((row, index) =>
+          mapCatalogRow(row, index, rankOffset + index + 1, manifest),
+        )
+      return cachedCatalogMovies
+    })
+    .catch((error: unknown) => {
+      catalogMoviesPromise = null
+      throw error
+    })
+  return catalogMoviesPromise
+}
+
+type MovieText = { overview: string; tagline: string }
+const movieTextChunks = new Map<number, Promise<Array<[string, string]>>>()
+const loadedMovieTexts = new Map<number, Array<[string, string]>>()
+
+let knownTextChunkSize = 0
+
+const getCachedMovieText = (movie: TestMovie): MovieText | null => {
+  if (movie.textIndex === undefined) return movie
+  if (!knownTextChunkSize) return null
+  const chunk = Math.floor(movie.textIndex / knownTextChunkSize)
+  const rows = loadedMovieTexts.get(chunk)
+  if (!rows) return null
+  const [overview, tagline] = rows[
+    movie.textIndex - chunk * knownTextChunkSize
+  ] ?? ['', '']
+  return { overview, tagline }
+}
+
+const loadMovieText = async (movie: TestMovie): Promise<MovieText> => {
+  const cached = getCachedMovieText(movie)
+  if (cached || movie.textIndex === undefined) return cached ?? movie
+  const { textChunkSize } = await loadCatalogManifest()
+  knownTextChunkSize = textChunkSize
+  const chunk = Math.floor(movie.textIndex / textChunkSize)
+  let request = movieTextChunks.get(chunk)
+  if (!request) {
+    request = fetch(`${CATALOG_URL}/text-${chunk}.json`).then((response) => {
+      if (!response.ok) throw new Error(`Overview ${response.status}`)
+      return response.json() as Promise<Array<[string, string]>>
+    })
+    movieTextChunks.set(chunk, request)
+    request.then(
+      (rows) => loadedMovieTexts.set(chunk, rows),
+      () => movieTextChunks.delete(chunk),
+    )
+  }
+  const [overview, tagline] =
+    (await request)[movie.textIndex - chunk * textChunkSize] ?? []
+  return { overview: overview ?? '', tagline: tagline ?? '' }
+}
+
+// A catalogue film's overview and tagline, fetched when it is shown.
+const useMovieText = (movie: TestMovie) => {
+  const [text, setText] = useState<MovieText | null>(() =>
+    getCachedMovieText(movie),
+  )
+  useEffect(() => {
+    let cancelled = false
+    setText(getCachedMovieText(movie))
+    loadMovieText(movie)
+      .then((nextText) => {
+        if (!cancelled) setText(nextText)
+      })
+      .catch(() => {
+        if (!cancelled) setText({ overview: '', tagline: '' })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [movie])
+  return text
+}
+
+// Keeps the previous array when the contents are the same objects, so a
+// background append never hands the globe a "new" list and rebuilds it.
+const useStableList = <T,>(list: T[]) => {
+  const ref = useRef(list)
+  const previous = ref.current
+  if (
+    previous !== list &&
+    (previous.length !== list.length ||
+      previous.some((item, index) => item !== list[index]))
+  ) {
+    ref.current = list
+  }
+  return ref.current
+}
+
 export const TestGalleryApp = () => {
-  const [movies, setMovies] = useState<TestMovie[]>(cachedMovieDataset ?? [])
+  const [movies, setMovies] = useState<TestMovie[]>(() =>
+    cachedMovieDataset
+      ? [...cachedMovieDataset, ...(cachedCatalogMovies ?? [])]
+      : [],
+  )
   const [mode, setMode] = useState<ViewMode>('wall')
   const [sortRules, setSortRules] = useState<SortRule[]>([
     { key: 'year', direction: 'asc' },
@@ -789,7 +1041,11 @@ export const TestGalleryApp = () => {
     loadMovieDataset()
       .then((nextMovies) => {
         if (cancelled) return
-        setMovies(nextMovies)
+        setMovies((currentMovies) =>
+          currentMovies.length >= nextMovies.length
+            ? currentMovies
+            : nextMovies,
+        )
         setActiveMovieId(
           (currentMovieId) => currentMovieId ?? nextMovies[0]?.id ?? null,
         )
@@ -824,6 +1080,38 @@ export const TestGalleryApp = () => {
     return () => window.clearInterval(timer)
   }, [])
 
+  // The wider catalogue streams in once the globe is showing, so it never
+  // competes with the first posters. With Save-Data on, it waits until the
+  // index, genres or filters are actually opened.
+  const catalogWanted = !prefersSavedData() || mode !== 'wall' || filterOpen
+  useEffect(() => {
+    if (!initialGalleryReady || loadState !== 'ready' || !catalogWanted) return
+    let cancelled = false
+    const localMovies = cachedMovieDataset ?? []
+    const rankOffset = localMovies.reduce(
+      (highest, movie) => Math.max(highest, movie.rank),
+      0,
+    )
+    const timer = window.setTimeout(() => {
+      loadCatalogMovies(rankOffset)
+        .then((catalogMovies) => {
+          if (cancelled) return
+          setMovies((currentMovies) =>
+            currentMovies.length > localMovies.length
+              ? currentMovies
+              : [...currentMovies, ...catalogMovies],
+          )
+        })
+        .catch(() => {
+          // The local films still work on their own; the catalogue is extra.
+        })
+    }, 400)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [catalogWanted, initialGalleryReady, loadState])
+
   const genreSummaries = useMemo(() => getGenreSummaries(movies), [movies])
 
   const genreFilteredMovies = useMemo(
@@ -848,9 +1136,11 @@ export const TestGalleryApp = () => {
     (selectedRuntimeFilter ? 1 : 0) +
     (contentFilter !== 'all' ? 1 : 0)
 
-  const visibleMovies = useMemo(
-    () => getGalleryWindow(filteredMovies, selectedGenres),
-    [filteredMovies, selectedGenres],
+  const visibleMovies = useStableList(
+    useMemo(
+      () => getGalleryWindow(filteredMovies, selectedGenres),
+      [filteredMovies, selectedGenres],
+    ),
   )
 
   const handleGalleryReady = useCallback(() => {
@@ -881,11 +1171,7 @@ export const TestGalleryApp = () => {
   )
 
   const listMovies = useMemo(
-    () =>
-      sortMoviesByRules(searchableListMovies, sortRules).slice(
-        0,
-        LIST_WINDOW_SIZE,
-      ),
+    () => sortMoviesByRules(searchableListMovies, sortRules),
     [searchableListMovies, sortRules],
   )
 
@@ -1415,6 +1701,7 @@ const WarpWall = ({
       movies.map((movie) => ({
         id: movie.id,
         image: movie.posterUrl,
+        placeholderColor: movie.placeholderColor,
         title: movie.title,
         description:
           movie.genres.slice(0, 2).join(' | ') || movie.overview || 'Movie',
@@ -1486,6 +1773,120 @@ type WarpListProps = {
   onSelectMovie: (movie: TestMovie) => void
 }
 
+// The index can hold tens of thousands of films, so rows render in chunks as
+// they near the viewport. A chunk not yet rendered keeps its estimated height
+// (--warp-list-row-estimate) so the scrollbar and group heights stay right.
+const LIST_CHUNK_SIZE = 40
+const LIST_EAGER_ROWS = 80
+
+const chunkRows = <T,>(rows: T[]) => {
+  const chunks: T[][] = []
+  for (let start = 0; start < rows.length; start += LIST_CHUNK_SIZE) {
+    chunks.push(rows.slice(start, start + LIST_CHUNK_SIZE))
+  }
+  return chunks
+}
+
+type ListRowChunkProps<T> = {
+  count: number
+  eager: boolean
+  forceVisible: boolean
+  rows: T[]
+  // Rows are only built once the chunk renders, so hovering or re-sorting
+  // never creates elements for the thousands of rows still off screen.
+  renderRow: (row: T) => ReactNode
+}
+
+const ListRowChunk = <T,>({
+  count,
+  eager,
+  forceVisible,
+  rows,
+  renderRow,
+}: ListRowChunkProps<T>) => {
+  const placeholderRef = useRef<HTMLDivElement | null>(null)
+  const [isVisible, setIsVisible] = useState(eager || forceVisible)
+  const shouldRender = isVisible || eager || forceVisible
+
+  useEffect(() => {
+    if (shouldRender) return
+    const placeholder = placeholderRef.current
+    if (!placeholder || typeof IntersectionObserver === 'undefined') {
+      setIsVisible(true)
+      return
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        observer.disconnect()
+        setIsVisible(true)
+      },
+      { root: placeholder.closest('.warp-list'), rootMargin: '1200px 0px' },
+    )
+    observer.observe(placeholder)
+    return () => observer.disconnect()
+  }, [shouldRender])
+
+  if (shouldRender) return rows.map(renderRow)
+  return (
+    <div
+      ref={placeholderRef}
+      className='warp-list-chunk-placeholder'
+      aria-hidden='true'
+      style={{ '--chunk-row-count': count } as CSSProperties}
+    />
+  )
+}
+
+type ListRowProps = {
+  isActive: boolean
+  isCollapsed: boolean
+  isRandomPulse: boolean
+  movie: TestMovie
+  onOpenMovie: (movie: TestMovie) => void
+  onSelectMovie: (movie: TestMovie) => void
+}
+
+// Memoised so hovering a row re-renders only the rows whose state changed.
+const ListRow = memo(
+  ({
+    isActive,
+    isCollapsed,
+    isRandomPulse,
+    movie,
+    onOpenMovie,
+    onSelectMovie,
+  }: ListRowProps) => (
+    <button
+      type='button'
+      data-movie-id={movie.id}
+      className={cn(
+        'warp-list-row',
+        isActive && 'is-active',
+        isRandomPulse && 'is-random-pulse',
+      )}
+      tabIndex={isCollapsed ? -1 : undefined}
+      onClick={() => onOpenMovie(movie)}
+      onFocus={() => onSelectMovie(movie)}
+      onMouseEnter={() => onSelectMovie(movie)}
+    >
+      <span className='warp-list-row-poster' aria-hidden='true'>
+        <MoviePoster movie={movie} />
+      </span>
+      <span className='warp-list-row-main'>
+        <span className='warp-list-row-title'>{movie.title}</span>
+        <span className='warp-list-row-meta'>{formatMovieMeta(movie)}</span>
+      </span>
+      <span className='warp-list-row-genres'>
+        {(movie.genres.length ? movie.genres : ['Movie'])
+          .slice(0, 3)
+          .map((genre) => (
+            <span key={genre}>{genre}</span>
+          ))}
+      </span>
+    </button>
+  ),
+)
 const WarpList = ({
   activeMovieId,
   errorMessage,
@@ -1533,6 +1934,27 @@ const WarpList = ({
       )
     })
   }, [groupDirection, grouping, movies])
+
+  // The first screenful renders straight away; the rest as it scrolls near.
+  const eagerChunkKeys = useMemo(() => {
+    const keys = new Set<string>()
+    let rows = 0
+    for (const [group, groupMovies] of groupedMovies) {
+      for (
+        let chunk = 0;
+        chunk * LIST_CHUNK_SIZE < groupMovies.length;
+        chunk++
+      ) {
+        if (rows >= LIST_EAGER_ROWS) return keys
+        keys.add(`${group}:${chunk}`)
+        rows += Math.min(
+          LIST_CHUNK_SIZE,
+          groupMovies.length - chunk * LIST_CHUNK_SIZE,
+        )
+      }
+    }
+    return keys
+  }, [groupedMovies])
 
   // A new primary sort key starts with every group expanded.
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset on grouping change only
@@ -1764,40 +2186,27 @@ const WarpList = ({
                     { '--group-row-count': groupMovies.length } as CSSProperties
                   }
                 >
-                  {groupMovies.map((movie) => (
-                    <button
-                      type='button'
-                      key={movie.id}
-                      data-movie-id={movie.id}
-                      className={cn(
-                        'warp-list-row',
-                        activeMovieId === movie.id && 'is-active',
-                        randomPulseId === movie.id && 'is-random-pulse',
+                  {chunkRows(groupMovies).map((chunk, chunkIndex) => (
+                    <ListRowChunk
+                      key={chunk[0]?.id ?? chunkIndex}
+                      count={chunk.length}
+                      eager={eagerChunkKeys.has(`${group}:${chunkIndex}`)}
+                      forceVisible={chunk.some(
+                        (movie) => movie.id === randomPulseId,
                       )}
-                      tabIndex={isCollapsed ? -1 : undefined}
-                      onClick={() => onOpenMovie(movie)}
-                      onFocus={() => onSelectMovie(movie)}
-                      onMouseEnter={() => onSelectMovie(movie)}
-                    >
-                      <span className='warp-list-row-poster' aria-hidden='true'>
-                        <MoviePoster movie={movie} />
-                      </span>
-                      <span className='warp-list-row-main'>
-                        <span className='warp-list-row-title'>
-                          {movie.title}
-                        </span>
-                        <span className='warp-list-row-meta'>
-                          {formatMovieMeta(movie)}
-                        </span>
-                      </span>
-                      <span className='warp-list-row-genres'>
-                        {(movie.genres.length ? movie.genres : ['Movie'])
-                          .slice(0, 3)
-                          .map((genre) => (
-                            <span key={genre}>{genre}</span>
-                          ))}
-                      </span>
-                    </button>
+                      rows={chunk}
+                      renderRow={(movie) => (
+                        <ListRow
+                          key={movie.id}
+                          isActive={activeMovieId === movie.id}
+                          isCollapsed={isCollapsed}
+                          isRandomPulse={randomPulseId === movie.id}
+                          movie={movie}
+                          onOpenMovie={onOpenMovie}
+                          onSelectMovie={onSelectMovie}
+                        />
+                      )}
+                    />
                   ))}
                 </div>
               </section>
@@ -2395,9 +2804,10 @@ const AboutDrawer = ({
           <p className='warp-about-eyebrow'>About</p>
           <h2>ScrollFlix</h2>
           <p>
-            A globe of {movieCount.toLocaleString()} film posters for the nights
-            you can&apos;t decide. Spin it, filter it, or let Shuffle pick, then
-            open a film to see what it is and where it&apos;s showing.
+            {movieCount.toLocaleString()} films on a globe of posters, for the
+            nights you can&apos;t decide. Spin it, filter it, or let Shuffle
+            pick, then open a film to see what it is and where it&apos;s
+            showing.
           </p>
         </div>
         <div className='warp-about-page-actions'>
@@ -2453,9 +2863,11 @@ const AboutDrawer = ({
           <p>
             Titles, years, ratings, genres and summaries come from the Full TMDB
             Movies Dataset on Kaggle, used under the Open Data Commons
-            Attribution License. Posters are TMDB artwork, prepared and served
-            from this site. Some details are incomplete or out of date, so treat
-            ratings and runtimes as a guide.
+            Attribution License. Posters are TMDB artwork: the most popular
+            films&apos; are prepared and served from this site, and the rest
+            load from TMDB&apos;s image service. Some details are incomplete or
+            out of date (most films have no runtime yet), so treat ratings and
+            runtimes as a guide.
           </p>
           <p className='warp-about-fineprint'>
             This product uses the TMDB API but is not endorsed or certified by
@@ -2696,32 +3108,19 @@ const MovieDetailsCard = ({
   ].filter((stat): stat is string => Boolean(stat))
   const detailsStyle = {
     '--details-drag-y': `${dragOffset}px`,
-    '--details-backdrop': `url(${JSON.stringify(movie.posterUrl)})`,
+    // CSS images are fetched without CORS, so catalogue films use a size the
+    // globe never requests (it is blurred anyway); see MoviePoster.
+    '--details-backdrop': `url(${JSON.stringify(
+      movie.posterDetailUrl
+        ? movie.posterUrl.replace('/w154/', '/w92/')
+        : movie.posterUrl,
+    )})`,
   } as CSSProperties
-  const similarMovies = useMemo(() => {
-    const currentGenres = new Set(movie.genres)
-    return movies
-      .filter(
-        (candidateMovie) =>
-          candidateMovie.id !== movie.id &&
-          candidateMovie.genres.some((genre) => currentGenres.has(genre)),
-      )
-      .map((candidateMovie) => ({
-        movie: candidateMovie,
-        overlap: candidateMovie.genres.filter((genre) =>
-          currentGenres.has(genre),
-        ).length,
-      }))
-      .sort(
-        (candidateA, candidateB) =>
-          candidateB.overlap - candidateA.overlap ||
-          (candidateB.movie.ratingValue ?? 0) -
-            (candidateA.movie.ratingValue ?? 0) ||
-          candidateA.movie.rank - candidateB.movie.rank,
-      )
-      .slice(0, 6)
-      .map(({ movie: similarMovie }) => similarMovie)
-  }, [movie.genres, movie.id, movies])
+  const movieText = useMovieText(movie)
+  const similarMovies = useMemo(
+    () => getSimilarMovies(movie, movies),
+    [movie, movies],
+  )
 
   return (
     <section
@@ -2767,7 +3166,7 @@ const MovieDetailsCard = ({
           </div>
         )}
         <div className='warp-details-poster'>
-          <MoviePoster loading='eager' movie={movie} />
+          <MoviePoster loading='eager' movie={movie} size='detail' />
         </div>
         <div className='warp-details-copy'>
           <div className='warp-details-copy-scroll'>
@@ -2779,11 +3178,16 @@ const MovieDetailsCard = ({
               </ul>
             ) : null}
             <h2>{movie.title}</h2>
-            {movie.tagline ? (
-              <p className='warp-details-tagline'>{movie.tagline}</p>
+            {movieText?.tagline ? (
+              <p className='warp-details-tagline'>{movieText.tagline}</p>
             ) : null}
-            <p className='warp-details-overview'>
-              {movie.overview || 'No overview available yet.'}
+            <p
+              className='warp-details-overview'
+              aria-busy={movieText ? undefined : true}
+            >
+              {movieText
+                ? movieText.overview || 'No overview available yet.'
+                : 'Loading the overview…'}
             </p>
             <div className='warp-details-genres'>
               {movie.genres.map((genre) => (
@@ -2831,8 +3235,9 @@ const MovieDetailsCard = ({
                             <strong>{similarMovie.title}</strong>
                             <span>{formatCompactMeta(similarMovie)}</span>
                             <em>
-                              {similarMovie.overview ||
-                                'No overview available yet.'}
+                              {getCachedMovieText(similarMovie)?.overview ||
+                                similarMovie.genres.slice(0, 3).join(' · ') ||
+                                'Movie'}
                             </em>
                           </span>
                         </button>

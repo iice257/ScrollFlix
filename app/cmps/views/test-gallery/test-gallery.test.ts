@@ -8,9 +8,11 @@ import {
   formatMovieMeta,
   getGalleryWindow,
   getGenreOverlap,
+  getSimilarMovies,
   groupMoviesAlphabetically,
   groupMoviesByRating,
   groupMoviesByYear,
+  mapCatalogRow,
   resolveMoviePosterUrls,
   sortMoviesByRules,
   sortMoviesForList,
@@ -241,5 +243,76 @@ describe('test gallery filtering helpers', () => {
         year: '----',
       }),
     ).toBe('Year: - | Rating: - | Hour: -')
+  })
+})
+
+describe('catalogue films', () => {
+  it('maps a compact catalogue row to a movie with TMDB posters', () => {
+    const mapped = mapCatalogRow(
+      [603, 'The Matrix', 1999, 79, [0, 2], 1, 'abc123', '3a4b5c'],
+      12,
+      2000,
+      {
+        countries: ['France', 'United States of America'],
+        genres: ['Action', 'Drama', 'Science Fiction'],
+      },
+    )
+    expect(mapped).toMatchObject({
+      id: 'c603',
+      rank: 2000,
+      title: 'The Matrix',
+      year: '1999',
+      rating: '7.9',
+      ratingValue: 7.9,
+      genres: ['Action', 'Science Fiction'],
+      countries: 'United States of America',
+      posterUrl: 'https://image.tmdb.org/t/p/w154/abc123.jpg',
+      posterDetailUrl: 'https://image.tmdb.org/t/p/w342/abc123.jpg',
+      placeholderColor: '#3a4b5c',
+      runtimeMinutes: null,
+      textIndex: 12,
+    })
+  })
+
+  it('treats a zero rating as unrated', () => {
+    const mapped = mapCatalogRow([1, 'X', 0, 0, [], -1, 'p', '000000'], 0, 1, {
+      countries: [],
+      genres: [],
+    })
+    expect(mapped.ratingValue).toBeNull()
+    expect(mapped.year).toBe('----')
+  })
+})
+
+describe('similar movies', () => {
+  const source = movie('s', 'Source', '2000', ['Horror', 'Thriller'], 1)
+  const pool = [
+    source,
+    {
+      ...movie('a', 'Both genres', '2001', ['Horror', 'Thriller'], 50),
+      ratingValue: 6,
+    },
+    {
+      ...movie('b', 'One genre, great', '2002', ['Horror'], 2),
+      ratingValue: 9,
+    },
+    {
+      ...movie('c', 'Obscure ten', '2003', ['Horror', 'Thriller'], 19000),
+      ratingValue: 10,
+    },
+    movie('d', 'Unrelated', '2004', ['Comedy'], 3),
+  ]
+
+  it('ranks genre overlap first, then popularity-weighted rating', () => {
+    expect(getSimilarMovies(source, pool).map((item) => item.id)).toEqual([
+      'a',
+      'c',
+      'b',
+    ])
+  })
+
+  it('caps the result and skips the film itself', () => {
+    const result = getSimilarMovies(source, pool, 1)
+    expect(result.map((item) => item.id)).toEqual(['a'])
   })
 })

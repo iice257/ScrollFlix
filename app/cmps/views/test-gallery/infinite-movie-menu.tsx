@@ -18,6 +18,8 @@ export type InfiniteMovieMenuItem<T> = {
   id: string
   image: string
   fallbackImage?: string
+  // Shown until the poster loads when it has no cell in the poster sprite.
+  placeholderColor?: string
   title: string
   description: string
   meta: string
@@ -150,6 +152,7 @@ type PosterSprite = {
 
 let posterSpritePromise: Promise<PosterSprite | null> | null = null
 const posterImageCache = new Map<string, Promise<HTMLImageElement>>()
+const POSTER_IMAGE_CACHE_LIMIT = 1800
 
 const loadPosterSprite = () => {
   posterSpritePromise ??= (async () => {
@@ -1368,7 +1371,6 @@ class InfiniteMovieEngine<T> {
     // Pixelated placeholders for every cell that has no full poster yet,
     // painted in small batches per frame so input never stalls.
     void loadPosterSprite().then((sprite) => {
-      if (!sprite) return
       let cursor = 0
       const paintBatch = () => {
         if (this.disposed || this.contextLost || !this.texture) return
@@ -1506,27 +1508,34 @@ class InfiniteMovieEngine<T> {
 
   private uploadPlaceholderCell(
     index: number,
-    sprite: PosterSprite,
+    sprite: PosterSprite | null,
     uploadCanvas: HTMLCanvasElement,
     uploadContext: CanvasRenderingContext2D,
   ) {
     const item = this.items[index]
-    const id = item ? posterIdFromUrl(item.image) : null
-    const spriteIndex = id ? sprite.indexById.get(id) : undefined
-    if (spriteIndex === undefined || !this.texture) return
-    uploadContext.imageSmoothingEnabled = false
-    uploadContext.drawImage(
-      sprite.image,
-      (spriteIndex % sprite.columns) * sprite.cellWidth,
-      Math.floor(spriteIndex / sprite.columns) * sprite.cellHeight,
-      sprite.cellWidth,
-      sprite.cellHeight,
-      0,
-      0,
-      this.atlasCellSize,
-      this.atlasCellSize,
-    )
-    uploadContext.imageSmoothingEnabled = true
+    if (!item || !this.texture) return
+    const id = posterIdFromUrl(item.image)
+    const spriteIndex = id ? sprite?.indexById.get(id) : undefined
+    if (sprite && spriteIndex !== undefined) {
+      uploadContext.imageSmoothingEnabled = false
+      uploadContext.drawImage(
+        sprite.image,
+        (spriteIndex % sprite.columns) * sprite.cellWidth,
+        Math.floor(spriteIndex / sprite.columns) * sprite.cellHeight,
+        sprite.cellWidth,
+        sprite.cellHeight,
+        0,
+        0,
+        this.atlasCellSize,
+        this.atlasCellSize,
+      )
+      uploadContext.imageSmoothingEnabled = true
+    } else if (item.placeholderColor) {
+      uploadContext.fillStyle = item.placeholderColor
+      uploadContext.fillRect(0, 0, this.atlasCellSize, this.atlasCellSize)
+    } else {
+      return
+    }
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture)
     this.gl.texSubImage2D(
       this.gl.TEXTURE_2D,
@@ -1583,10 +1592,22 @@ class InfiniteMovieEngine<T> {
 
   private loadImage(src: string, fallbackSrc?: string) {
     const cached = posterImageCache.get(src)
-    if (cached) return cached
+    if (cached) {
+      // Re-insert so the cache evicts least recently used posters first.
+      posterImageCache.delete(src)
+      posterImageCache.set(src, cached)
+      return cached
+    }
     const pending = this.fetchImage(src, fallbackSrc)
     posterImageCache.set(src, pending)
     pending.catch(() => posterImageCache.delete(src))
+    // Filters can walk through thousands of catalogue posters; cap what stays
+    // referenced so decoded images can be freed, mostly on phones.
+    while (posterImageCache.size > POSTER_IMAGE_CACHE_LIMIT) {
+      const oldest = posterImageCache.keys().next().value
+      if (oldest === undefined) break
+      posterImageCache.delete(oldest)
+    }
     return pending
   }
 
