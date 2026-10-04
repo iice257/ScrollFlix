@@ -1115,6 +1115,297 @@
     }
   }
 
+  /* Index sort: dock pill showing the active sort, and its panel. */
+  .warp-sort-button {
+    display: flex;
+    height: var(--warp-control-height);
+    align-items: center;
+    gap: 8px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--warp-pill-bg);
+    padding: 0 6px 0 14px;
+    color: #0b0b0b;
+    font-size: 15px;
+    font-weight: 750;
+    letter-spacing: -0.02em;
+    backdrop-filter: blur(14px) saturate(0.96);
+    -webkit-backdrop-filter: blur(14px) saturate(0.96);
+    transition:
+      background 160ms ease,
+      transform 160ms ease;
+  }
+
+  .warp-sort-button:hover,
+  .warp-sort-button:focus-visible,
+  .warp-sort-button.is-open {
+    outline: none;
+    background: #fff;
+  }
+
+  .warp-sort-button:active {
+    transform: translateY(1px) scale(0.98);
+  }
+
+  .warp-sort-icon {
+    width: 16px;
+    height: 16px;
+    stroke-width: 2.4;
+  }
+
+  .warp-sort-badge {
+    display: inline-flex;
+    height: calc(var(--warp-control-height) - 12px);
+    align-items: center;
+    gap: 3px;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 0.1);
+    padding: 0 10px;
+    font-size: 13px;
+    font-weight: 850;
+    white-space: nowrap;
+  }
+
+  .warp-sort-badge svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .warp-sort-badge small {
+    margin-left: 3px;
+    color: rgb(0 0 0 / 0.55);
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  .warp-sort-panel {
+    position: fixed;
+    left: 50%;
+    bottom: 84px;
+    z-index: 32;
+    display: grid;
+    width: min(320px, calc(100vw - 32px));
+    gap: 10px;
+    translate: -50% 0;
+    border: 1px solid rgb(255 255 255 / 0.14);
+    border-radius: 20px;
+    background: rgb(8 8 8 / 0.96);
+    padding: 14px 12px 12px;
+    color: #fff;
+    animation: warp-filter-panel-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .warp-sort-panel[data-motion="exit"] {
+    animation: warp-filter-panel-out 220ms ease both;
+  }
+
+  .warp-sort-panel-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 4px;
+  }
+
+  .warp-sort-panel-heading p {
+    margin: 0;
+    color: rgb(255 255 255 / 0.52);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .warp-sort-panel-heading button {
+    border: 0;
+    background: transparent;
+    padding: 2px 0;
+    color: rgb(255 255 255 / 0.7);
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .warp-sort-panel-heading button:disabled {
+    opacity: 0.35;
+  }
+
+  .warp-sort-panel-heading button:not(:disabled):hover,
+  .warp-sort-panel-heading button:focus-visible {
+    outline: none;
+    color: #fff;
+  }
+
+  .warp-sort-rows {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .warp-sort-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-radius: 14px;
+    padding: 6px 6px 6px 10px;
+    transition: background 160ms ease;
+  }
+
+  .warp-sort-row.is-selected {
+    background: rgb(255 255 255 / 0.07);
+  }
+
+  .warp-sort-name {
+    display: flex;
+    min-height: 32px;
+    flex: 1;
+    align-items: center;
+    gap: 10px;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: rgb(255 255 255 / 0.7);
+    font-size: 15px;
+    font-weight: 750;
+    letter-spacing: -0.02em;
+    text-align: left;
+  }
+
+  .warp-sort-row.is-selected .warp-sort-name {
+    color: #fff;
+  }
+
+  .warp-sort-name:disabled {
+    cursor: default;
+  }
+
+  .warp-sort-name:focus-visible {
+    outline: 2px solid rgb(255 255 255 / 0.6);
+    outline-offset: 4px;
+    border-radius: 8px;
+  }
+
+  .warp-sort-check {
+    display: grid;
+    width: 18px;
+    height: 18px;
+    flex: none;
+    place-items: center;
+    border: 1.5px solid rgb(255 255 255 / 0.35);
+    border-radius: 6px;
+    transition:
+      background 160ms ease,
+      border-color 160ms ease;
+  }
+
+  .warp-sort-check svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .warp-sort-row.is-selected .warp-sort-check {
+    border-color: #fff;
+    background: #fff;
+    color: #000;
+  }
+
+  .warp-sort-name:not(:disabled):hover .warp-sort-check {
+    border-color: rgb(255 255 255 / 0.7);
+  }
+
+  .warp-sort-order {
+    display: grid;
+    min-width: 18px;
+    height: 18px;
+    place-items: center;
+    border-radius: 999px;
+    background: #fff;
+    color: #000;
+    font-size: 10px;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .warp-sort-directions {
+    display: flex;
+    gap: 6px;
+    margin: 0;
+    border: 0;
+    padding: 0;
+  }
+
+  .warp-sort-direction {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    place-items: center;
+    border: 1px solid rgb(255 255 255 / 0.16);
+    border-radius: 999px;
+    background: transparent;
+    color: rgb(255 255 255 / 0.72);
+    transition:
+      background 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .warp-sort-direction svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .warp-sort-direction:hover,
+  .warp-sort-direction:focus-visible {
+    outline: none;
+    border-color: rgb(255 255 255 / 0.45);
+    color: #fff;
+  }
+
+  .warp-sort-direction:active {
+    transform: scale(0.94);
+  }
+
+  .warp-sort-direction.is-active {
+    border-color: #fff;
+    background: #fff;
+    color: #000;
+  }
+
+  /* A ticked key still waiting for its direction. */
+  .warp-sort-row.is-pending .warp-sort-direction {
+    border-color: rgb(255 255 255 / 0.5);
+    animation: warp-sort-pending 1.4s ease-in-out infinite;
+  }
+
+  @keyframes warp-sort-pending {
+    50% {
+      box-shadow: 0 0 0 4px rgb(255 255 255 / 0.12);
+    }
+  }
+
+  .warp-sort-hint {
+    margin: 0;
+    padding: 2px 4px 0;
+    color: rgb(255 255 255 / 0.5);
+    font-size: 11px;
+    font-weight: 650;
+    line-height: 1.4;
+  }
+
+  .warp-genres-actions button.is-danger:not(:disabled) {
+    border-color: #e5484d;
+    background: #e5484d;
+    color: #fff;
+  }
+
+  .warp-genres-actions button.is-danger:not(:disabled):hover,
+  .warp-genres-actions button.is-danger:not(:disabled):focus-visible {
+    border-color: #d13438;
+    background: #d13438;
+  }
+
   /* About lives behind this button (bottom-right). */
   .warp-info-button {
     position: fixed;
@@ -2310,40 +2601,8 @@
     background: #000;
   }
 
-  .warp-list-sort {
-    display: flex;
-    width: fit-content;
-    border-radius: 999px;
-    background: rgb(255 255 255 / 0.12);
-    padding: 4px;
-  }
-
-  .warp-list-sort button {
-    min-width: 0;
-    height: var(--warp-control-inner-height);
-    padding: 0 14px;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: rgb(255 255 255 / 0.42);
-    font-size: 13px;
-    font-weight: 900;
-    letter-spacing: -0.03em;
-    transition:
-      background 160ms ease,
-      color 160ms ease,
-      transform 160ms ease;
-  }
-
-  .warp-list-sort button.is-active {
-    background: #fff;
-    color: #000;
-  }
-
-  .warp-list-sort button:active,
   .warp-list-search-clear:active,
-  .warp-list-search-toggle:active,
-  .warp-random-cta:active {
+  .warp-list-search-toggle:active {
     transform: translateY(1px) scale(0.98);
   }
 
@@ -2435,50 +2694,6 @@
     display: flex;
     justify-self: end;
     gap: 8px;
-  }
-
-  .warp-random-cta {
-    display: grid;
-    width: var(--warp-control-height);
-    height: var(--warp-control-height);
-    place-items: center;
-    border: 0;
-    border-radius: 999px;
-    background: rgb(255 255 255 / 0.12);
-    color: #fff;
-    transition:
-      background 180ms ease,
-      color 180ms ease,
-      transform 180ms ease;
-  }
-
-  .warp-random-cta:hover,
-  .warp-random-cta:focus-visible {
-    outline: none;
-    background: #fff;
-    color: #000;
-    transform: translateY(-1px);
-  }
-
-  .warp-random-cta.is-rolling {
-    animation: warp-dice-roll 640ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .warp-random-cta:disabled {
-    opacity: 0.48;
-  }
-
-  .warp-dice-face {
-    position: relative;
-    display: grid;
-    width: 21px;
-    height: 21px;
-    place-items: center;
-  }
-
-  .warp-dice-icon {
-    width: 21px;
-    height: 21px;
   }
 
   .warp-list-groups {
@@ -3168,17 +3383,6 @@
   }
 
 
-  @keyframes warp-dice-roll {
-    0% {
-      transform: rotate(0deg) scale(0.92);
-    }
-    58% {
-      transform: rotate(270deg) scale(1.08);
-    }
-    100% {
-      transform: rotate(360deg) scale(1);
-    }
-  }
 
   @keyframes warp-poster-sheen {
     0% {
@@ -3356,6 +3560,49 @@
       display: none;
     }
 
+    /* The index keeps its Genres button on small screens. */
+    .warp-shell[data-mode="list"] .warp-main-nav,
+    .warp-shell[data-mode="genres"] .warp-main-nav {
+      display: flex;
+      padding: 3px;
+    }
+
+    .warp-shell[data-mode="list"] .warp-main-nav button,
+    .warp-shell[data-mode="genres"] .warp-main-nav button {
+      min-width: 0;
+      padding: 0 12px;
+      font-size: 13px;
+    }
+
+    .warp-sort-button {
+      padding: 0 4px;
+    }
+
+    .warp-sort-badge {
+      padding: 0 8px;
+      font-size: 12px;
+    }
+
+    /* The index dock carries more controls, so its view toggle goes
+       icon-only on phones; the white segment still marks the active view. */
+    .warp-shell[data-mode="list"] .warp-mode-label,
+    .warp-shell[data-mode="genres"] .warp-mode-label {
+      display: none;
+    }
+
+    .warp-shell[data-mode="list"] .warp-mode-toggle button[aria-pressed="true"],
+    .warp-shell[data-mode="genres"] .warp-mode-toggle button[aria-pressed="true"] {
+      width: var(--warp-control-inner-height);
+    }
+
+    .warp-sort-icon {
+      display: none;
+    }
+
+    .warp-sort-panel {
+      bottom: 66px;
+    }
+
     .warp-filter-actions {
       right: 12px;
       bottom: 18px;
@@ -3395,6 +3642,8 @@
 
     .warp-dock-row {
       gap: 6px;
+      /* Keep clear of the i button in the bottom-right corner. */
+      margin-right: calc(var(--warp-control-height) + 12px);
     }
 
     .warp-title-card {
@@ -3451,12 +3700,6 @@
 
     .warp-list-title h1 {
       font-size: 34px;
-    }
-
-    .warp-list-sort {
-      width: fit-content;
-      grid-column: 1 / -1;
-      order: 2;
     }
 
     .warp-list-search {
@@ -3742,6 +3985,20 @@
     .warp-details-similar-copy em {
       display: block;
       font-size: 10px;
+    }
+  }
+
+  /* The narrowest phones can't fit the index dock beside the i button, so
+     the button sits just above the dock there (the index has no title card). */
+  @media (max-width: 359px) {
+    .warp-shell[data-mode="list"] .warp-dock-row,
+    .warp-shell[data-mode="genres"] .warp-dock-row {
+      margin-right: 0;
+    }
+
+    .warp-shell[data-mode="list"] .warp-info-button,
+    .warp-shell[data-mode="genres"] .warp-info-button {
+      bottom: calc(18px + var(--warp-control-height) + 10px);
     }
   }
 

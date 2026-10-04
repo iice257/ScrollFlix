@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applySortDirection,
+  applySortToggle,
   filterMoviesByDecisionFilters,
   filterMoviesByGenres,
   filterMoviesByTitleSearch,
@@ -10,6 +12,7 @@ import {
   groupMoviesByRating,
   groupMoviesByYear,
   resolveMoviePosterUrls,
+  sortMoviesByRules,
   sortMoviesForList,
 } from './test-gallery'
 
@@ -163,6 +166,64 @@ describe('test gallery filtering helpers', () => {
       '6+': [rated[0]],
       Unrated: [rated[2]],
     })
+  })
+
+  it('sorts by stacked rules and ignores rules without a direction', () => {
+    const pool = [
+      { ...movies[0], year: '2007', rating: '7.5', ratingValue: 7.5 },
+      { ...movies[1], year: '2007', rating: '8.1', ratingValue: 8.1 },
+      { ...movies[2], year: '1995', rating: '6.0', ratingValue: 6 },
+      { ...movies[3], year: '2007', rating: '7.5', ratingValue: 7.5 },
+    ]
+    const titles = (rules: Parameters<typeof sortMoviesByRules>[1]) =>
+      sortMoviesByRules(pool, rules).map((item) => item.title)
+
+    // Newest first, then highest rated, then title.
+    expect(
+      titles([
+        { key: 'year', direction: 'desc' },
+        { key: 'rating', direction: 'desc' },
+      ]),
+    ).toEqual([
+      'Before Sunrise',
+      'A Quiet Place',
+      'Zodiac',
+      'Only Lovers Left Alive',
+    ])
+    // A pending rule (no direction yet) has no effect.
+    expect(
+      titles([
+        { key: 'year', direction: 'desc' },
+        { key: 'rating', direction: null },
+      ]),
+    ).toEqual([
+      'A Quiet Place',
+      'Before Sunrise',
+      'Zodiac',
+      'Only Lovers Left Alive',
+    ])
+  })
+
+  it('manages the sort rule stack like the sort panel', () => {
+    const start = [{ key: 'year', direction: 'asc' }] as const
+    // Ticking a key appends it as pending; a direction click sets it.
+    const withRating = applySortToggle([...start], 'rating')
+    expect(withRating).toEqual([
+      { key: 'year', direction: 'asc' },
+      { key: 'rating', direction: null },
+    ])
+    expect(applySortDirection(withRating, 'rating', 'desc')[1]).toEqual({
+      key: 'rating',
+      direction: 'desc',
+    })
+    // One click on an unselected key adds it with that direction.
+    expect(applySortDirection([...start], 'alpha', 'asc')).toHaveLength(2)
+    // The last remaining rule cannot be removed.
+    expect(applySortToggle([...start], 'year')).toEqual([...start])
+    // Removing the first rule promotes the next; a pending one gets a default.
+    expect(applySortToggle(withRating, 'year')).toEqual([
+      { key: 'rating', direction: 'desc' },
+    ])
   })
 
   it('formats movie metadata consistently with explicit missing states', () => {

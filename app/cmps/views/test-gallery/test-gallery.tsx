@@ -1,4 +1,8 @@
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Check,
   ChevronDown,
   ChevronRight,
   ChevronsDown,
@@ -459,34 +463,85 @@ export const getGalleryWindow = (
     .slice(0, limit)
     .map(({ movie }) => movie)
 
+export type SortDirection = 'asc' | 'desc'
+// A rule without a direction is "pending": picked in the sort panel but not
+// applied until the viewer chooses ascending or descending.
+export type SortRule = { key: ListGrouping; direction: SortDirection | null }
+
+export const DEFAULT_SORT_DIRECTION: Record<ListGrouping, SortDirection> = {
+  alpha: 'asc',
+  rating: 'desc',
+  year: 'asc',
+}
+
+const compareMoviesByKey = (
+  movieA: TestMovie,
+  movieB: TestMovie,
+  key: ListGrouping,
+) => {
+  if (key === 'alpha') return movieA.title.localeCompare(movieB.title)
+  if (key === 'rating')
+    return (movieA.ratingValue ?? -1) - (movieB.ratingValue ?? -1)
+  return getYearNumber(movieA) - getYearNumber(movieB)
+}
+
+export const getActiveSortRules = (rules: SortRule[]) => {
+  const active = rules.filter(
+    (rule): rule is { key: ListGrouping; direction: SortDirection } =>
+      rule.direction !== null,
+  )
+  return active.length
+    ? active
+    : [{ key: 'year' as const, direction: 'asc' as const }]
+}
+
+export const sortMoviesByRules = (movies: TestMovie[], rules: SortRule[]) => {
+  const active = getActiveSortRules(rules)
+  // Grouping by initial letter only lists titles that start with a letter.
+  const sortableMovies =
+    active[0].key === 'alpha' ? movies.filter(hasLatinLeadingTitle) : movies
+
+  return [...sortableMovies].sort((movieA, movieB) => {
+    for (const rule of active) {
+      const order = compareMoviesByKey(movieA, movieB, rule.key)
+      if (order) return rule.direction === 'desc' ? -order : order
+    }
+    return movieA.title.localeCompare(movieB.title)
+  })
+}
+
 export const sortMoviesForList = (
   movies: TestMovie[],
   grouping: ListGrouping,
-) => {
-  const sortableMovies =
-    grouping === 'alpha' ? movies.filter(hasLatinLeadingTitle) : movies
+) =>
+  sortMoviesByRules(movies, [
+    { key: grouping, direction: DEFAULT_SORT_DIRECTION[grouping] },
+  ])
 
-  return [...sortableMovies].sort((movieA, movieB) => {
-    if (grouping === 'rating') {
-      return (
-        (movieB.ratingValue ?? -1) - (movieA.ratingValue ?? -1) ||
-        movieA.title.localeCompare(movieB.title)
-      )
-    }
-
-    if (grouping === 'alpha') {
-      return (
-        movieA.title.localeCompare(movieB.title) ||
-        getYearNumber(movieA) - getYearNumber(movieB)
-      )
-    }
-
-    return (
-      getYearNumber(movieA) - getYearNumber(movieB) ||
-      movieA.title.localeCompare(movieB.title)
+// Ticking a key adds it as the next (pending) rule; unticking removes it.
+// The last rule stays, and a pending rule promoted to first gets a default.
+export const applySortToggle = (rules: SortRule[], key: ListGrouping) => {
+  if (!rules.some((rule) => rule.key === key))
+    return [...rules, { key, direction: null }]
+  if (rules.length === 1) return rules
+  return rules
+    .filter((rule) => rule.key !== key)
+    .map((rule, index) =>
+      index === 0 && !rule.direction
+        ? { ...rule, direction: DEFAULT_SORT_DIRECTION[rule.key] }
+        : rule,
     )
-  })
 }
+
+// Choosing a direction sets it, adding the key in one click if needed.
+export const applySortDirection = (
+  rules: SortRule[],
+  key: ListGrouping,
+  direction: SortDirection,
+) =>
+  rules.some((rule) => rule.key === key)
+    ? rules.map((rule) => (rule.key === key ? { ...rule, direction } : rule))
+    : [...rules, { key, direction }]
 
 export const groupMoviesByYear = (movies: TestMovie[]) =>
   movies.reduce<Record<string, TestMovie[]>>((groups, movie) => {
@@ -522,11 +577,24 @@ export const groupMoviesByRating = (movies: TestMovie[]) =>
 const compareRatingGroups = (groupA: string, groupB: string) =>
   (Number.parseFloat(groupB) || -1) - (Number.parseFloat(groupA) || -1)
 
-const LIST_GROUPINGS: Array<{ label: string; value: ListGrouping }> = [
-  { label: 'Year', value: 'year' },
-  { label: 'A–Z', value: 'alpha' },
-  { label: 'Rating', value: 'rating' },
+const SORT_OPTIONS: Array<{
+  key: ListGrouping
+  label: string
+  asc: string
+  desc: string
+}> = [
+  { key: 'year', label: 'Year', asc: 'Oldest first', desc: 'Newest first' },
+  { key: 'alpha', label: 'A–Z', asc: 'A to Z', desc: 'Z to A' },
+  {
+    key: 'rating',
+    label: 'Rating',
+    asc: 'Lowest first',
+    desc: 'Highest first',
+  },
 ]
+const SORT_LABELS = Object.fromEntries(
+  SORT_OPTIONS.map((option) => [option.key, option.label]),
+) as Record<ListGrouping, string>
 
 const getMovieListGroupKey = (movie: TestMovie, grouping: ListGrouping) => {
   if (grouping === 'rating') return getRatingGroupKey(movie)
@@ -641,7 +709,11 @@ const loadMovieDataset = () => {
 export const TestGalleryApp = () => {
   const [movies, setMovies] = useState<TestMovie[]>(cachedMovieDataset ?? [])
   const [mode, setMode] = useState<ViewMode>('wall')
-  const [listGrouping, setListGrouping] = useState<ListGrouping>('year')
+  const [sortRules, setSortRules] = useState<SortRule[]>([
+    { key: 'year', direction: 'asc' },
+  ])
+  const [sortOpen, setSortOpen] = useState(false)
+  const [listRandomNonce, setListRandomNonce] = useState(0)
   const [activeMovieId, setActiveMovieId] = useState<string | null>(
     cachedMovieDataset?.[0]?.id ?? null,
   )
@@ -783,11 +855,11 @@ export const TestGalleryApp = () => {
 
   const listMovies = useMemo(
     () =>
-      sortMoviesForList(searchableListMovies, listGrouping).slice(
+      sortMoviesByRules(searchableListMovies, sortRules).slice(
         0,
         LIST_WINDOW_SIZE,
       ),
-    [listGrouping, searchableListMovies],
+    [searchableListMovies, sortRules],
   )
 
   useEffect(() => {
@@ -816,6 +888,7 @@ export const TestGalleryApp = () => {
   )
   const filterPresence = useExitPresence(filterOpen)
   const aboutPresence = useExitPresence(aboutOpen)
+  const sortPresence = useExitPresence(sortOpen && mode === 'list')
   const watchPresence = useExitPresence(Boolean(watchMovie), watchMovie)
   const detailsPresence = useExitPresence(Boolean(detailsMovie), detailsMovie)
 
@@ -896,7 +969,14 @@ export const TestGalleryApp = () => {
   }, [])
 
   useEffect(() => {
-    if (!detailsMovieId && !watchMovieId && !aboutOpen && !filterOpen) return
+    if (
+      !detailsMovieId &&
+      !watchMovieId &&
+      !aboutOpen &&
+      !filterOpen &&
+      !sortOpen
+    )
+      return
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
@@ -904,12 +984,13 @@ export const TestGalleryApp = () => {
       if (watchMovieId) setWatchMovieId(null)
       else if (detailsMovieId) setDetailsMovieId(null)
       else if (aboutOpen) setAboutOpen(false)
+      else if (sortOpen) setSortOpen(false)
       else setFilterOpen(false)
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [aboutOpen, detailsMovieId, filterOpen, watchMovieId])
+  }, [aboutOpen, detailsMovieId, filterOpen, sortOpen, watchMovieId])
 
   return (
     <main
@@ -939,13 +1020,14 @@ export const TestGalleryApp = () => {
         <WarpList
           activeMovieId={activeMovie?.id ?? null}
           errorMessage={errorMessage}
-          grouping={listGrouping}
+          grouping={getActiveSortRules(sortRules)[0].key}
+          groupDirection={getActiveSortRules(sortRules)[0].direction}
           loadState={loadState}
           movies={listMovies}
+          randomRequest={listRandomNonce}
           searchQuery={listSearchQuery}
           searchResultCount={searchableListMovies.length}
           totalMovieCount={movies.length}
-          onGroupingChange={setListGrouping}
           onOpenMovie={handleOpenMovie}
           onPickRandomMovie={handlePickRandomMovie}
           onSearchQueryChange={setListSearchQuery}
@@ -958,7 +1040,7 @@ export const TestGalleryApp = () => {
           genres={genreSummaries}
           resultCount={filteredMovies.length}
           selectedGenres={selectedGenres}
-          onBackToGallery={() => setMode('wall')}
+          onBackToGallery={() => setMode('list')}
           onClear={clearGenres}
           onToggleGenre={toggleGenre}
         />
@@ -978,6 +1060,7 @@ export const TestGalleryApp = () => {
           setMode('genres')
           setAboutOpen(false)
           setFilterOpen(false)
+          setSortOpen(false)
         }}
         onResetGallery={() => {
           clearAllFilters()
@@ -990,6 +1073,7 @@ export const TestGalleryApp = () => {
         onModeChange={(nextMode) => {
           setAboutOpen(false)
           setFilterOpen(false)
+          setSortOpen(false)
           setMode(nextMode)
         }}
         dockTop={
@@ -1035,6 +1119,52 @@ export const TestGalleryApp = () => {
             </>
           ) : null
         }
+        dockLead={
+          mode === 'list' ? (
+            <>
+              <button
+                type='button'
+                className={cn('warp-sort-button', sortOpen && 'is-open')}
+                aria-expanded={sortOpen}
+                aria-label={`Sort: ${SORT_LABELS[getActiveSortRules(sortRules)[0].key]}`}
+                onClick={() => {
+                  setAboutOpen(false)
+                  setSortOpen((isOpen) => !isOpen)
+                }}
+              >
+                {sortOpen ? (
+                  <X className='warp-sort-icon' aria-hidden='true' />
+                ) : (
+                  <ArrowUpDown className='warp-sort-icon' aria-hidden='true' />
+                )}
+                <span className='warp-sort-badge'>
+                  {SORT_LABELS[getActiveSortRules(sortRules)[0].key]}
+                  {getActiveSortRules(sortRules)[0].direction === 'asc' ? (
+                    <ArrowUp aria-hidden='true' strokeWidth={2.8} />
+                  ) : (
+                    <ArrowDown aria-hidden='true' strokeWidth={2.8} />
+                  )}
+                  {getActiveSortRules(sortRules).length > 1 ? (
+                    <small>+{getActiveSortRules(sortRules).length - 1}</small>
+                  ) : null}
+                </span>
+              </button>
+              <button
+                type='button'
+                className='warp-shuffle-button'
+                aria-label='Jump to a random movie in the index'
+                disabled={!listMovies.length}
+                onClick={() => {
+                  setSortOpen(false)
+                  setListRandomNonce((nonce) => nonce + 1)
+                }}
+              >
+                <Dices className='warp-shuffle-icon' aria-hidden='true' />
+                <span className='warp-shuffle-label'>Shuffle</span>
+              </button>
+            </>
+          ) : null
+        }
         dockActions={
           <>
             {mode === 'wall' ? (
@@ -1049,50 +1179,52 @@ export const TestGalleryApp = () => {
                 <span className='warp-shuffle-label'>Shuffle</span>
               </button>
             ) : null}
-            <div
-              className={cn(
-                'warp-filter-actions',
-                selectedFilterCount > 0 && 'has-clear',
-              )}
-            >
-              {selectedFilterCount ? (
+            {mode === 'wall' ? (
+              <div
+                className={cn(
+                  'warp-filter-actions',
+                  selectedFilterCount > 0 && 'has-clear',
+                )}
+              >
+                {selectedFilterCount ? (
+                  <button
+                    type='button'
+                    className='warp-filter-clear'
+                    aria-label='Clear filters'
+                    onClick={clearAllFilters}
+                  >
+                    Clear
+                  </button>
+                ) : null}
                 <button
                   type='button'
-                  className='warp-filter-clear'
-                  aria-label='Clear filters'
-                  onClick={clearAllFilters}
+                  className={cn('warp-filter-button', filterOpen && 'is-open')}
+                  aria-expanded={filterOpen}
+                  aria-label={filterOpen ? 'Close filters' : 'Open filters'}
+                  onClick={() => {
+                    setAboutOpen(false)
+                    setFilterOpen((isOpen) => !isOpen)
+                  }}
                 >
-                  Clear
-                </button>
-              ) : null}
-              <button
-                type='button'
-                className={cn('warp-filter-button', filterOpen && 'is-open')}
-                aria-expanded={filterOpen}
-                aria-label={filterOpen ? 'Close filters' : 'Open filters'}
-                onClick={() => {
-                  setAboutOpen(false)
-                  setFilterOpen((isOpen) => !isOpen)
-                }}
-              >
-                {filterOpen ? (
-                  <X className='warp-filter-icon' aria-hidden='true' />
-                ) : (
-                  <SlidersHorizontal
-                    className='warp-filter-icon'
-                    aria-hidden='true'
-                  />
-                )}
-                <span className='warp-filter-label'>
-                  {filterOpen ? 'Close' : 'Filter'}
-                </span>
-                {selectedFilterCount ? (
-                  <span className='warp-filter-count'>
-                    {selectedFilterCount}
+                  {filterOpen ? (
+                    <X className='warp-filter-icon' aria-hidden='true' />
+                  ) : (
+                    <SlidersHorizontal
+                      className='warp-filter-icon'
+                      aria-hidden='true'
+                    />
+                  )}
+                  <span className='warp-filter-label'>
+                    {filterOpen ? 'Close' : 'Filter'}
                   </span>
-                ) : null}
-              </button>
-            </div>
+                  {selectedFilterCount ? (
+                    <span className='warp-filter-count'>
+                      {selectedFilterCount}
+                    </span>
+                  ) : null}
+                </button>
+              </div>
+            ) : null}
           </>
         }
       />
@@ -1139,6 +1271,20 @@ export const TestGalleryApp = () => {
             <em>Shows the globe now; posters keep sharpening as they load.</em>
           </span>
         </output>
+      ) : null}
+
+      {sortPresence.isPresent ? (
+        <SortPanel
+          motionPhase={sortPresence.motionPhase}
+          rules={sortRules}
+          onDirection={(key, direction) =>
+            setSortRules((rules) => applySortDirection(rules, key, direction))
+          }
+          onReset={() => setSortRules([{ key: 'year', direction: 'asc' }])}
+          onToggle={(key) =>
+            setSortRules((rules) => applySortToggle(rules, key))
+          }
+        />
       ) : null}
 
       {filterPresence.isPresent ? (
@@ -1293,12 +1439,14 @@ type WarpListProps = {
   activeMovieId: string | null
   errorMessage: string
   grouping: ListGrouping
+  groupDirection: SortDirection
   loadState: LoadState
   movies: TestMovie[]
+  // Bumped by the dock's Shuffle to pick and scroll to a random movie.
+  randomRequest: number
   searchQuery: string
   searchResultCount: number
   totalMovieCount: number
-  onGroupingChange: (grouping: ListGrouping) => void
   onOpenMovie: (movie: TestMovie) => void
   onPickRandomMovie: (movie: TestMovie) => void
   onSearchQueryChange: (searchQuery: string) => void
@@ -1309,12 +1457,13 @@ const WarpList = ({
   activeMovieId,
   errorMessage,
   grouping,
+  groupDirection,
   loadState,
   movies,
+  randomRequest,
   searchQuery,
   searchResultCount,
   totalMovieCount,
-  onGroupingChange,
   onOpenMovie,
   onPickRandomMovie,
   onSearchQueryChange,
@@ -1335,14 +1484,28 @@ const WarpList = ({
         : grouping === 'rating'
           ? groupMoviesByRating(movies)
           : groupMoviesByYear(movies)
-    return Object.entries(groups).sort(([groupA], [groupB]) =>
-      grouping === 'alpha'
-        ? groupA.localeCompare(groupB)
-        : grouping === 'rating'
-          ? compareRatingGroups(groupA, groupB)
-          : Number(groupA) - Number(groupB),
-    )
-  }, [grouping, movies])
+    const sign = groupDirection === 'desc' ? -1 : 1
+    return Object.entries(groups).sort(([groupA], [groupB]) => {
+      if (grouping === 'rating') {
+        // Bands run high to low by default; Unrated always stays last.
+        if (groupA === UNRATED_GROUP || groupB === UNRATED_GROUP)
+          return compareRatingGroups(groupA, groupB)
+        return -sign * compareRatingGroups(groupA, groupB)
+      }
+      return (
+        sign *
+        (grouping === 'alpha'
+          ? groupA.localeCompare(groupB)
+          : Number(groupA) - Number(groupB))
+      )
+    })
+  }, [groupDirection, grouping, movies])
+
+  // A new primary sort key starts with every group expanded.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on grouping change only
+  useEffect(() => {
+    setCollapsedGroups(new Set())
+  }, [grouping])
 
   useEffect(
     () => () => {
@@ -1360,11 +1523,6 @@ const WarpList = ({
     setCollapsedGroups(new Set())
     onSearchQueryChange('')
     searchInputRef.current?.focus()
-  }
-
-  const handleGroupingChange = (nextGrouping: ListGrouping) => {
-    setCollapsedGroups(new Set())
-    onGroupingChange(nextGrouping)
   }
 
   const handleSearchQueryChange = (nextSearchQuery: string) => {
@@ -1437,22 +1595,17 @@ const WarpList = ({
     })
   }
 
+  const randomRequestRef = useRef(randomRequest)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new request picks
+  useEffect(() => {
+    if (randomRequest === randomRequestRef.current) return
+    randomRequestRef.current = randomRequest
+    handlePickRandomMovie()
+  }, [randomRequest])
+
   return (
     <section className='warp-list' aria-label='Movie list view'>
       <header className='warp-list-heading'>
-        <div className='warp-list-sort' aria-label='Movie index grouping'>
-          {LIST_GROUPINGS.map((option) => (
-            <button
-              type='button'
-              key={option.value}
-              className={cn(grouping === option.value && 'is-active')}
-              aria-pressed={grouping === option.value}
-              onClick={() => handleGroupingChange(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
         <div className='warp-list-title'>
           <h1>Movie Index</h1>
           <p>
@@ -1514,17 +1667,6 @@ const WarpList = ({
             onClick={() => setIsSearchOpen((isOpen) => !isOpen)}
           >
             <Search aria-hidden='true' size={17} strokeWidth={2.7} />
-          </button>
-          <button
-            type='button'
-            className={cn('warp-random-cta', randomPulseId && 'is-rolling')}
-            aria-label='Pick random movie'
-            disabled={!movies.length}
-            onClick={handlePickRandomMovie}
-          >
-            <span className='warp-dice-face' aria-hidden='true'>
-              <Dices className='warp-dice-icon' strokeWidth={2.45} />
-            </span>
           </button>
         </div>
       </header>
@@ -1638,6 +1780,7 @@ type WarpChromeProps = {
   activeMovie: TestMovie | null
   watchOpen: boolean
   dockActions: ReactNode
+  dockLead?: ReactNode
   dockTop: ReactNode
   mode: ViewMode
   movieCount: number
@@ -1653,6 +1796,7 @@ const WarpChrome = ({
   activeMovie,
   watchOpen,
   dockActions,
+  dockLead,
   dockTop,
   mode,
   movieCount,
@@ -1720,7 +1864,7 @@ const WarpChrome = ({
           <button
             type='button'
             aria-label='Movie index'
-            aria-pressed={mode === 'list'}
+            aria-pressed={mode === 'list' || mode === 'genres'}
             onClick={() => onModeChange('list')}
           >
             <span className='warp-list-icon' />
@@ -1728,8 +1872,10 @@ const WarpChrome = ({
           </button>
         </nav>
 
-        {/* Gallery: Watch opens the watch options for the current film. Index
-            (and the genres view): Genres only. About lives on the i button. */}
+        {dockLead}
+        {/* Gallery: Watch opens the watch options for the current film. Index:
+            Genres, which reads Back while the genres page is open. About lives
+            on the i button. */}
         <nav className='warp-main-nav' aria-label='Gallery navigation'>
           {mode === 'wall' ? (
             <button
@@ -1746,10 +1892,14 @@ const WarpChrome = ({
               type='button'
               className={cn(mode === 'genres' && 'is-active')}
               aria-pressed={mode === 'genres'}
-              onClick={onOpenGenres}
+              onClick={
+                mode === 'genres' ? () => onModeChange('list') : onOpenGenres
+              }
             >
-              Genres
-              {selectedFilterCount ? <span>{selectedFilterCount}</span> : null}
+              {mode === 'genres' ? 'Back' : 'Genres'}
+              {mode !== 'genres' && selectedFilterCount ? (
+                <span>{selectedFilterCount}</span>
+              ) : null}
             </button>
           )}
         </nav>
@@ -1758,6 +1908,112 @@ const WarpChrome = ({
     </div>
   </>
 )
+
+type SortPanelProps = {
+  motionPhase: MotionPhase
+  rules: SortRule[]
+  onDirection: (key: ListGrouping, direction: SortDirection) => void
+  onReset: () => void
+  onToggle: (key: ListGrouping) => void
+}
+
+const SortPanel = ({
+  motionPhase,
+  rules,
+  onDirection,
+  onReset,
+  onToggle,
+}: SortPanelProps) => {
+  const pending = rules.find((rule) => !rule.direction)
+  const isDefault =
+    rules.length === 1 &&
+    rules[0].key === 'year' &&
+    rules[0].direction === 'asc'
+
+  return (
+    <section
+      className='warp-sort-panel'
+      data-motion={motionPhase}
+      aria-label='Sort the index'
+    >
+      <header className='warp-sort-panel-heading'>
+        <p>Sort</p>
+        <button type='button' onClick={onReset} disabled={isDefault}>
+          Reset
+        </button>
+      </header>
+      <ul className='warp-sort-rows'>
+        {SORT_OPTIONS.map((option) => {
+          const position = rules.findIndex((rule) => rule.key === option.key)
+          const rule = rules[position]
+          const selected = position >= 0
+          const isOnlyRule = selected && rules.length === 1
+          return (
+            <li
+              key={option.key}
+              className={cn(
+                'warp-sort-row',
+                selected && 'is-selected',
+                selected && !rule.direction && 'is-pending',
+              )}
+            >
+              <button
+                type='button'
+                className='warp-sort-name'
+                aria-pressed={selected}
+                disabled={isOnlyRule}
+                onClick={() => onToggle(option.key)}
+              >
+                {isOnlyRule ? null : (
+                  <span className='warp-sort-check' aria-hidden='true'>
+                    {selected ? <Check strokeWidth={3.2} /> : null}
+                  </span>
+                )}
+                <span className='warp-sort-label'>{option.label}</span>
+                {selected && rules.length > 1 ? (
+                  <span
+                    className='warp-sort-order'
+                    aria-label={`Sort order ${position + 1}`}
+                  >
+                    {position + 1}
+                  </span>
+                ) : null}
+              </button>
+              <fieldset className='warp-sort-directions'>
+                <legend className='sr-only'>{`${option.label} direction`}</legend>
+                {(['asc', 'desc'] as const).map((direction) => (
+                  <button
+                    type='button'
+                    key={direction}
+                    className={cn(
+                      'warp-sort-direction',
+                      rule?.direction === direction && 'is-active',
+                    )}
+                    aria-pressed={rule?.direction === direction}
+                    aria-label={`${option.label}: ${option[direction]}`}
+                    title={option[direction]}
+                    onClick={() => onDirection(option.key, direction)}
+                  >
+                    {direction === 'asc' ? (
+                      <ArrowUp aria-hidden='true' strokeWidth={2.6} />
+                    ) : (
+                      <ArrowDown aria-hidden='true' strokeWidth={2.6} />
+                    )}
+                  </button>
+                ))}
+              </fieldset>
+            </li>
+          )
+        })}
+      </ul>
+      <p className='warp-sort-hint'>
+        {pending
+          ? `Pick a direction for ${SORT_LABELS[pending.key]} to apply it.`
+          : 'The first key groups the index; tick more to break ties.'}
+      </p>
+    </section>
+  )
+}
 
 type FilterPanelProps = {
   broadened: boolean
@@ -1913,13 +2169,14 @@ const GenresView = ({
       <div className='warp-genres-actions'>
         <button
           type='button'
+          className='is-danger'
           onClick={onClear}
           disabled={!selectedGenres.length}
         >
           Clear
         </button>
         <button type='button' onClick={onBackToGallery}>
-          Back to gallery
+          Back
         </button>
       </div>
     </header>
