@@ -250,6 +250,8 @@
     --warp-pill-bg: rgb(187 187 187 / 0.86);
     --warp-control-height: 42px;
     --warp-control-inner-height: 34px;
+    --warp-danger: #e5484d;
+    --warp-danger-hover: #d13438;
     background: #000;
     color: #f7f7f1;
     font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
@@ -1014,7 +1016,11 @@
   }
 
   .warp-filter-icon {
-    display: none;
+    display: block;
+    width: 16px;
+    height: 16px;
+    flex: none;
+    stroke-width: 2.2;
   }
 
   .warp-filter-label {
@@ -1038,13 +1044,14 @@
 
   .warp-filter-button {
     position: relative;
-    width: 82px;
+    min-width: var(--warp-control-height);
     height: var(--warp-control-height);
     justify-content: center;
-    gap: 6px;
-    font-size: 18px;
-    font-weight: 700;
-    letter-spacing: -0.035em;
+    gap: 8px;
+    padding: 0 16px;
+    font-size: 16px;
+    font-weight: 750;
+    letter-spacing: -0.03em;
     transition:
       background 180ms ease,
       color 180ms ease,
@@ -1056,6 +1063,11 @@
     color: #000;
   }
 
+  .warp-filter-button.is-open {
+    width: var(--warp-control-height);
+    padding: 0;
+  }
+
   .warp-filter-button.is-open .warp-filter-icon {
     transform: rotate(90deg);
   }
@@ -1065,10 +1077,10 @@
     transform: translateY(1px) scale(0.98);
   }
 
-  /* Filter pill: an optional red Clear segment joined to the Filter button. */
+  /* Filters pill: when filters are active a red Clear sub-pill sits inset
+     inside the same outer pill, next to the Filters button. */
   .warp-dock .warp-filter-actions {
-    gap: 0;
-    overflow: hidden;
+    gap: 3px;
     border-radius: 999px;
     background: var(--warp-pill-bg);
     backdrop-filter: blur(14px) saturate(0.96);
@@ -1085,27 +1097,74 @@
     background: #fff;
   }
 
-  .warp-filter-clear {
+  .warp-filter-actions.has-clear {
+    padding: 3px;
+  }
+
+  .warp-filter-actions.has-clear .warp-filter-button {
+    height: var(--warp-control-inner-height);
+    min-width: var(--warp-control-inner-height);
+    padding: 0 14px 0 12px;
+  }
+
+  .warp-filter-actions.has-clear .warp-filter-button.is-open {
+    width: var(--warp-control-inner-height);
+    padding: 0;
+  }
+
+  .warp-filter-clear,
+  .warp-nav-clear,
+  .warp-filters-clear {
     display: flex;
-    height: var(--warp-control-height);
     align-items: center;
     border: 0;
-    background: #e5484d;
-    padding: 0 16px;
+    border-radius: 999px;
+    background: var(--warp-danger);
     color: #fff;
-    font-size: 15px;
     font-weight: 800;
     letter-spacing: -0.025em;
     transition:
       background 160ms ease,
       transform 160ms ease;
+  }
+
+  .warp-filter-clear {
+    height: var(--warp-control-inner-height);
+    padding: 0 16px;
+    font-size: 15px;
     animation: warp-filter-clear-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
   .warp-filter-clear:hover,
-  .warp-filter-clear:focus-visible {
-    outline: none;
-    background: #d13438;
+  .warp-filter-clear:focus-visible,
+  .warp-nav-clear:hover,
+  .warp-nav-clear:focus-visible,
+  .warp-filters-clear:hover,
+  .warp-filters-clear:focus-visible {
+    background: var(--warp-danger-hover);
+  }
+
+  .warp-filter-clear:focus-visible,
+  .warp-nav-clear:focus-visible,
+  .warp-filters-clear:focus-visible,
+  .warp-filter-button:focus-visible {
+    outline: 2px solid rgb(255 255 255 / 0.9);
+    outline-offset: 2px;
+  }
+
+  .warp-main-nav .warp-nav-clear {
+    min-width: 0;
+    height: var(--warp-control-inner-height);
+    padding: 0 14px;
+    background: var(--warp-danger);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 800;
+  }
+
+  .warp-main-nav .warp-nav-clear:hover,
+  .warp-main-nav .warp-nav-clear:focus-visible {
+    background: var(--warp-danger-hover);
   }
 
   @keyframes warp-filter-clear-in {
@@ -1394,18 +1453,6 @@
     font-size: 11px;
     font-weight: 650;
     line-height: 1.4;
-  }
-
-  .warp-genres-actions button.is-danger:not(:disabled) {
-    border-color: #e5484d;
-    background: #e5484d;
-    color: #fff;
-  }
-
-  .warp-genres-actions button.is-danger:not(:disabled):hover,
-  .warp-genres-actions button.is-danger:not(:disabled):focus-visible {
-    border-color: #d13438;
-    background: #d13438;
   }
 
   /* About lives behind this button (bottom-right). */
@@ -1712,21 +1759,6 @@
     color: #fff;
   }
 
-  .warp-gesture-debug-quad {
-    position: fixed;
-    inset: 0;
-    z-index: 119;
-    width: 100vw;
-    height: 100vh;
-    pointer-events: none;
-  }
-
-  .warp-gesture-debug-quad polygon {
-    fill: rgb(255 255 255 / 0.08);
-    stroke: #fff;
-    stroke-width: 2;
-  }
-
   .warp-spin-hint {
     position: relative;
     display: flex;
@@ -1904,13 +1936,6 @@
     text-transform: none;
   }
 
-  .warp-content-filter {
-    display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-  }
-
   .warp-filter-panel button.is-disabled,
   .warp-filter-panel button:disabled {
     position: relative;
@@ -1947,25 +1972,47 @@
     transform: none;
   }
 
-  .warp-filter-panel-section {
-    display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .warp-fs-section {
+    display: flex;
+    flex-direction: column;
     gap: 8px;
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .warp-fs-section p {
+    margin: 0;
+  }
+
+  .warp-fs-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .warp-filter-panel .warp-fs-section {
     border-top: 1px solid rgb(255 255 255 / 0.1);
     padding-top: 10px;
   }
 
-  .warp-filter-panel-section p {
-    grid-column: 1 / -1;
-    margin: 0;
+  .warp-filter-panel .warp-fs-section:first-of-type {
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  .warp-fs-chip {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
   }
 
   .warp-filter-panel button {
     display: flex;
     min-height: var(--warp-control-inner-height);
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     gap: 10px;
     border: 1px solid rgb(255 255 255 / 0.12);
     border-radius: 999px;
@@ -3011,91 +3058,62 @@
     font-weight: 900;
   }
 
-  .warp-genres-view {
+  .warp-filters-view {
     position: fixed;
     inset: 0;
     z-index: 4;
     overflow: auto;
-    padding: 150px 28px 116px;
+    padding: 128px 28px 116px;
     background:
       radial-gradient(circle at 52% 28%, rgb(255 255 255 / 0.08), transparent 34%),
       #000;
     animation: warp-view-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
-  .warp-genres-view header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+  .warp-filters-view > * {
+    max-width: 1080px;
+    margin-inline: auto;
+  }
+
+  .warp-filters-view header {
+    display: flex;
     gap: 28px;
-    align-items: end;
-    max-width: 1180px;
-    margin: 0 auto 22px;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 18px;
     padding-bottom: 18px;
     border-bottom: 1px solid rgb(255 255 255 / 0.16);
   }
 
-  .warp-genres-view h1 {
+  .warp-filters-view h1 {
     margin: 0;
-    font-size: clamp(54px, 10vw, 132px);
+    font-size: clamp(44px, 6vw, 76px);
     font-weight: 900;
-    letter-spacing: -0.09em;
-    line-height: 0.82;
+    letter-spacing: -0.07em;
+    line-height: 0.9;
   }
 
-  .warp-genres-view p {
+  .warp-filters-view header p {
     max-width: 520px;
-    margin: 14px 0 0;
+    margin: 12px 0 0;
     color: rgb(255 255 255 / 0.56);
     font-size: 14px;
     font-weight: 750;
     letter-spacing: -0.025em;
-    line-height: 1.2;
+    line-height: 1.25;
   }
 
-  .warp-genres-actions {
-    display: flex;
-    gap: 8px;
-  }
-
-  .warp-genres-actions button,
-  .warp-genres-grid button {
-    border: 1px solid rgb(255 255 255 / 0.14);
-    border-radius: 999px;
-    background: rgb(255 255 255 / 0.08);
-    color: rgb(255 255 255 / 0.72);
-    font-weight: 850;
-    transition:
-      border-color 160ms ease,
-      background 160ms ease,
-      color 160ms ease,
-      transform 160ms ease;
-  }
-
-  .warp-genres-actions button:not(:disabled):hover,
-  .warp-genres-actions button:not(:disabled):focus-visible,
-  .warp-genres-grid button:hover,
-  .warp-genres-grid button:focus-visible {
-    outline: none;
-    border-color: rgb(255 255 255 / 0.34);
-    transform: translateY(-1px);
-  }
-
-  .warp-genres-actions button {
+  .warp-filters-clear {
     height: var(--warp-control-height);
-    padding: 0 16px;
-    font-size: 13px;
+    flex: none;
+    padding: 0 20px;
+    font-size: 14px;
   }
 
-  .warp-genres-actions button:last-child {
-    background: #fff;
-    color: #000;
-  }
-
-  .warp-genres-summary {
+  .warp-filters-summary {
     display: flex;
     justify-content: space-between;
-    max-width: 1180px;
-    margin: 0 auto 18px;
+    margin-bottom: 26px;
     color: rgb(255 255 255 / 0.42);
     font-size: 11px;
     font-weight: 900;
@@ -3103,46 +3121,71 @@
     text-transform: uppercase;
   }
 
-  .warp-genres-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 10px;
-    max-width: 1180px;
-    margin: 0 auto;
-  }
-
-  .warp-genres-grid button {
+  .warp-filters-body {
     display: flex;
-    min-height: 62px;
-    align-items: center;
-    justify-content: space-between;
-    gap: 18px;
-    padding: 0 18px;
-    text-align: left;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 28px 44px;
   }
 
-  .warp-genres-grid button span:first-child {
-    font-size: 18px;
-    letter-spacing: -0.045em;
+  .warp-filters-body .warp-fs-section {
+    flex: 0 1 auto;
+    max-width: 100%;
   }
 
-  .warp-genres-grid button span:last-child {
+  .warp-filters-body .warp-fs-section p {
+    color: rgb(255 255 255 / 0.42);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .warp-filters-body .warp-fs-chip {
+    min-height: 38px;
+    border: 1px solid rgb(255 255 255 / 0.14);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.08);
+    padding: 0 16px;
+    color: rgb(255 255 255 / 0.72);
+    font-size: 15px;
+    font-weight: 850;
+    letter-spacing: -0.03em;
+    transition:
+      border-color 160ms ease,
+      background 160ms ease,
+      color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .warp-filters-body .warp-fs-chip span:last-child:not(:first-child) {
     color: rgb(255 255 255 / 0.38);
     font-size: 11px;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.04em;
   }
 
-  .warp-genres-grid button.is-active {
+  .warp-filters-body .warp-fs-chip:not(:disabled):hover,
+  .warp-filters-body .warp-fs-chip:not(:disabled):focus-visible {
+    outline: none;
+    border-color: rgb(255 255 255 / 0.34);
+    transform: translateY(-1px);
+  }
+
+  .warp-filters-body .warp-fs-chip.is-active {
     background: #fff;
     color: #000;
   }
 
-  .warp-genres-grid button.is-active span:last-child {
+  .warp-filters-body .warp-fs-chip.is-active span:last-child:not(:first-child) {
     color: rgb(0 0 0 / 0.42);
   }
 
-  .warp-genres-actions button:not(:disabled):active,
-  .warp-genres-grid button:active {
+  .warp-filters-body .warp-fs-chip:disabled {
+    cursor: not-allowed;
+    opacity: 0.52;
+  }
+
+  .warp-filters-body .warp-fs-chip:not(:disabled):active {
     transform: translateY(1px) scale(0.98);
   }
 
@@ -3939,6 +3982,11 @@
       font-size: 12px;
     }
 
+    .warp-shell[data-mode="filters"] .warp-main-nav .warp-nav-clear {
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
     /* The red Clear segment already signals active filters on small screens,
        and the corner badge would be clipped by the joined pill. */
     .warp-filter-actions.has-clear .warp-filter-count {
@@ -4024,13 +4072,13 @@
 
     /* The index keeps its Genres button on small screens. */
     .warp-shell[data-mode="list"] .warp-main-nav,
-    .warp-shell[data-mode="genres"] .warp-main-nav {
+    .warp-shell[data-mode="filters"] .warp-main-nav {
       display: flex;
       padding: 3px;
     }
 
     .warp-shell[data-mode="list"] .warp-main-nav button,
-    .warp-shell[data-mode="genres"] .warp-main-nav button {
+    .warp-shell[data-mode="filters"] .warp-main-nav button {
       min-width: 0;
       padding: 0 12px;
       font-size: 13px;
@@ -4048,12 +4096,12 @@
     /* The index dock carries more controls, so its view toggle goes
        icon-only on phones; the white segment still marks the active view. */
     .warp-shell[data-mode="list"] .warp-mode-label,
-    .warp-shell[data-mode="genres"] .warp-mode-label {
+    .warp-shell[data-mode="filters"] .warp-mode-label {
       display: none;
     }
 
     .warp-shell[data-mode="list"] .warp-mode-toggle button[aria-pressed="true"],
-    .warp-shell[data-mode="genres"] .warp-mode-toggle button[aria-pressed="true"] {
+    .warp-shell[data-mode="filters"] .warp-mode-toggle button[aria-pressed="true"] {
       width: var(--warp-control-inner-height);
     }
 
@@ -4073,7 +4121,14 @@
 
     .warp-filter-button {
       width: var(--warp-control-height);
+      min-width: 0;
+      padding: 0;
       font-size: 0;
+    }
+
+    .warp-filter-actions.has-clear .warp-filter-button {
+      width: var(--warp-control-inner-height);
+      padding: 0;
     }
 
     .warp-filter-label {
@@ -4241,26 +4296,27 @@
       display: none;
     }
 
-    .warp-genres-view {
-      padding: 132px 18px 104px;
+    .warp-filters-view {
+      padding: 112px 18px 104px;
     }
 
-    .warp-genres-view header {
-      grid-template-columns: 1fr;
-      gap: 18px;
+    .warp-filters-view header {
+      gap: 16px;
+      align-items: flex-end;
     }
 
-    .warp-genres-view h1 {
-      font-size: clamp(54px, 18vw, 88px);
+    .warp-filters-view h1 {
+      font-size: clamp(40px, 13vw, 64px);
     }
 
-    .warp-genres-actions {
-      display: grid;
-      grid-template-columns: 0.74fr 1fr;
+    .warp-filters-body {
+      gap: 24px;
     }
 
-    .warp-genres-grid {
-      grid-template-columns: 1fr;
+    .warp-filters-body .warp-fs-chip {
+      min-height: 36px;
+      padding: 0 14px;
+      font-size: 14px;
     }
 
     .warp-details-layer {
@@ -4436,12 +4492,12 @@
      the button sits just above the dock there (the index has no title card). */
   @media (max-width: 359px) {
     .warp-shell[data-mode="list"] .warp-dock-row,
-    .warp-shell[data-mode="genres"] .warp-dock-row {
+    .warp-shell[data-mode="filters"] .warp-dock-row {
       margin-right: 0;
     }
 
     .warp-shell[data-mode="list"] .warp-info-button,
-    .warp-shell[data-mode="genres"] .warp-info-button {
+    .warp-shell[data-mode="filters"] .warp-info-button {
       bottom: calc(18px + var(--warp-control-height) + 10px);
     }
   }
@@ -4461,7 +4517,7 @@
     .warp-filter-panel,
     .warp-gallery-preloader,
     .warp-gallery-preloader span,
-    .warp-genres-view,
+    .warp-filters-view,
     .warp-list,
     .warp-poster-frame img,
     .warp-poster-placeholder,

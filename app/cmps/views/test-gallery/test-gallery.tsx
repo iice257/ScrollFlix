@@ -60,7 +60,7 @@ type TestMovie = {
   posterUrl: string
 }
 
-type ViewMode = 'wall' | 'list' | 'genres'
+type ViewMode = 'wall' | 'list' | 'filters'
 type ListGrouping =
   | 'alpha'
   | 'year'
@@ -70,11 +70,10 @@ type ListGrouping =
   | 'votes'
 type LoadState = 'loading' | 'ready' | 'error'
 type ContentFilter = 'all' | 'movies' | 'series'
-type RuntimeFilter =
-  | 'movie30to60'
+export type RuntimeFilter =
+  | 'movieUnder90'
   | 'movie90to120'
-  | 'movie150to180'
-  | 'movie210plus'
+  | 'movieOver120'
   | 'seriesUnder25'
   | 'series40plus'
   | 'seriesSingleSeason'
@@ -142,27 +141,21 @@ const MOVIE_RUNTIME_FILTERS: Array<{
   test: (runtimeMinutes: number | null) => boolean
 }> = [
   {
-    id: 'movie30to60',
-    label: '30 mins to 1 hr',
+    id: 'movieUnder90',
+    label: 'Under 1 hr 30',
     test: (runtimeMinutes) =>
-      Boolean(runtimeMinutes && runtimeMinutes >= 30 && runtimeMinutes <= 60),
+      runtimeMinutes !== null && runtimeMinutes > 0 && runtimeMinutes < 90,
   },
   {
     id: 'movie90to120',
-    label: '1 hr 30 mins to 2 hrs',
+    label: '1 hr 30 to 2 hrs',
     test: (runtimeMinutes) =>
-      Boolean(runtimeMinutes && runtimeMinutes >= 90 && runtimeMinutes <= 120),
+      runtimeMinutes !== null && runtimeMinutes >= 90 && runtimeMinutes <= 120,
   },
   {
-    id: 'movie150to180',
-    label: '2 hr 30 mins to 3 hrs',
-    test: (runtimeMinutes) =>
-      Boolean(runtimeMinutes && runtimeMinutes >= 150 && runtimeMinutes <= 180),
-  },
-  {
-    id: 'movie210plus',
-    label: '3 hr 30 mins and longer',
-    test: (runtimeMinutes) => Boolean(runtimeMinutes && runtimeMinutes >= 210),
+    id: 'movieOver120',
+    label: 'Over 2 hrs',
+    test: (runtimeMinutes) => runtimeMinutes !== null && runtimeMinutes > 120,
   },
 ]
 const SERIES_RUNTIME_FILTERS: Array<{
@@ -209,6 +202,59 @@ const SERIES_RUNTIME_FILTERS: Array<{
   },
 ]
 const RUNTIME_FILTERS = [...MOVIE_RUNTIME_FILTERS, ...SERIES_RUNTIME_FILTERS]
+const RATING_PRESETS = [6, 7, 8]
+
+export const getRuntimeBucket = (
+  runtimeMinutes: number | null,
+): RuntimeFilter | null =>
+  MOVIE_RUNTIME_FILTERS.find((filter) => filter.test(runtimeMinutes))?.id ??
+  null
+
+export type YearFilter = { kind: 'year' | 'decade'; value: number }
+
+export const matchesYearFilter = (
+  movie: TestMovie,
+  yearFilter: YearFilter | null,
+) => {
+  if (!yearFilter) return true
+  const year = Number.parseInt(movie.year, 10)
+  if (!Number.isFinite(year)) return false
+  return yearFilter.kind === 'year'
+    ? year === yearFilter.value
+    : year >= yearFilter.value && year <= yearFilter.value + 9
+}
+
+export const matchesRatingMin = (
+  movie: TestMovie,
+  ratingMin: number | null,
+) => {
+  if (ratingMin === null) return true
+  return movie.ratingValue !== null && movie.ratingValue >= ratingMin
+}
+
+export const filterMoviesByYearAndRating = (
+  movies: TestMovie[],
+  yearFilter: YearFilter | null,
+  ratingMin: number | null,
+) => {
+  if (!yearFilter && ratingMin === null) return movies
+  return movies.filter(
+    (movie) =>
+      matchesYearFilter(movie, yearFilter) &&
+      matchesRatingMin(movie, ratingMin),
+  )
+}
+
+const getDecadeSummaries = (movies: TestMovie[]) => {
+  const decades = new Set<number>()
+  for (const movie of movies) {
+    const year = Number.parseInt(movie.year, 10)
+    if (Number.isFinite(year)) decades.add(Math.floor(year / 10) * 10)
+  }
+  return [...decades].sort((a, b) => b - a)
+}
+
+const formatRatingMin = (value: number) => `${Number(value.toFixed(1))}+`
 const MOOD_FILTERS: Array<{
   genres?: string[]
   id: MoodFilter
@@ -960,6 +1006,8 @@ export const TestGalleryApp = () => {
   )
   const [selectedRuntimeFilter, setSelectedRuntimeFilter] =
     useState<RuntimeFilter | null>(null)
+  const [selectedYear, setSelectedYear] = useState<YearFilter | null>(null)
+  const [ratingMin, setRatingMin] = useState<number | null>(null)
   const [contentFilter, setContentFilter] = useState<ContentFilter>('all')
   const [listSearchQuery, setListSearchQuery] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
@@ -1044,9 +1092,16 @@ export const TestGalleryApp = () => {
 
   const genreSummaries = useMemo(() => getGenreSummaries(movies), [movies])
 
+  const decadeOptions = useMemo(() => getDecadeSummaries(movies), [movies])
+
+  const baseMovies = useMemo(
+    () => filterMoviesByYearAndRating(movies, selectedYear, ratingMin),
+    [movies, selectedYear, ratingMin],
+  )
+
   const genreFilteredMovies = useMemo(
-    () => filterMoviesByGenres(movies, selectedGenres),
-    [movies, selectedGenres],
+    () => filterMoviesByGenres(baseMovies, selectedGenres),
+    [baseMovies, selectedGenres],
   )
 
   const decisionFilterResult = useMemo(
@@ -1064,6 +1119,8 @@ export const TestGalleryApp = () => {
     selectedGenres.length +
     selectedMoodFilters.length +
     (selectedRuntimeFilter ? 1 : 0) +
+    (selectedYear ? 1 : 0) +
+    (ratingMin !== null ? 1 : 0) +
     (contentFilter !== 'all' ? 1 : 0)
 
   const visibleMovies = useMemo(
@@ -1145,9 +1202,10 @@ export const TestGalleryApp = () => {
     )
   }, [])
 
-  const clearGenres = useCallback(() => setSelectedGenres([]), [])
   const clearAllFilters = useCallback(() => {
     setContentFilter('all')
+    setSelectedYear(null)
+    setRatingMin(null)
     setSelectedGenres([])
     setSelectedMoodFilters([])
     setSelectedRuntimeFilter(null)
@@ -1171,6 +1229,36 @@ export const TestGalleryApp = () => {
     )
   }, [])
 
+  const toggleYear = useCallback((next: YearFilter) => {
+    setSelectedYear((current) =>
+      current?.kind === next.kind && current.value === next.value ? null : next,
+    )
+  }, [])
+
+  const toggleRatingMin = useCallback((min: number) => {
+    setRatingMin((current) => (current === min ? null : min))
+  }, [])
+
+  // Entry points for applying a filter from elsewhere (e.g. the movie card).
+  const applyYearFilter = useCallback((year: number) => {
+    setSelectedYear({ kind: 'year', value: year })
+  }, [])
+  const applyRatingFilter = useCallback((min: number) => {
+    setRatingMin(min)
+  }, [])
+  const applyRuntimeFilter = useCallback((id: RuntimeFilter) => {
+    setSelectedRuntimeFilter(id)
+  }, [])
+  const applyGenreFilter = useCallback((genre: string) => {
+    setSelectedGenres((current) =>
+      current.includes(genre) ? current : [...current, genre],
+    )
+  }, [])
+  void applyYearFilter
+  void applyRatingFilter
+  void applyRuntimeFilter
+  void applyGenreFilter
+
   const selectContentFilter = useCallback(
     (nextContentFilter: ContentFilter) => {
       if (nextContentFilter === 'series') return
@@ -1179,6 +1267,25 @@ export const TestGalleryApp = () => {
     },
     [],
   )
+
+  const filterSectionProps: FilterSectionsProps = {
+    allActive: selectedFilterCount === 0,
+    contentFilter,
+    decades: decadeOptions,
+    genres: genreSummaries,
+    ratingMin,
+    runtimeFilter: selectedRuntimeFilter,
+    selectedGenres,
+    selectedMoodFilters,
+    selectedYear,
+    onClear: clearAllFilters,
+    onSelectContentFilter: selectContentFilter,
+    onToggleGenre: toggleGenre,
+    onToggleMoodFilter: toggleMoodFilter,
+    onToggleRating: toggleRatingMin,
+    onToggleRuntimeFilter: toggleRuntimeFilter,
+    onToggleYear: toggleYear,
+  }
 
   const handleOpenMovie = useCallback((movie: TestMovie) => {
     setActiveMovieId(movie.id)
@@ -1281,14 +1388,11 @@ export const TestGalleryApp = () => {
         />
       ) : null}
 
-      {mode === 'genres' ? (
-        <GenresView
-          genres={genreSummaries}
+      {mode === 'filters' ? (
+        <FiltersView
+          {...filterSectionProps}
           resultCount={filteredMovies.length}
-          selectedGenres={selectedGenres}
-          onBackToGallery={() => setMode('list')}
-          onClear={clearGenres}
-          onToggleGenre={toggleGenre}
+          selectedFilterCount={selectedFilterCount}
         />
       ) : null}
 
@@ -1299,11 +1403,12 @@ export const TestGalleryApp = () => {
         movieCount={movies.length}
         selectedFilterCount={selectedFilterCount}
         timeLabel={timeLabel}
+        onClearFilters={clearAllFilters}
         onOpenActiveMovie={() => {
           if (activeMovie) handleOpenWatchLinks(activeMovie)
         }}
-        onOpenGenres={() => {
-          setMode('genres')
+        onOpenFilters={() => {
+          setMode('filters')
           setAboutOpen(false)
           setFilterOpen(false)
           setSortOpen(false)
@@ -1455,19 +1560,19 @@ export const TestGalleryApp = () => {
                   {filterOpen ? (
                     <X className='warp-filter-icon' aria-hidden='true' />
                   ) : (
-                    <SlidersHorizontal
-                      className='warp-filter-icon'
-                      aria-hidden='true'
-                    />
+                    <>
+                      <SlidersHorizontal
+                        className='warp-filter-icon'
+                        aria-hidden='true'
+                      />
+                      <span className='warp-filter-label'>Filters</span>
+                      {selectedFilterCount ? (
+                        <span className='warp-filter-count'>
+                          {selectedFilterCount}
+                        </span>
+                      ) : null}
+                    </>
                   )}
-                  <span className='warp-filter-label'>
-                    {filterOpen ? 'Close' : 'Filter'}
-                  </span>
-                  {selectedFilterCount ? (
-                    <span className='warp-filter-count'>
-                      {selectedFilterCount}
-                    </span>
-                  ) : null}
                 </button>
               </div>
             ) : null}
@@ -1535,20 +1640,11 @@ export const TestGalleryApp = () => {
 
       {filterPresence.isPresent ? (
         <FilterPanel
+          {...filterSectionProps}
           broadened={decisionFilterResult.broadened}
-          genres={genreSummaries}
           motionPhase={filterPresence.motionPhase}
           resultCount={filteredMovies.length}
-          contentFilter={contentFilter}
-          runtimeFilter={selectedRuntimeFilter}
-          selectedGenres={selectedGenres}
-          selectedMoodFilters={selectedMoodFilters}
           strictResultCount={decisionFilterResult.strictCount}
-          onClear={clearAllFilters}
-          onSelectContentFilter={selectContentFilter}
-          onToggleRuntimeFilter={toggleRuntimeFilter}
-          onToggleGenre={toggleGenre}
-          onToggleMoodFilter={toggleMoodFilter}
         />
       ) : null}
 
@@ -2027,7 +2123,8 @@ type WarpChromeProps = {
   selectedFilterCount: number
   timeLabel: string
   onOpenActiveMovie: () => void
-  onOpenGenres: () => void
+  onClearFilters: () => void
+  onOpenFilters: () => void
   onResetGallery: () => void
   onModeChange: (mode: ViewMode) => void
 }
@@ -2043,7 +2140,8 @@ const WarpChrome = ({
   selectedFilterCount,
   timeLabel,
   onOpenActiveMovie,
-  onOpenGenres,
+  onClearFilters,
+  onOpenFilters,
   onResetGallery,
   onModeChange,
 }: WarpChromeProps) => (
@@ -2072,10 +2170,12 @@ const WarpChrome = ({
       <button
         type='button'
         className='warp-cta'
-        disabled={!activeMovie}
-        onClick={onOpenActiveMovie}
+        disabled={mode !== 'filters' && !activeMovie}
+        onClick={
+          mode === 'filters' ? () => onModeChange('wall') : onOpenActiveMovie
+        }
       >
-        Let&apos;s Watch
+        {mode === 'filters' ? 'Home' : "Let's Watch"}
       </button>
     </header>
 
@@ -2104,7 +2204,7 @@ const WarpChrome = ({
           <button
             type='button'
             aria-label='Movie index'
-            aria-pressed={mode === 'list' || mode === 'genres'}
+            aria-pressed={mode === 'list' || mode === 'filters'}
             onClick={() => onModeChange('list')}
           >
             <span className='warp-list-icon' />
@@ -2114,7 +2214,7 @@ const WarpChrome = ({
 
         {dockLead}
         {/* Gallery: Watch opens the watch options for the current film. Index:
-            Genres, which reads Back while the genres page is open. About lives
+            Filters, which reads Back while the filters page is open. About lives
             on the i button. */}
         <nav className='warp-main-nav' aria-label='Gallery navigation'>
           {mode === 'wall' ? (
@@ -2128,19 +2228,32 @@ const WarpChrome = ({
               Watch
             </button>
           ) : (
-            <button
-              type='button'
-              className={cn(mode === 'genres' && 'is-active')}
-              aria-pressed={mode === 'genres'}
-              onClick={
-                mode === 'genres' ? () => onModeChange('list') : onOpenGenres
-              }
-            >
-              {mode === 'genres' ? 'Back' : 'Genres'}
-              {mode !== 'genres' && selectedFilterCount ? (
-                <span>{selectedFilterCount}</span>
+            <>
+              <button
+                type='button'
+                className={cn(mode === 'filters' && 'is-active')}
+                aria-pressed={mode === 'filters'}
+                onClick={
+                  mode === 'filters'
+                    ? () => onModeChange('list')
+                    : onOpenFilters
+                }
+              >
+                {mode === 'filters' ? 'Back' : 'Filters'}
+                {mode !== 'filters' && selectedFilterCount ? (
+                  <span>{selectedFilterCount}</span>
+                ) : null}
+              </button>
+              {mode === 'filters' && selectedFilterCount > 0 ? (
+                <button
+                  type='button'
+                  className='warp-nav-clear'
+                  onClick={onClearFilters}
+                >
+                  Clear
+                </button>
               ) : null}
-            </button>
+            </>
           )}
         </nav>
         {dockActions}
@@ -2255,38 +2368,212 @@ const SortPanel = ({
   )
 }
 
-type FilterPanelProps = {
-  broadened: boolean
+type FilterSectionsProps = {
+  allActive: boolean
   contentFilter: ContentFilter
+  decades: number[]
   genres: GenreSummary[]
-  motionPhase: MotionPhase
-  resultCount: number
+  ratingMin: number | null
   runtimeFilter: RuntimeFilter | null
   selectedGenres: string[]
   selectedMoodFilters: MoodFilter[]
-  strictResultCount: number
+  selectedYear: YearFilter | null
   onClear: () => void
   onSelectContentFilter: (contentFilter: ContentFilter) => void
-  onToggleRuntimeFilter: (runtimeFilter: RuntimeFilter) => void
   onToggleGenre: (genre: string) => void
   onToggleMoodFilter: (moodFilter: MoodFilter) => void
+  onToggleRating: (min: number) => void
+  onToggleRuntimeFilter: (runtimeFilter: RuntimeFilter) => void
+  onToggleYear: (year: YearFilter) => void
+}
+
+// Shared by the gallery popover and the Filters page so both stay in step.
+const FilterSections = ({
+  allActive,
+  contentFilter,
+  decades,
+  genres,
+  ratingMin,
+  runtimeFilter,
+  selectedGenres,
+  selectedMoodFilters,
+  selectedYear,
+  onClear,
+  onSelectContentFilter,
+  onToggleGenre,
+  onToggleMoodFilter,
+  onToggleRating,
+  onToggleRuntimeFilter,
+  onToggleYear,
+}: FilterSectionsProps) => {
+  const ratingOptions = [...RATING_PRESETS]
+  if (ratingMin !== null && !ratingOptions.includes(ratingMin)) {
+    ratingOptions.push(ratingMin)
+    ratingOptions.sort((a, b) => a - b)
+  }
+
+  return (
+    <>
+      <section className='warp-fs-section' data-section='content'>
+        <p>Content type</p>
+        <div className='warp-fs-chips'>
+          {CONTENT_FILTERS.map((filter) => (
+            <button
+              type='button'
+              className={cn(
+                'warp-fs-chip',
+                contentFilter === filter.id &&
+                  (filter.id !== 'all' || allActive) &&
+                  'is-active',
+                filter.disabled && 'is-disabled',
+              )}
+              key={filter.id}
+              aria-disabled={filter.disabled || undefined}
+              aria-pressed={contentFilter === filter.id}
+              disabled={filter.disabled}
+              title={filter.disabled ? filter.meta : undefined}
+              onClick={() =>
+                filter.id === 'all'
+                  ? onClear()
+                  : onSelectContentFilter(filter.id)
+              }
+            >
+              <span>{filter.label}</span>
+              {filter.meta ? (
+                <span className='warp-soon-tag' aria-label={filter.meta}>
+                  Soon
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className='warp-fs-section'>
+        <p>{contentFilter === 'series' ? 'Episode runtime' : 'Runtime'}</p>
+        <div className='warp-fs-chips'>
+          {(contentFilter === 'series'
+            ? SERIES_RUNTIME_FILTERS
+            : MOVIE_RUNTIME_FILTERS
+          ).map((filter) => (
+            <button
+              type='button'
+              className={cn(
+                'warp-fs-chip',
+                runtimeFilter === filter.id && 'is-active',
+                filter.disabled && 'is-disabled',
+              )}
+              disabled={filter.disabled}
+              key={filter.id}
+              aria-pressed={runtimeFilter === filter.id}
+              onClick={() => onToggleRuntimeFilter(filter.id)}
+            >
+              <span>{filter.label}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className='warp-fs-section'>
+        <p>Year</p>
+        <div className='warp-fs-chips'>
+          {selectedYear?.kind === 'year' ? (
+            <button
+              type='button'
+              className='warp-fs-chip is-active'
+              aria-pressed='true'
+              onClick={() => onToggleYear(selectedYear)}
+            >
+              <span>{selectedYear.value}</span>
+            </button>
+          ) : null}
+          {decades.map((decade) => {
+            const active =
+              selectedYear?.kind === 'decade' && selectedYear.value === decade
+            return (
+              <button
+                type='button'
+                className={cn('warp-fs-chip', active && 'is-active')}
+                key={decade}
+                aria-pressed={active}
+                onClick={() => onToggleYear({ kind: 'decade', value: decade })}
+              >
+                <span>{decade}s</span>
+              </button>
+            )
+          })}
+        </div>
+      </section>
+      <section className='warp-fs-section'>
+        <p>Rating</p>
+        <div className='warp-fs-chips'>
+          {ratingOptions.map((min) => (
+            <button
+              type='button'
+              className={cn('warp-fs-chip', ratingMin === min && 'is-active')}
+              key={min}
+              aria-pressed={ratingMin === min}
+              onClick={() => onToggleRating(min)}
+            >
+              <span>{formatRatingMin(min)}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className='warp-fs-section'>
+        <p>Mood</p>
+        <div className='warp-fs-chips'>
+          {MOOD_FILTERS.map((filter) => (
+            <button
+              type='button'
+              className={cn(
+                'warp-fs-chip',
+                selectedMoodFilters.includes(filter.id) && 'is-active',
+              )}
+              key={filter.id}
+              aria-pressed={selectedMoodFilters.includes(filter.id)}
+              onClick={() => onToggleMoodFilter(filter.id)}
+            >
+              <span>{filter.label}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className='warp-fs-section' data-section='genres'>
+        <p>Genres</p>
+        <div className='warp-fs-chips'>
+          {genres.map(({ genre, count }) => (
+            <button
+              type='button'
+              className={cn(
+                'warp-fs-chip',
+                selectedGenres.includes(genre) && 'is-active',
+              )}
+              key={genre}
+              aria-pressed={selectedGenres.includes(genre)}
+              onClick={() => onToggleGenre(genre)}
+            >
+              <span>{genre}</span>
+              <span>{count}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+    </>
+  )
+}
+
+type FilterPanelProps = FilterSectionsProps & {
+  broadened: boolean
+  motionPhase: MotionPhase
+  resultCount: number
+  strictResultCount: number
 }
 
 const FilterPanel = ({
   broadened,
-  contentFilter,
-  genres,
   motionPhase,
   resultCount,
-  runtimeFilter,
-  selectedGenres,
-  selectedMoodFilters,
   strictResultCount,
-  onClear,
-  onSelectContentFilter,
-  onToggleRuntimeFilter,
-  onToggleGenre,
-  onToggleMoodFilter,
+  ...sections
 }: FilterPanelProps) => (
   <aside className='warp-filter-panel' data-motion={motionPhase}>
     <div className='warp-filter-panel-heading'>
@@ -2295,152 +2582,47 @@ const FilterPanel = ({
         {resultCount} {broadened ? 'broadened' : 'matches'}
       </span>
     </div>
-    <div className='warp-content-filter' aria-label='Content type'>
-      {CONTENT_FILTERS.map((filter) => (
-        <button
-          type='button'
-          className={cn(
-            contentFilter === filter.id &&
-              (filter.id !== 'all' ||
-                (!selectedGenres.length &&
-                  !selectedMoodFilters.length &&
-                  !runtimeFilter)) &&
-              'is-active',
-            filter.disabled && 'is-disabled',
-          )}
-          key={filter.id}
-          aria-disabled={filter.disabled || undefined}
-          aria-pressed={contentFilter === filter.id}
-          disabled={filter.disabled}
-          title={filter.disabled ? filter.meta : undefined}
-          onClick={() =>
-            filter.id === 'all' ? onClear() : onSelectContentFilter(filter.id)
-          }
-        >
-          <span>{filter.label}</span>
-          {filter.meta ? (
-            <span className='warp-soon-tag' aria-label={filter.meta}>
-              Soon
-            </span>
-          ) : null}
-        </button>
-      ))}
-    </div>
     {broadened ? (
       <p className='warp-filter-note'>
         Broadened from {strictResultCount} exact matches to keep the wall full.
       </p>
     ) : null}
-    <div className='warp-filter-panel-section'>
-      <p>{contentFilter === 'series' ? 'Episode runtime' : 'Movie runtime'}</p>
-      {(contentFilter === 'series'
-        ? SERIES_RUNTIME_FILTERS
-        : MOVIE_RUNTIME_FILTERS
-      ).map((filter) => (
-        <button
-          type='button'
-          className={cn(
-            runtimeFilter === filter.id && 'is-active',
-            filter.disabled && 'is-disabled',
-          )}
-          disabled={filter.disabled}
-          key={filter.id}
-          aria-pressed={runtimeFilter === filter.id}
-          onClick={() => onToggleRuntimeFilter(filter.id)}
-        >
-          <span>{filter.label}</span>
-        </button>
-      ))}
-    </div>
-    <div className='warp-filter-panel-section'>
-      <p>Mood</p>
-      {MOOD_FILTERS.map((filter) => (
-        <button
-          type='button'
-          className={cn(selectedMoodFilters.includes(filter.id) && 'is-active')}
-          key={filter.id}
-          aria-pressed={selectedMoodFilters.includes(filter.id)}
-          onClick={() => onToggleMoodFilter(filter.id)}
-        >
-          <span>{filter.label}</span>
-        </button>
-      ))}
-    </div>
-    <div className='warp-filter-panel-section'>
-      <p>Genres</p>
-      {genres.map(({ genre, count }) => (
-        <button
-          type='button'
-          className={cn(selectedGenres.includes(genre) && 'is-active')}
-          key={genre}
-          aria-pressed={selectedGenres.includes(genre)}
-          onClick={() => onToggleGenre(genre)}
-        >
-          <span>{genre}</span>
-          <span>{count}</span>
-        </button>
-      ))}
-    </div>
+    <FilterSections {...sections} />
   </aside>
 )
 
-type GenresViewProps = {
-  genres: GenreSummary[]
+type FiltersViewProps = FilterSectionsProps & {
   resultCount: number
-  selectedGenres: string[]
-  onBackToGallery: () => void
-  onClear: () => void
-  onToggleGenre: (genre: string) => void
+  selectedFilterCount: number
 }
 
-const GenresView = ({
-  genres,
+const FiltersView = ({
   resultCount,
-  selectedGenres,
-  onBackToGallery,
-  onClear,
-  onToggleGenre,
-}: GenresViewProps) => (
-  <section className='warp-genres-view' aria-label='Genre curation'>
+  selectedFilterCount,
+  ...sections
+}: FiltersViewProps) => (
+  <section className='warp-filters-view' aria-label='Filters'>
     <header>
       <div>
-        <h1>Genres</h1>
-        <p>
-          Select one or more lanes. The gallery ranks exact overlap first, then
-          keeps the wall full from the wider matching set.
-        </p>
+        <h1>Filters</h1>
+        <p>Narrow the wall by runtime, year, rating, mood and genre.</p>
       </div>
-      <div className='warp-genres-actions'>
+      {selectedFilterCount > 0 ? (
         <button
           type='button'
-          className='is-danger'
-          onClick={onClear}
-          disabled={!selectedGenres.length}
+          className='warp-filters-clear'
+          onClick={sections.onClear}
         >
           Clear
         </button>
-        <button type='button' onClick={onBackToGallery}>
-          Back
-        </button>
-      </div>
+      ) : null}
     </header>
-    <div className='warp-genres-summary'>
-      <span>{selectedGenres.length || 'All'} selected</span>
+    <div className='warp-filters-summary'>
+      <span>{selectedFilterCount || 'No'} selected</span>
       <span>{resultCount} matching movies</span>
     </div>
-    <div className='warp-genres-grid'>
-      {genres.map(({ genre, count }) => (
-        <button
-          type='button'
-          key={genre}
-          className={cn(selectedGenres.includes(genre) && 'is-active')}
-          aria-pressed={selectedGenres.includes(genre)}
-          onClick={() => onToggleGenre(genre)}
-        >
-          <span>{genre}</span>
-          <span>{count}</span>
-        </button>
-      ))}
+    <div className='warp-filters-body'>
+      <FilterSections {...sections} />
     </div>
   </section>
 )

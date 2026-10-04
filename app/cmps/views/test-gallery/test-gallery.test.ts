@@ -6,10 +6,12 @@ import {
   filterMoviesByDecisionFilters,
   filterMoviesByGenres,
   filterMoviesByTitleSearch,
+  filterMoviesByYearAndRating,
   formatMovieMeta,
   getActiveSortRules,
   getGalleryWindow,
   getGenreOverlap,
+  getRuntimeBucket,
   groupMoviesAlphabetically,
   groupMoviesByPopularity,
   groupMoviesByRating,
@@ -87,7 +89,7 @@ describe('test gallery filtering helpers', () => {
           { ...movies[2], runtimeMinutes: 151 },
         ],
         [],
-        'movie30to60',
+        'movieUnder90',
       ).movies.map((item) => item.title),
     ).toEqual(['A Quiet Place'])
   })
@@ -96,7 +98,7 @@ describe('test gallery filtering helpers', () => {
     const result = filterMoviesByDecisionFilters(
       movies,
       ['funny'],
-      'movie30to60',
+      'movieUnder90',
     )
 
     expect(result.broadened).toBe(true)
@@ -379,5 +381,71 @@ describe('test gallery filtering helpers', () => {
       'Under 1h 30',
       'Unknown',
     ])
+  })
+})
+
+describe('runtime buckets', () => {
+  it('maps runtimes onto three contiguous movie buckets', () => {
+    expect(getRuntimeBucket(84)).toBe('movieUnder90')
+    expect(getRuntimeBucket(89)).toBe('movieUnder90')
+    expect(getRuntimeBucket(90)).toBe('movie90to120')
+    expect(getRuntimeBucket(120)).toBe('movie90to120')
+    expect(getRuntimeBucket(121)).toBe('movieOver120')
+    expect(getRuntimeBucket(null)).toBeNull()
+  })
+})
+
+describe('year and rating filters', () => {
+  const rated = (id: string, year: string, ratingValue: number | null) => ({
+    ...movie(id, id, year, ['Drama'], Number(id.length)),
+    ratingValue,
+  })
+  const pool = [
+    rated('a', '1994', 8.4),
+    rated('bb', '1999', 6.1),
+    rated('ccc', '2001', 7),
+    rated('dddd', '2019', null),
+  ]
+  const titles = (items: Array<{ title: string }>) =>
+    items.map((item) => item.title)
+
+  it('matches an exact year', () => {
+    expect(
+      titles(
+        filterMoviesByYearAndRating(pool, { kind: 'year', value: 1999 }, null),
+      ),
+    ).toEqual(['bb'])
+  })
+
+  it('matches a whole decade inclusively', () => {
+    expect(
+      titles(
+        filterMoviesByYearAndRating(
+          pool,
+          { kind: 'decade', value: 1990 },
+          null,
+        ),
+      ),
+    ).toEqual(['a', 'bb'])
+  })
+
+  it('applies a minimum rating and excludes unrated movies', () => {
+    expect(titles(filterMoviesByYearAndRating(pool, null, 7))).toEqual([
+      'a',
+      'ccc',
+    ])
+    expect(titles(filterMoviesByYearAndRating(pool, null, 0))).toEqual([
+      'a',
+      'bb',
+      'ccc',
+    ])
+  })
+
+  it('combines year and rating', () => {
+    expect(
+      titles(
+        filterMoviesByYearAndRating(pool, { kind: 'decade', value: 1990 }, 8),
+      ),
+    ).toEqual(['a'])
   })
 })

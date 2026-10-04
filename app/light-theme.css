@@ -4,6 +4,8 @@
 .phantom-test-shell[data-theme="light"],
 .warp-shell[data-theme="light"] {
   --warp-pill-bg: rgb(90 83 72 / 0.86);
+  --warp-danger: rgb(229 72 77);
+  --warp-danger-hover: rgb(209 52 56);
   background: rgb(247 240 225);
   color: rgb(41 34 24);
 }
@@ -215,14 +217,24 @@
   background: rgb(255 252 245);
 }
 
-.warp-shell[data-theme="light"] .warp-filter-clear {
-  background: rgb(229 72 77);
+.warp-shell[data-theme="light"] .warp-filter-clear,
+.warp-shell[data-theme="light"] .warp-nav-clear,
+.warp-shell[data-theme="light"] .warp-filters-clear {
   color: rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"] .warp-filter-clear:hover,
-.warp-shell[data-theme="light"] .warp-filter-clear:focus-visible {
-  background: rgb(209 52 56);
+.warp-shell[data-theme="light"] .warp-filter-clear:focus-visible,
+.warp-shell[data-theme="light"] .warp-nav-clear:focus-visible,
+.warp-shell[data-theme="light"] .warp-filters-clear:focus-visible {
+  outline: 2px solid rgb(33 26 16 / 0.9);
+}
+
+.warp-shell[data-theme="light"] .warp-filter-button:focus-visible {
+  outline: 2px solid rgb(255 252 245 / 0.9);
+}
+
+.warp-shell[data-theme="light"] .warp-main-nav .warp-nav-clear {
+  color: rgb(255 252 245);
 }
 
 .warp-shell[data-theme="light"] .warp-sort-button {
@@ -322,18 +334,6 @@
   color: rgb(33 26 16 / 0.5);
 }
 
-.warp-shell[data-theme="light"] .warp-genres-actions button.is-danger:not(:disabled) {
-  border-color: rgb(229 72 77);
-  background: rgb(229 72 77);
-  color: rgb(33 26 16);
-}
-
-.warp-shell[data-theme="light"] .warp-genres-actions button.is-danger:not(:disabled):hover,
-.warp-shell[data-theme="light"] .warp-genres-actions button.is-danger:not(:disabled):focus-visible {
-  border-color: rgb(209 52 56);
-  background: rgb(209 52 56);
-}
-
 .warp-shell[data-theme="light"] .warp-info-button {
   border: 1px solid rgb(255 252 245 / 0.2);
   color: rgb(42 35 25);
@@ -408,11 +408,6 @@
   color: rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"] .warp-gesture-debug-quad polygon {
-  fill: rgb(33 26 16 / 0.08);
-  stroke: rgb(33 26 16);
-}
-
 .warp-shell[data-theme="light"] .warp-spin-hint {
   border: 1px solid rgb(33 26 16 / 0.14);
   background: rgb(232 225 210 / 0.9);
@@ -472,7 +467,7 @@
   color: rgb(33 26 16 / 0.76);
 }
 
-.warp-shell[data-theme="light"] .warp-filter-panel-section {
+.warp-shell[data-theme="light"] .warp-filter-panel .warp-fs-section {
   border-top: 1px solid rgb(33 26 16 / 0.1);
 }
 
@@ -789,52 +784,48 @@
   color: rgb(247 240 225);
 }
 
-.warp-shell[data-theme="light"] .warp-genres-view {
+.warp-shell[data-theme="light"] .warp-filters-view {
   background: radial-gradient(circle at 52% 28%, rgb(33 26 16 / 0.08), transparent 34%),
       rgb(247 240 225);
 }
 
-.warp-shell[data-theme="light"] .warp-genres-view header {
+.warp-shell[data-theme="light"] .warp-filters-view header {
   border-bottom: 1px solid rgb(33 26 16 / 0.16);
 }
 
-.warp-shell[data-theme="light"] .warp-genres-view p {
+.warp-shell[data-theme="light"] .warp-filters-view header p {
   color: rgb(33 26 16 / 0.56);
 }
 
-.warp-shell[data-theme="light"] .warp-genres-actions button,
-.warp-shell[data-theme="light"] .warp-genres-grid button {
+.warp-shell[data-theme="light"] .warp-filters-summary {
+  color: rgb(33 26 16 / 0.42);
+}
+
+.warp-shell[data-theme="light"] .warp-filters-body .warp-fs-section p {
+  color: rgb(33 26 16 / 0.42);
+}
+
+.warp-shell[data-theme="light"] .warp-filters-body .warp-fs-chip {
   border: 1px solid rgb(33 26 16 / 0.14);
   background: rgb(33 26 16 / 0.08);
   color: rgb(33 26 16 / 0.72);
 }
 
-.warp-shell[data-theme="light"] .warp-genres-actions button:not(:disabled):hover,
-.warp-shell[data-theme="light"] .warp-genres-actions button:not(:disabled):focus-visible,
-.warp-shell[data-theme="light"] .warp-genres-grid button:hover,
-.warp-shell[data-theme="light"] .warp-genres-grid button:focus-visible {
-  border-color: rgb(33 26 16 / 0.34);
-}
-
-.warp-shell[data-theme="light"] .warp-genres-actions button:last-child {
-  background: rgb(33 26 16);
-  color: rgb(247 240 225);
-}
-
-.warp-shell[data-theme="light"] .warp-genres-summary {
-  color: rgb(33 26 16 / 0.42);
-}
-
-.warp-shell[data-theme="light"] .warp-genres-grid button span:last-child {
+.warp-shell[data-theme="light"] .warp-filters-body .warp-fs-chip span:last-child:not(:first-child) {
   color: rgb(33 26 16 / 0.38);
 }
 
-.warp-shell[data-theme="light"] .warp-genres-grid button.is-active {
+.warp-shell[data-theme="light"] .warp-filters-body .warp-fs-chip:not(:disabled):hover,
+.warp-shell[data-theme="light"] .warp-filters-body .warp-fs-chip:not(:disabled):focus-visible {
+  border-color: rgb(33 26 16 / 0.34);
+}
+
+.warp-shell[data-theme="light"] .warp-filters-body .warp-fs-chip.is-active {
   background: rgb(33 26 16);
   color: rgb(247 240 225);
 }
 
-.warp-shell[data-theme="light"] .warp-genres-grid button.is-active span:last-child {
+.warp-shell[data-theme="light"] .warp-filters-body .warp-fs-chip.is-active span:last-child:not(:first-child) {
   color: rgb(247 240 225 / 0.42);
 }
 
