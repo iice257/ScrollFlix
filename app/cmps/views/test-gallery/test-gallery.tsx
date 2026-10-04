@@ -4,6 +4,7 @@ import {
   ChevronsDown,
   ChevronsUp,
   Dices,
+  Info,
   Play,
   Search,
   SlidersHorizontal,
@@ -665,6 +666,10 @@ export const TestGalleryApp = () => {
   const [errorMessage, setErrorMessage] = useState('')
   const [timeLabel, setTimeLabel] = useState('')
   const [isGlobeMoving, setIsGlobeMoving] = useState(false)
+  const [spinRequest, setSpinRequest] = useState<{
+    itemId: string
+    nonce: number
+  } | null>(null)
   const [spinHintSeen, setSpinHintSeen] = useState(readSpinHintSeen)
 
   const markSpinHintSeen = useCallback(() => {
@@ -877,8 +882,11 @@ export const TestGalleryApp = () => {
       (movie) => movie.id !== activeMovieId,
     )
     const movie = candidates[Math.floor(Math.random() * candidates.length)]
-    if (movie) handleOpenMovie(movie)
-  }, [activeMovieId, handleOpenMovie, visibleMovies])
+    if (!movie) return
+    setFilterOpen(false)
+    setAboutOpen(false)
+    setSpinRequest({ itemId: movie.id, nonce: performance.now() })
+  }, [activeMovieId, visibleMovies])
 
   const handlePickRandomMovie = useCallback((movie: TestMovie) => {
     setActiveMovieId(movie.id)
@@ -888,18 +896,20 @@ export const TestGalleryApp = () => {
   }, [])
 
   useEffect(() => {
-    if (!detailsMovieId && !watchMovieId) return
+    if (!detailsMovieId && !watchMovieId && !aboutOpen && !filterOpen) return
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      // Close only the top-most layer: watch links sit above details.
+      // Close only the top-most layer: watch links, then details, then panels.
       if (watchMovieId) setWatchMovieId(null)
-      else setDetailsMovieId(null)
+      else if (detailsMovieId) setDetailsMovieId(null)
+      else if (aboutOpen) setAboutOpen(false)
+      else setFilterOpen(false)
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [detailsMovieId, watchMovieId])
+  }, [aboutOpen, detailsMovieId, filterOpen, watchMovieId])
 
   return (
     <main
@@ -922,6 +932,7 @@ export const TestGalleryApp = () => {
         onReady={handleGalleryReady}
         onSelectMovie={handleSelectMovie}
         onUserSpin={markSpinHintSeen}
+        spinRequest={spinRequest}
       />
 
       {mode === 'list' ? (
@@ -954,16 +965,12 @@ export const TestGalleryApp = () => {
       ) : null}
 
       <WarpChrome
-        aboutOpen={aboutOpen}
         activeMovie={activeMovie}
+        watchOpen={Boolean(watchMovieId)}
         mode={mode}
         movieCount={movies.length}
         selectedFilterCount={selectedFilterCount}
         timeLabel={timeLabel}
-        onOpenAbout={() => {
-          setAboutOpen(true)
-          setFilterOpen(false)
-        }}
         onOpenActiveMovie={() => {
           if (activeMovie) handleOpenWatchLinks(activeMovie)
         }}
@@ -976,11 +983,6 @@ export const TestGalleryApp = () => {
           clearAllFilters()
           setDetailsMovieId(null)
           setWatchMovieId(null)
-          setFilterOpen(false)
-          setAboutOpen(false)
-          setMode('wall')
-        }}
-        onShowWall={() => {
           setFilterOpen(false)
           setAboutOpen(false)
           setMode('wall')
@@ -1047,18 +1049,20 @@ export const TestGalleryApp = () => {
                 <span className='warp-shuffle-label'>Shuffle</span>
               </button>
             ) : null}
-            <div className='warp-filter-actions'>
-              {filterPresence.isPresent && selectedFilterCount ? (
+            <div
+              className={cn(
+                'warp-filter-actions',
+                selectedFilterCount > 0 && 'has-clear',
+              )}
+            >
+              {selectedFilterCount ? (
                 <button
                   type='button'
-                  className={cn(
-                    'warp-filter-reset',
-                    filterPresence.motionPhase === 'exit' && 'is-exiting',
-                  )}
-                  aria-label='Reset filters'
+                  className='warp-filter-clear'
+                  aria-label='Clear filters'
                   onClick={clearAllFilters}
                 >
-                  Reset
+                  Clear
                 </button>
               ) : null}
               <button
@@ -1066,7 +1070,10 @@ export const TestGalleryApp = () => {
                 className={cn('warp-filter-button', filterOpen && 'is-open')}
                 aria-expanded={filterOpen}
                 aria-label={filterOpen ? 'Close filters' : 'Open filters'}
-                onClick={() => setFilterOpen((isOpen) => !isOpen)}
+                onClick={() => {
+                  setAboutOpen(false)
+                  setFilterOpen((isOpen) => !isOpen)
+                }}
               >
                 {filterOpen ? (
                   <X className='warp-filter-icon' aria-hidden='true' />
@@ -1090,6 +1097,19 @@ export const TestGalleryApp = () => {
         }
       />
 
+      <button
+        type='button'
+        className={cn('warp-info-button', aboutOpen && 'is-active')}
+        aria-label='About ScrollFlix'
+        aria-expanded={aboutOpen}
+        onClick={() => {
+          setAboutOpen((isOpen) => !isOpen)
+          setFilterOpen(false)
+        }}
+      >
+        <Info aria-hidden='true' />
+      </button>
+
       {mode === 'wall' ? (
         <output
           className='warp-gallery-preloader'
@@ -1109,6 +1129,14 @@ export const TestGalleryApp = () => {
               />
             </i>
             <small>{galleryLoadPercent}%</small>
+            <button
+              type='button'
+              className='warp-preloader-skip'
+              onClick={() => setInitialGalleryReady(true)}
+            >
+              Skip
+            </button>
+            <em>Shows the globe now; posters keep sharpening as they load.</em>
           </span>
         </output>
       ) : null}
@@ -1148,6 +1176,10 @@ export const TestGalleryApp = () => {
           motionPhase={watchPresence.motionPhase}
           movie={watchPresence.value}
           onClose={() => setWatchMovieId(null)}
+          onOpenAbout={() => {
+            setWatchMovieId(null)
+            setAboutOpen(true)
+          }}
         />
       ) : null}
 
@@ -1182,6 +1214,7 @@ type WarpWallProps = {
   onReady: () => void
   onSelectMovie: (movie: TestMovie) => void
   onUserSpin: () => void
+  spinRequest: { itemId: string; nonce: number } | null
 }
 
 const WarpWall = ({
@@ -1196,6 +1229,7 @@ const WarpWall = ({
   onReady,
   onSelectMovie,
   onUserSpin,
+  spinRequest,
 }: WarpWallProps) => {
   const menuItems = useMemo<InfiniteMovieMenuItem<TestMovie>[]>(
     () =>
@@ -1248,6 +1282,7 @@ const WarpWall = ({
         onReady={onReady}
         onUserSpin={onUserSpin}
         scale={0.9}
+        spinRequest={spinRequest}
         onActiveItemChange={handleActiveItemChange}
       />
     </section>
@@ -1600,36 +1635,32 @@ const WarpList = ({
 }
 
 type WarpChromeProps = {
-  aboutOpen: boolean
   activeMovie: TestMovie | null
+  watchOpen: boolean
   dockActions: ReactNode
   dockTop: ReactNode
   mode: ViewMode
   movieCount: number
   selectedFilterCount: number
   timeLabel: string
-  onOpenAbout: () => void
   onOpenActiveMovie: () => void
   onOpenGenres: () => void
   onResetGallery: () => void
-  onShowWall: () => void
   onModeChange: (mode: ViewMode) => void
 }
 
 const WarpChrome = ({
-  aboutOpen,
   activeMovie,
+  watchOpen,
   dockActions,
   dockTop,
   mode,
   movieCount,
   selectedFilterCount,
   timeLabel,
-  onOpenAbout,
   onOpenActiveMovie,
   onOpenGenres,
   onResetGallery,
-  onShowWall,
   onModeChange,
 }: WarpChromeProps) => (
   <>
@@ -1697,27 +1728,19 @@ const WarpChrome = ({
           </button>
         </nav>
 
-        {/* Gallery: Watch + About. Index (and the genres view): Genres only. */}
+        {/* Gallery: Watch opens the watch options for the current film. Index
+            (and the genres view): Genres only. About lives on the i button. */}
         <nav className='warp-main-nav' aria-label='Gallery navigation'>
           {mode === 'wall' ? (
-            <>
-              <button
-                type='button'
-                className={cn(!aboutOpen && 'is-active')}
-                aria-pressed={!aboutOpen}
-                onClick={onShowWall}
-              >
-                Watch
-              </button>
-              <button
-                type='button'
-                className={cn(aboutOpen && 'is-active')}
-                aria-expanded={aboutOpen}
-                onClick={onOpenAbout}
-              >
-                About
-              </button>
-            </>
+            <button
+              type='button'
+              className={cn(watchOpen && 'is-active')}
+              aria-expanded={watchOpen}
+              disabled={!activeMovie}
+              onClick={onOpenActiveMovie}
+            >
+              Watch
+            </button>
           ) : (
             <button
               type='button'
@@ -1983,12 +2006,14 @@ type WatchLinksDialogProps = {
   motionPhase: MotionPhase
   movie: TestMovie
   onClose: () => void
+  onOpenAbout: () => void
 }
 
 const WatchLinksDialog = ({
   motionPhase,
   movie,
   onClose,
+  onOpenAbout,
 }: WatchLinksDialogProps) => (
   <section
     className='warp-watch-layer'
@@ -2026,6 +2051,10 @@ const WatchLinksDialog = ({
           </button>
         ))}
       </div>
+      <button type='button' className='warp-watch-about' onClick={onOpenAbout}>
+        <Info aria-hidden='true' />
+        About ScrollFlix and where these links come from
+      </button>
     </dialog>
   </section>
 )

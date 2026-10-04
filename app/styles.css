@@ -890,8 +890,7 @@
 
   .warp-mode-toggle,
   .warp-main-nav,
-  .warp-filter-button,
-  .warp-filter-reset {
+  .warp-filter-button {
     position: fixed;
     z-index: 54;
     display: flex;
@@ -1032,8 +1031,7 @@
     align-items: center;
   }
 
-  .warp-filter-button,
-  .warp-filter-reset {
+  .warp-filter-button {
     position: static;
     border: 0;
   }
@@ -1063,21 +1061,166 @@
   }
 
   .warp-filter-button:active,
-  .warp-filter-reset:active {
+  .warp-filter-clear:active {
     transform: translateY(1px) scale(0.98);
   }
 
-  .warp-filter-reset {
-    width: 66px;
-    height: var(--warp-control-height);
-    justify-content: center;
-    font-size: 12px;
-    font-weight: 900;
-    letter-spacing: -0.025em;
+  /* Filter pill: an optional red Clear segment joined to the Filter button. */
+  .warp-dock .warp-filter-actions {
+    gap: 0;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--warp-pill-bg);
+    backdrop-filter: blur(14px) saturate(0.96);
+    -webkit-backdrop-filter: blur(14px) saturate(0.96);
   }
 
-  .warp-filter-reset.is-exiting {
-    animation: warp-filter-reset-out 180ms ease both;
+  .warp-dock .warp-filter-actions .warp-filter-button {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .warp-dock .warp-filter-actions .warp-filter-button.is-open {
+    background: #fff;
+  }
+
+  .warp-filter-clear {
+    display: flex;
+    height: var(--warp-control-height);
+    align-items: center;
+    border: 0;
+    background: #e5484d;
+    padding: 0 16px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    transition:
+      background 160ms ease,
+      transform 160ms ease;
+    animation: warp-filter-clear-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .warp-filter-clear:hover,
+  .warp-filter-clear:focus-visible {
+    outline: none;
+    background: #d13438;
+  }
+
+  @keyframes warp-filter-clear-in {
+    from {
+      opacity: 0;
+      transform: translateX(8px);
+    }
+  }
+
+  /* About lives behind this button (bottom-right). */
+  .warp-info-button {
+    position: fixed;
+    right: 24px;
+    bottom: 28px;
+    z-index: 54;
+    display: grid;
+    width: var(--warp-control-height);
+    height: var(--warp-control-height);
+    place-items: center;
+    border: 1px solid rgb(255 255 255 / 0.2);
+    border-radius: 999px;
+    background: var(--warp-pill-bg);
+    color: #0b0b0b;
+    box-shadow: 0 14px 44px rgb(0 0 0 / 0.34);
+    backdrop-filter: blur(14px) saturate(0.96);
+    -webkit-backdrop-filter: blur(14px) saturate(0.96);
+    transition:
+      background 160ms ease,
+      opacity 220ms ease,
+      transform 160ms ease;
+  }
+
+  .warp-info-button svg {
+    width: 19px;
+    height: 19px;
+    stroke-width: 2.4;
+  }
+
+  .warp-info-button:hover,
+  .warp-info-button:focus-visible,
+  .warp-info-button.is-active {
+    outline: none;
+    background: #fff;
+  }
+
+  .warp-info-button:active {
+    transform: translateY(1px) scale(0.96);
+  }
+
+  .warp-shell[data-details-open="true"] .warp-info-button {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* Loading screen: Skip reveals the globe with whatever has loaded so far. */
+  .warp-preloader-skip {
+    justify-self: center;
+    border: 1px solid rgb(255 255 255 / 0.22);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.1);
+    padding: 7px 18px;
+    color: #fff;
+    font: inherit;
+    letter-spacing: 0.12em;
+    pointer-events: auto;
+    transition: background 160ms ease;
+  }
+
+  .warp-preloader-skip:hover,
+  .warp-preloader-skip:focus-visible {
+    outline: none;
+    background: rgb(255 255 255 / 0.22);
+  }
+
+  .warp-gallery-preloader em {
+    max-width: 230px;
+    justify-self: center;
+    color: rgb(255 255 255 / 0.5);
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    line-height: 1.4;
+    text-align: center;
+    text-transform: none;
+  }
+
+  /* Watch card: About link at the very bottom. */
+  .warp-watch-about {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    border: 0;
+    border-top: 1px solid rgb(255 255 255 / 0.1);
+    background: transparent;
+    padding: 14px 2px 0;
+    color: rgb(255 255 255 / 0.6);
+    font-size: 12px;
+    font-weight: 700;
+    text-align: left;
+    transition: color 160ms ease;
+  }
+
+  .warp-watch-about svg {
+    width: 15px;
+    height: 15px;
+    flex: none;
+  }
+
+  .warp-watch-about:hover,
+  .warp-watch-about:focus-visible {
+    outline: none;
+    color: #fff;
   }
 
   .warp-dock {
@@ -2991,13 +3134,14 @@
     }
   }
 
+  /* Glow rather than scale, so the Skip button inside stays still. */
   @keyframes warp-preloader-pulse {
     0%,
     100% {
-      transform: scale(1);
+      box-shadow: 0 0 0 rgb(255 255 255 / 0);
     }
     50% {
-      transform: scale(1.025);
+      box-shadow: 0 0 34px rgb(255 255 255 / 0.08);
     }
   }
 
@@ -3023,16 +3167,6 @@
     }
   }
 
-  @keyframes warp-filter-reset-out {
-    from {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-    to {
-      opacity: 0;
-      transform: translateY(6px) scale(0.98);
-    }
-  }
 
   @keyframes warp-dice-roll {
     0% {
@@ -3144,9 +3278,24 @@
 
     .warp-mode-toggle,
     .warp-main-nav,
-    .warp-filter-button,
-    .warp-filter-reset {
+    .warp-filter-button {
       height: var(--warp-control-height);
+    }
+
+    .warp-info-button {
+      right: 12px;
+      bottom: 18px;
+    }
+
+    .warp-filter-clear {
+      padding: 0 12px;
+      font-size: 12px;
+    }
+
+    /* The red Clear segment already signals active filters on small screens,
+       and the corner badge would be clipped by the joined pill. */
+    .warp-filter-actions.has-clear .warp-filter-count {
+      display: none;
     }
 
     .warp-mode-toggle {
@@ -3211,15 +3360,6 @@
       right: 12px;
       bottom: 18px;
       gap: 5px;
-    }
-
-    .warp-filter-reset {
-      display: flex;
-      position: absolute;
-      right: 0;
-      bottom: 46px;
-      width: 58px;
-      font-size: 11px;
     }
 
     .warp-filter-button {

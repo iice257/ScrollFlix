@@ -35,6 +35,8 @@ type InfiniteMovieMenuProps<T> = {
   isActive?: boolean
   onMovingChange?: (moving: boolean) => void
   onOpenItem?: (item: InfiniteMovieMenuItem<T>) => void
+  // Spin to this item, then open it (Shuffle). The nonce re-triggers repeats.
+  spinRequest?: { itemId: string; nonce: number } | null
   onReady?: () => void
   onUserSpin?: () => void
 }
@@ -71,6 +73,10 @@ const DETAIL_CLOSE_EASE_MS = 460
 // ?gesture-debug in the URL.
 const HOLD_TO_DRAG_MS = 220
 const CLICK_MOVE_TOLERANCE_PX = 8
+// Shuffle: snap strength while spinning to a poster, and how close (cosine of
+// the angle to the centre) counts as arrived before the card opens.
+const SPIN_SNAP_STRENGTH = 0.085
+const SPIN_ARRIVAL_DOT = 0.9994
 const CENTER_HIT_BOOST = 0.35
 const GESTURE_DEBUG =
   typeof window !== 'undefined' &&
@@ -132,6 +138,7 @@ type DetailMotion = 'fast' | 'slow' | 'close'
 const POSTER_SPRITE_URL = '/media/poster-sprite.jpg'
 const POSTER_SPRITE_MANIFEST_URL = '/media/poster-sprite.json'
 const POSTER_RETRY_DELAYS_MS = [4000, 12000, 30000]
+const PLACEHOLDER_CELLS_PER_FRAME = 48
 
 type PosterSprite = {
   cellHeight: number
@@ -659,6 +666,8 @@ class ArcballControl {
   rotationAxis: Vec3 = [1, 0, 0]
   snapDirection: Vec3 = [0, 0, -1]
   snapTargetDirection: Vec3 | null = null
+  // Overrides the distance-based snap strength (used by spin-to-poster).
+  snapStrength: number | null = null
 
   private pointerPos: Vec2 = [0, 0]
   private previousPointerPos: Vec2 = [0, 0]
@@ -764,7 +773,7 @@ class ArcballControl {
           this.snapDirection,
         )
         const distanceFactor = Math.max(0.1, 1 - sqrDist * 10)
-        angleFactor *= 0.2 * distanceFactor
+        angleFactor *= this.snapStrength ?? 0.2 * distanceFactor
         snapRotation = this.quatFromVectors(
           this.snapTargetDirection,
           this.snapDirection,
@@ -858,6 +867,10 @@ class InfiniteMovieEngine<T> {
   private readonly cameraRatio: number
   private readonly cleanupCallbacks: Array<() => void> = []
   private nudgePos: Vec2 | null = null
+  private spinTarget: {
+    index: number
+    onArrive: (index: number) => void
+  } | null = null
   private nudgeTimer: number | null = null
 
   private readonly handleContextLost = (event: Event) => {
@@ -1014,6 +1027,7 @@ class InfiniteMovieEngine<T> {
   }
 
   beginPointerDrag(clientX: number, clientY: number, pointerId?: number) {
+    this.cancelSpin()
     if (this.nudgeTimer) window.clearTimeout(this.nudgeTimer)
     this.nudgeTimer = null
     this.nudgePos = null
@@ -1035,6 +1049,7 @@ class InfiniteMovieEngine<T> {
   // Wheel and arrow keys drive a short virtual drag so they share the exact
   // feel (inertia and snapping) of a pointer drag.
   nudge(dx: number, dy: number) {
+    this.cancelSpin()
     if (this.control.isPointerDown && !this.nudgePos) return
     const center: Vec2 = [
       this.canvas.clientWidth / 2,
@@ -1101,6 +1116,22 @@ class InfiniteMovieEngine<T> {
 
     this.detailTargetProgress = open ? 1 : 0
     if (!open) this.detailVertexIndex = null
+  }
+
+  // Rotates the globe to bring the item's poster to the centre, then calls
+  // onArrive. Manual input (drag, wheel, keys) cancels it.
+  spinToItem(itemId: string, onArrive: (index: number) => void) {
+    if (this.disposed) return
+    this.spinTarget = {
+      index: this.findBestInstanceIndexForItem(itemId),
+      onArrive,
+    }
+    this.control.snapStrength = SPIN_SNAP_STRENGTH
+  }
+
+  cancelSpin() {
+    this.spinTarget = null
+    this.control.snapStrength = null
   }
 
   isSpinning() {
@@ -1328,14 +1359,31 @@ class InfiniteMovieEngine<T> {
       .sort((a, b) => facing[b] - facing[a])
     const loaded = new Set<number>()
 
-    // Pixelated placeholders for every cell that has no full poster yet.
+    // Pixelated placeholders for every cell that has no full poster yet,
+    // painted in small batches per frame so input never stalls.
     void loadPosterSprite().then((sprite) => {
-      if (!sprite || this.disposed || this.contextLost || !this.texture) return
-      indices.forEach((index) => {
-        if (!loaded.has(index)) {
-          this.uploadPlaceholderCell(index, sprite, uploadCanvas, uploadContext)
+      if (!sprite) return
+      let cursor = 0
+      const paintBatch = () => {
+        if (this.disposed || this.contextLost || !this.texture) return
+        const end = Math.min(
+          indices.length,
+          cursor + PLACEHOLDER_CELLS_PER_FRAME,
+        )
+        for (; cursor < end; cursor += 1) {
+          const index = indices[cursor]
+          if (!loaded.has(index)) {
+            this.uploadPlaceholderCell(
+              index,
+              sprite,
+              uploadCanvas,
+              uploadContext,
+            )
+          }
         }
-      })
+        if (cursor < indices.length) window.requestAnimationFrame(paintBatch)
+      }
+      paintBatch()
     })
 
     // Show the wall once the first batch is in; the rest stream into the atlas.
@@ -1701,7 +1749,7 @@ class InfiniteMovieEngine<T> {
       const targetVertexIndex =
         this.detailVertexIndex !== null && this.detailTargetProgress > 0
           ? this.detailVertexIndex
-          : this.findNearestVertexIndex()
+          : (this.spinTarget?.index ?? this.findNearestVertexIndex())
       this.nearestVertexIndex = targetVertexIndex
       const item =
         this.items[this.nearestVertexIndex % Math.max(1, this.items.length)]
@@ -1712,6 +1760,15 @@ class InfiniteMovieEngine<T> {
           this.control.orientation,
         ),
       )
+      const spin = this.spinTarget
+      if (
+        spin &&
+        dot3(this.control.snapTargetDirection, this.control.snapDirection) >
+          SPIN_ARRIVAL_DOT
+      ) {
+        this.cancelSpin()
+        spin.onArrive(spin.index)
+      }
     } else if (!this.nudgePos) {
       cameraTargetZ +=
         (this.control.rotationVelocity * 58 + 0.72) * this.cameraRatio
@@ -1854,6 +1911,7 @@ export const InfiniteMovieMenu = <T,>({
   onOpenItem,
   onReady,
   onUserSpin,
+  spinRequest = null,
 }: InfiniteMovieMenuProps<T>) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const engineRef = useRef<InfiniteMovieEngine<T> | null>(null)
@@ -2083,6 +2141,27 @@ export const InfiniteMovieMenu = <T,>({
     },
     [onActiveItemChange, onOpenItem],
   )
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new request (nonce) starts a spin
+  useEffect(() => {
+    if (!spinRequest) return
+    const item = items.find((candidate) => candidate.id === spinRequest.itemId)
+    if (!item) return
+    const engine = engineRef.current
+    if (!engine) {
+      // Fallback (no WebGL): nothing to spin, open straight away.
+      onOpenItem?.(item)
+      return
+    }
+    engine.spinToItem(item.id, (index) => {
+      activeItemRef.current = item
+      setActiveItem(item)
+      onActiveItemChange(item)
+      engine.setDetailFocus(item.id, true, 'fast', index)
+      onOpenItem?.(item)
+    })
+    return () => engine.cancelSpin()
+  }, [spinRequest])
 
   const releasePress = () => {
     const press = pressRef.current
