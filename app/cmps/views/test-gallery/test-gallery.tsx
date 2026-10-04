@@ -53,12 +53,21 @@ type TestMovie = {
   runtimeMinutes: number | null
   rating: string
   ratingValue: number | null
+  voteCount: number | null
+  popularity: number | null
+  weightedRating: number | null
   countries: string
   posterUrl: string
 }
 
 type ViewMode = 'wall' | 'list' | 'genres'
-type ListGrouping = 'year' | 'alpha' | 'rating'
+type ListGrouping =
+  | 'alpha'
+  | 'year'
+  | 'rating'
+  | 'runtime'
+  | 'popularity'
+  | 'votes'
 type LoadState = 'loading' | 'ready' | 'error'
 type ContentFilter = 'all' | 'movies' | 'series'
 type RuntimeFilter =
@@ -234,7 +243,7 @@ const MOOD_FILTERS: Array<{
   {
     id: 'highRated',
     label: 'High-rated',
-    test: (movie) => Boolean(movie.ratingValue && movie.ratingValue >= 7.5),
+    test: (movie) => movie.ratingValue !== null && movie.ratingValue >= 7.5,
   },
 ]
 
@@ -247,6 +256,13 @@ const getText = (raw: RawMovie, key: string) => {
 const getPositiveNumber = (raw: RawMovie, key: string) => {
   const value = Number(raw[key])
   return Number.isFinite(value) && value > 0 ? value : null
+}
+
+const getNonNegativeNumber = (raw: RawMovie, key: string) => {
+  const value = raw[key]
+  if (value === null || value === undefined || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) && number >= 0 ? number : null
 }
 
 const splitList = (value: string, maxItems = Number.POSITIVE_INFINITY) =>
@@ -290,18 +306,23 @@ const formatRuntimeLabel = (movie: TestMovie) => {
   return runtime === '-' ? null : runtime
 }
 
+const RATING_NOT_AVAILABLE = 'N/A'
+
+const formatRating = (movie: TestMovie) =>
+  movie.ratingValue === null ? RATING_NOT_AVAILABLE : movie.rating
+
 const formatCompactMeta = (movie: TestMovie) =>
   [
     movie.year && movie.year !== '----' ? movie.year : null,
-    movie.ratingValue ? `★ ${movie.rating}` : null,
+    `★ ${formatRating(movie)}`,
   ]
     .filter(Boolean)
     .join(' · ')
 
 export const formatMovieMeta = (movie: TestMovie) =>
-  `Year: ${movie.year && movie.year !== '----' ? movie.year : '-'} | Rating: ${
-    movie.ratingValue ? movie.rating : '-'
-  } | Hour: ${formatRuntime(movie.runtime, movie.runtimeMinutes)}`
+  `Year: ${movie.year && movie.year !== '----' ? movie.year : '-'} | Rating: ${formatRating(
+    movie,
+  )} | Hour: ${formatRuntime(movie.runtime, movie.runtimeMinutes)}`
 
 const hasLatinLeadingTitle = (movie: TestMovie) =>
   /^[A-Za-z]/.test(movie.title.trim())
@@ -487,19 +508,46 @@ export type SortRule = { key: ListGrouping; direction: SortDirection | null }
 
 export const DEFAULT_SORT_DIRECTION: Record<ListGrouping, SortDirection> = {
   alpha: 'asc',
+  popularity: 'desc',
   rating: 'desc',
-  year: 'asc',
+  runtime: 'asc',
+  votes: 'desc',
+  year: 'desc',
 }
 
-const compareMoviesByKey = (
+// Numeric sort value per key; null means unknown and always sorts last.
+const getSortValue = (movie: TestMovie, key: ListGrouping): number | null => {
+  switch (key) {
+    case 'year':
+      return getYearNumber(movie) || null
+    case 'rating':
+      return movie.weightedRating
+    case 'runtime':
+      return movie.runtimeMinutes
+    case 'popularity':
+      return movie.popularity
+    case 'votes':
+      return movie.voteCount
+    default:
+      return null
+  }
+}
+
+// Returns the order for the given direction; unknown values stay last.
+const compareMoviesByRule = (
   movieA: TestMovie,
   movieB: TestMovie,
   key: ListGrouping,
+  direction: SortDirection,
 ) => {
-  if (key === 'alpha') return movieA.title.localeCompare(movieB.title)
-  if (key === 'rating')
-    return (movieA.ratingValue ?? -1) - (movieB.ratingValue ?? -1)
-  return getYearNumber(movieA) - getYearNumber(movieB)
+  const sign = direction === 'desc' ? -1 : 1
+  if (key === 'alpha') return sign * movieA.title.localeCompare(movieB.title)
+  const valueA = getSortValue(movieA, key)
+  const valueB = getSortValue(movieB, key)
+  if (valueA === null || valueB === null) {
+    return valueA === valueB ? 0 : valueA === null ? 1 : -1
+  }
+  return sign * (valueA - valueB)
 }
 
 export const getActiveSortRules = (rules: SortRule[]) => {
@@ -509,7 +557,7 @@ export const getActiveSortRules = (rules: SortRule[]) => {
   )
   return active.length
     ? active
-    : [{ key: 'year' as const, direction: 'asc' as const }]
+    : [{ key: 'alpha' as const, direction: 'asc' as const }]
 }
 
 export const sortMoviesByRules = (movies: TestMovie[], rules: SortRule[]) => {
@@ -520,8 +568,13 @@ export const sortMoviesByRules = (movies: TestMovie[], rules: SortRule[]) => {
 
   return [...sortableMovies].sort((movieA, movieB) => {
     for (const rule of active) {
-      const order = compareMoviesByKey(movieA, movieB, rule.key)
-      if (order) return rule.direction === 'desc' ? -order : order
+      const order = compareMoviesByRule(
+        movieA,
+        movieB,
+        rule.key,
+        rule.direction,
+      )
+      if (order) return order
     }
     return movieA.title.localeCompare(movieB.title)
   })
@@ -560,39 +613,135 @@ export const applySortDirection = (
     ? rules.map((rule) => (rule.key === key ? { ...rule, direction } : rule))
     : [...rules, { key, direction }]
 
-export const groupMoviesByYear = (movies: TestMovie[]) =>
-  movies.reduce<Record<string, TestMovie[]>>((groups, movie) => {
-    const year = movie.year || '----'
-    groups[year] = [...(groups[year] ?? []), movie]
-    return groups
-  }, {})
-
-export const groupMoviesAlphabetically = (movies: TestMovie[]) =>
-  movies.reduce<Record<string, TestMovie[]>>((groups, movie) => {
-    const letter = movie.title.charAt(0).toUpperCase() || '#'
-    const key = /[A-Z]/.test(letter) ? letter : '#'
-    groups[key] = [...(groups[key] ?? []), movie]
-    return groups
-  }, {})
-
+const UNKNOWN_GROUP = 'Unknown'
 const UNRATED_GROUP = 'Unrated'
 
+const RUNTIME_GROUPS = ['Under 1h 30', '1h 30–2h', 'Over 2h']
+const POPULARITY_GROUPS = ['Rest', 'Top 50%', 'Top 25%', 'Top 10%']
+const VOTES_GROUPS = ['Under 100', '100–1k', '1k–10k', '10k+']
+
 const getRatingGroupKey = (movie: TestMovie) => {
-  if (!movie.ratingValue) return UNRATED_GROUP
-  const band = Math.floor(movie.ratingValue)
+  if (movie.weightedRating === null) return UNRATED_GROUP
+  const band = Math.floor(movie.weightedRating)
   return band >= 10 ? '10' : `${band}+`
 }
 
-export const groupMoviesByRating = (movies: TestMovie[]) =>
+const getRuntimeGroupKey = (movie: TestMovie) => {
+  const minutes = movie.runtimeMinutes
+  if (minutes === null) return UNKNOWN_GROUP
+  if (minutes < 90) return RUNTIME_GROUPS[0]
+  return minutes < 120 ? RUNTIME_GROUPS[1] : RUNTIME_GROUPS[2]
+}
+
+const getVotesGroupKey = (movie: TestMovie) => {
+  const votes = movie.voteCount
+  if (votes === null) return UNKNOWN_GROUP
+  if (votes >= 10000) return VOTES_GROUPS[3]
+  if (votes >= 1000) return VOTES_GROUPS[2]
+  return votes >= 100 ? VOTES_GROUPS[1] : VOTES_GROUPS[0]
+}
+
+// Percentile bucket by popularity rank among the movies passed in.
+export const getPopularityGroups = (movies: TestMovie[]) => {
+  const ranked = movies
+    .filter((movie) => movie.popularity !== null)
+    .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
+  const groups = new Map<string, string>()
+  ranked.forEach((movie, index) => {
+    const share = (index + 1) / ranked.length
+    groups.set(
+      movie.id,
+      share <= 0.1
+        ? 'Top 10%'
+        : share <= 0.25
+          ? 'Top 25%'
+          : share <= 0.5
+            ? 'Top 50%'
+            : 'Rest',
+    )
+  })
+  return groups
+}
+
+const getAlphaGroupKey = (movie: TestMovie) => {
+  const letter = movie.title.charAt(0).toUpperCase() || '#'
+  return /[A-Z]/.test(letter) ? letter : '#'
+}
+
+const groupBy = (movies: TestMovie[], getKey: (movie: TestMovie) => string) =>
   movies.reduce<Record<string, TestMovie[]>>((groups, movie) => {
-    const key = getRatingGroupKey(movie)
+    const key = getKey(movie)
     groups[key] = [...(groups[key] ?? []), movie]
     return groups
   }, {})
 
-// Highest band first; "Unrated" (NaN) always last.
-const compareRatingGroups = (groupA: string, groupB: string) =>
-  (Number.parseFloat(groupB) || -1) - (Number.parseFloat(groupA) || -1)
+export const groupMoviesByYear = (movies: TestMovie[]) =>
+  groupBy(movies, (movie) => movie.year || '----')
+
+export const groupMoviesAlphabetically = (movies: TestMovie[]) =>
+  groupBy(movies, getAlphaGroupKey)
+
+export const groupMoviesByRating = (movies: TestMovie[]) =>
+  groupBy(movies, getRatingGroupKey)
+
+export const groupMoviesByRuntime = (movies: TestMovie[]) =>
+  groupBy(movies, getRuntimeGroupKey)
+
+export const groupMoviesByVotes = (movies: TestMovie[]) =>
+  groupBy(movies, getVotesGroupKey)
+
+export const groupMoviesByPopularity = (movies: TestMovie[]) => {
+  const groups = getPopularityGroups(movies)
+  return groupBy(movies, (movie) => groups.get(movie.id) ?? UNKNOWN_GROUP)
+}
+
+export const groupMoviesForList = (
+  movies: TestMovie[],
+  grouping: ListGrouping,
+) => {
+  switch (grouping) {
+    case 'alpha':
+      return groupMoviesAlphabetically(movies)
+    case 'rating':
+      return groupMoviesByRating(movies)
+    case 'runtime':
+      return groupMoviesByRuntime(movies)
+    case 'popularity':
+      return groupMoviesByPopularity(movies)
+    case 'votes':
+      return groupMoviesByVotes(movies)
+    default:
+      return groupMoviesByYear(movies)
+  }
+}
+
+const isUnknownGroup = (group: string) =>
+  group === UNKNOWN_GROUP || group === UNRATED_GROUP
+
+// Position of a group in ascending order; unknown groups are handled apart.
+const getGroupOrder = (group: string, grouping: ListGrouping) => {
+  if (grouping === 'runtime') return RUNTIME_GROUPS.indexOf(group)
+  if (grouping === 'popularity') return POPULARITY_GROUPS.indexOf(group)
+  if (grouping === 'votes') return VOTES_GROUPS.indexOf(group)
+  return Number.parseFloat(group)
+}
+
+// Group headers follow the sort direction; unknown groups always come last.
+export const compareListGroups = (
+  groupA: string,
+  groupB: string,
+  grouping: ListGrouping,
+  direction: SortDirection,
+) => {
+  const unknownA = isUnknownGroup(groupA)
+  const unknownB = isUnknownGroup(groupB)
+  if (unknownA || unknownB) return Number(unknownA) - Number(unknownB)
+  const sign = direction === 'desc' ? -1 : 1
+  if (grouping === 'alpha') return sign * groupA.localeCompare(groupB)
+  return (
+    sign * (getGroupOrder(groupA, grouping) - getGroupOrder(groupB, grouping))
+  )
+}
 
 const SORT_OPTIONS: Array<{
   key: ListGrouping
@@ -600,27 +749,58 @@ const SORT_OPTIONS: Array<{
   asc: string
   desc: string
 }> = [
-  { key: 'year', label: 'Year', asc: 'Oldest first', desc: 'Newest first' },
   { key: 'alpha', label: 'A–Z', asc: 'A to Z', desc: 'Z to A' },
+  { key: 'year', label: 'Year', asc: 'Oldest first', desc: 'Newest first' },
   {
     key: 'rating',
     label: 'Rating',
     asc: 'Lowest first',
     desc: 'Highest first',
   },
+  {
+    key: 'runtime',
+    label: 'Runtime',
+    asc: 'Shortest first',
+    desc: 'Longest first',
+  },
+  {
+    key: 'popularity',
+    label: 'Popularity',
+    asc: 'Least popular',
+    desc: 'Most popular',
+  },
+  {
+    key: 'votes',
+    label: 'Vote count',
+    asc: 'Fewest votes',
+    desc: 'Most votes',
+  },
 ]
 const SORT_LABELS = Object.fromEntries(
   SORT_OPTIONS.map((option) => [option.key, option.label]),
 ) as Record<ListGrouping, string>
 
-const getMovieListGroupKey = (movie: TestMovie, grouping: ListGrouping) => {
-  if (grouping === 'rating') return getRatingGroupKey(movie)
-  if (grouping === 'alpha') {
-    const letter = movie.title.charAt(0).toUpperCase() || '#'
-    return /[A-Z]/.test(letter) ? letter : '#'
+// `popularityGroups` is needed only for popularity, where a movie's bucket
+// depends on the whole list.
+const getMovieListGroupKey = (
+  movie: TestMovie,
+  grouping: ListGrouping,
+  popularityGroups?: Map<string, string>,
+) => {
+  switch (grouping) {
+    case 'alpha':
+      return getAlphaGroupKey(movie)
+    case 'rating':
+      return getRatingGroupKey(movie)
+    case 'runtime':
+      return getRuntimeGroupKey(movie)
+    case 'votes':
+      return getVotesGroupKey(movie)
+    case 'popularity':
+      return popularityGroups?.get(movie.id) ?? UNKNOWN_GROUP
+    default:
+      return movie.year || '----'
   }
-
-  return movie.year || '----'
 }
 
 const getGenreSummaries = (movies: TestMovie[]): GenreSummary[] => {
@@ -636,6 +816,37 @@ const getGenreSummaries = (movies: TestMovie[]): GenreSummary[] => {
     .sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre))
 }
 
+export const withWeightedRatings = (movies: TestMovie[]): TestMovie[] => {
+  const rated = movies.filter(
+    (movie) =>
+      movie.ratingValue !== null &&
+      movie.voteCount !== null &&
+      movie.voteCount > 0,
+  )
+  if (!rated.length)
+    return movies.map((movie) => ({ ...movie, weightedRating: null }))
+
+  const meanRating =
+    rated.reduce((sum, movie) => sum + (movie.ratingValue ?? 0), 0) /
+    rated.length
+  const votes = rated.map((movie) => movie.voteCount ?? 0).sort((a, b) => a - b)
+  const middle = Math.floor(votes.length / 2)
+  const medianVotes =
+    votes.length % 2 ? votes[middle] : (votes[middle - 1] + votes[middle]) / 2
+
+  return movies.map((movie) => {
+    const { ratingValue, voteCount } = movie
+    if (ratingValue === null || voteCount === null || voteCount <= 0)
+      return { ...movie, weightedRating: null }
+    const total = voteCount + medianVotes
+    return {
+      ...movie,
+      weightedRating:
+        (voteCount / total) * ratingValue + (medianVotes / total) * meanRating,
+    }
+  })
+}
+
 export const resolveMoviePosterUrls = (
   movieId: string,
   catalogIndex: number,
@@ -649,12 +860,14 @@ export const resolveMoviePosterUrls = (
   return { posterUrl }
 }
 
-const mapMovie = (
+export const mapMovie = (
   raw: RawMovie,
   index: number,
   localPosterIds: ReadonlySet<string>,
 ): TestMovie => {
   const rating = getPositiveNumber(raw, 'vote_average')
+  const voteCount = getNonNegativeNumber(raw, 'vote_count')
+  const popularity = getNonNegativeNumber(raw, 'popularity')
   const runtimeMinutes = getPositiveNumber(raw, 'runtime_minutes')
   const year = getText(raw, 'release_year') || '----'
   const rawId = getText(raw, 'id')
@@ -673,6 +886,9 @@ const mapMovie = (
     runtimeMinutes,
     rating: rating ? rating.toFixed(1) : '',
     ratingValue: rating,
+    voteCount,
+    popularity,
+    weightedRating: null,
     countries: splitList(getText(raw, 'production_countries'), 1).join(', '),
     ...posterUrls,
   }
@@ -708,9 +924,11 @@ const loadMovieDataset = () => {
 
   movieDatasetPromise ??= Promise.all([datasetRequest, posterManifestRequest])
     .then(([datasets, localPosterIds]) => {
-      cachedMovieDataset = datasets
-        .flat()
-        .map((raw, index) => mapMovie(raw, index, localPosterIds))
+      cachedMovieDataset = withWeightedRatings(
+        datasets
+          .flat()
+          .map((raw, index) => mapMovie(raw, index, localPosterIds)),
+      )
         .filter((movie) => Boolean(movie.posterUrl))
         .slice(0, LIST_WINDOW_SIZE)
       return cachedMovieDataset
@@ -727,7 +945,7 @@ export const TestGalleryApp = () => {
   const [movies, setMovies] = useState<TestMovie[]>(cachedMovieDataset ?? [])
   const [mode, setMode] = useState<ViewMode>('wall')
   const [sortRules, setSortRules] = useState<SortRule[]>([
-    { key: 'year', direction: 'asc' },
+    { key: 'alpha', direction: 'asc' },
   ])
   const [sortOpen, setSortOpen] = useState(false)
   const [listRandomNonce, setListRandomNonce] = useState(0)
@@ -1308,7 +1526,7 @@ export const TestGalleryApp = () => {
           onDirection={(key, direction) =>
             setSortRules((rules) => applySortDirection(rules, key, direction))
           }
-          onReset={() => setSortRules([{ key: 'year', direction: 'asc' }])}
+          onReset={() => setSortRules([{ key: 'alpha', direction: 'asc' }])}
           onToggle={(key) =>
             setSortRules((rules) => applySortToggle(rules, key))
           }
@@ -1510,29 +1728,18 @@ const WarpList = ({
   const pulseTimerRef = useRef<number | null>(null)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
 
-  const groupedMovies = useMemo(() => {
-    const groups =
-      grouping === 'alpha'
-        ? groupMoviesAlphabetically(movies)
-        : grouping === 'rating'
-          ? groupMoviesByRating(movies)
-          : groupMoviesByYear(movies)
-    const sign = groupDirection === 'desc' ? -1 : 1
-    return Object.entries(groups).sort(([groupA], [groupB]) => {
-      if (grouping === 'rating') {
-        // Bands run high to low by default; Unrated always stays last.
-        if (groupA === UNRATED_GROUP || groupB === UNRATED_GROUP)
-          return compareRatingGroups(groupA, groupB)
-        return -sign * compareRatingGroups(groupA, groupB)
-      }
-      return (
-        sign *
-        (grouping === 'alpha'
-          ? groupA.localeCompare(groupB)
-          : Number(groupA) - Number(groupB))
-      )
-    })
-  }, [groupDirection, grouping, movies])
+  const groupedMovies = useMemo(
+    () =>
+      Object.entries(groupMoviesForList(movies, grouping)).sort(
+        ([groupA], [groupB]) =>
+          compareListGroups(groupA, groupB, grouping, groupDirection),
+      ),
+    [groupDirection, grouping, movies],
+  )
+  const popularityGroups = useMemo(
+    () => (grouping === 'popularity' ? getPopularityGroups(movies) : undefined),
+    [grouping, movies],
+  )
 
   // A new primary sort key starts with every group expanded.
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset on grouping change only
@@ -1579,7 +1786,7 @@ const WarpList = ({
     const movie = movies[Math.floor(Math.random() * Math.max(movies.length, 1))]
     if (!movie) return
 
-    const movieGroup = getMovieListGroupKey(movie, grouping)
+    const movieGroup = getMovieListGroupKey(movie, grouping, popularityGroups)
     setCollapsedGroups((currentGroups) => {
       if (!currentGroups.has(movieGroup)) return currentGroups
       const nextGroups = new Set(currentGroups)
@@ -1960,7 +2167,7 @@ const SortPanel = ({
   const pending = rules.find((rule) => !rule.direction)
   const isDefault =
     rules.length === 1 &&
-    rules[0].key === 'year' &&
+    rules[0].key === 'alpha' &&
     rules[0].direction === 'asc'
 
   return (
@@ -2690,7 +2897,7 @@ const MovieDetailsCard = ({
   const showFullContent = isWide || isExpanded
   const stats = [
     movie.year && movie.year !== '----' ? movie.year : null,
-    movie.ratingValue ? `★ ${movie.rating}` : null,
+    `★ ${formatRating(movie)}`,
     formatRuntimeLabel(movie),
     movie.countries || null,
   ].filter((stat): stat is string => Boolean(stat))

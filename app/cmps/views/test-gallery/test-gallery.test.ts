@@ -2,18 +2,25 @@ import { describe, expect, it } from 'vitest'
 import {
   applySortDirection,
   applySortToggle,
+  compareListGroups,
   filterMoviesByDecisionFilters,
   filterMoviesByGenres,
   filterMoviesByTitleSearch,
   formatMovieMeta,
+  getActiveSortRules,
   getGalleryWindow,
   getGenreOverlap,
   groupMoviesAlphabetically,
+  groupMoviesByPopularity,
   groupMoviesByRating,
+  groupMoviesByRuntime,
+  groupMoviesByVotes,
   groupMoviesByYear,
+  mapMovie,
   resolveMoviePosterUrls,
   sortMoviesByRules,
   sortMoviesForList,
+  withWeightedRatings,
 } from './test-gallery'
 
 const CHINESE_COMEDY_TITLE = '分手大师'
@@ -32,11 +39,14 @@ const movie = (
   posterUrl: `/media/single/${rank}.jpg`,
   rank,
   rating: '7.0',
-  ratingValue: 7,
+  ratingValue: 7 as number | null,
   runtime: '100m',
-  runtimeMinutes: 100,
+  runtimeMinutes: 100 as number | null,
   tagline: '',
   title,
+  voteCount: 1000 as number | null,
+  popularity: 10 as number | null,
+  weightedRating: 7 as number | null,
   year,
 })
 
@@ -130,7 +140,7 @@ describe('test gallery filtering helpers', () => {
     expect(
       sortMoviesForList(movies, 'year').map((item) => item.title),
     ).toContain(CHINESE_COMEDY_TITLE)
-    expect(sortMoviesForList(movies, 'year')[0].title).toBe('Before Sunrise')
+    expect(sortMoviesForList(movies, 'year')[0].title).toBe('A Quiet Place')
     expect(sortMoviesForList(movies, 'alpha')[0].title).toBe('A Quiet Place')
     expect(
       sortMoviesForList(movies, 'alpha').map((item) => item.title),
@@ -147,10 +157,10 @@ describe('test gallery filtering helpers', () => {
 
   it('sorts and groups list mode by rating, unrated last', () => {
     const rated = [
-      { ...movies[0], rating: '6.4', ratingValue: 6.4 },
-      { ...movies[1], rating: '8.9', ratingValue: 8.9 },
-      { ...movies[2], rating: '-', ratingValue: null },
-      { ...movies[3], rating: '8.1', ratingValue: 8.1 },
+      { ...movies[0], weightedRating: 6.4 },
+      { ...movies[1], weightedRating: 8.9 },
+      { ...movies[2], weightedRating: null },
+      { ...movies[3], weightedRating: 8.1 },
     ]
 
     expect(
@@ -166,14 +176,20 @@ describe('test gallery filtering helpers', () => {
       '6+': [rated[0]],
       Unrated: [rated[2]],
     })
+    const order = (direction: 'asc' | 'desc') =>
+      Object.keys(groupMoviesByRating(rated)).sort((a, b) =>
+        compareListGroups(a, b, 'rating', direction),
+      )
+    expect(order('desc')).toEqual(['8+', '6+', 'Unrated'])
+    expect(order('asc')).toEqual(['6+', '8+', 'Unrated'])
   })
 
   it('sorts by stacked rules and ignores rules without a direction', () => {
     const pool = [
-      { ...movies[0], year: '2007', rating: '7.5', ratingValue: 7.5 },
-      { ...movies[1], year: '2007', rating: '8.1', ratingValue: 8.1 },
-      { ...movies[2], year: '1995', rating: '6.0', ratingValue: 6 },
-      { ...movies[3], year: '2007', rating: '7.5', ratingValue: 7.5 },
+      { ...movies[0], year: '2007', weightedRating: 7.5 },
+      { ...movies[1], year: '2007', weightedRating: 8.1 },
+      { ...movies[2], year: '1995', weightedRating: 6 },
+      { ...movies[3], year: '2007', weightedRating: 7.5 },
     ]
     const titles = (rules: Parameters<typeof sortMoviesByRules>[1]) =>
       sortMoviesByRules(pool, rules).map((item) => item.title)
@@ -205,11 +221,11 @@ describe('test gallery filtering helpers', () => {
   })
 
   it('manages the sort rule stack like the sort panel', () => {
-    const start = [{ key: 'year', direction: 'asc' }] as const
+    const start = [{ key: 'alpha', direction: 'asc' }] as const
     // Ticking a key appends it as pending; a direction click sets it.
     const withRating = applySortToggle([...start], 'rating')
     expect(withRating).toEqual([
-      { key: 'year', direction: 'asc' },
+      { key: 'alpha', direction: 'asc' },
       { key: 'rating', direction: null },
     ])
     expect(applySortDirection(withRating, 'rating', 'desc')[1]).toEqual({
@@ -217,11 +233,11 @@ describe('test gallery filtering helpers', () => {
       direction: 'desc',
     })
     // One click on an unselected key adds it with that direction.
-    expect(applySortDirection([...start], 'alpha', 'asc')).toHaveLength(2)
+    expect(applySortDirection([...start], 'year', 'asc')).toHaveLength(2)
     // The last remaining rule cannot be removed.
-    expect(applySortToggle([...start], 'year')).toEqual([...start])
+    expect(applySortToggle([...start], 'alpha')).toEqual([...start])
     // Removing the first rule promotes the next; a pending one gets a default.
-    expect(applySortToggle(withRating, 'year')).toEqual([
+    expect(applySortToggle(withRating, 'alpha')).toEqual([
       { key: 'rating', direction: 'desc' },
     ])
   })
@@ -240,6 +256,128 @@ describe('test gallery filtering helpers', () => {
         runtimeMinutes: null,
         year: '----',
       }),
-    ).toBe('Year: - | Rating: - | Hour: -')
+    ).toBe('Year: - | Rating: N/A | Hour: -')
+  })
+
+  it('falls back to A-Z ascending when no rule is active', () => {
+    expect(getActiveSortRules([])).toEqual([{ key: 'alpha', direction: 'asc' }])
+    expect(getActiveSortRules([{ key: 'year', direction: null }])).toEqual([
+      { key: 'alpha', direction: 'asc' },
+    ])
+  })
+
+  it('sorts by each new key with unknown values always last', () => {
+    const unknown = {
+      runtimeMinutes: null,
+      popularity: null,
+      voteCount: null,
+      weightedRating: null,
+    }
+    const pool = [
+      {
+        ...movies[0],
+        title: 'Aa',
+        runtimeMinutes: 120,
+        popularity: 5,
+        voteCount: 50,
+        weightedRating: 6,
+      },
+      { ...movies[1], ...unknown, title: 'Bb' },
+      {
+        ...movies[2],
+        title: 'Cc',
+        runtimeMinutes: 80,
+        popularity: 50,
+        voteCount: 5000,
+        weightedRating: 8,
+      },
+    ]
+    const titles = (
+      key: 'rating' | 'runtime' | 'popularity' | 'votes',
+      direction: 'asc' | 'desc',
+    ) => sortMoviesByRules(pool, [{ key, direction }]).map((item) => item.title)
+
+    expect(titles('rating', 'desc')).toEqual(['Cc', 'Aa', 'Bb'])
+    expect(titles('rating', 'asc')).toEqual(['Aa', 'Cc', 'Bb'])
+    expect(titles('runtime', 'asc')).toEqual(['Cc', 'Aa', 'Bb'])
+    expect(titles('runtime', 'desc')).toEqual(['Aa', 'Cc', 'Bb'])
+    expect(titles('popularity', 'desc')).toEqual(['Cc', 'Aa', 'Bb'])
+    expect(titles('popularity', 'asc')).toEqual(['Aa', 'Cc', 'Bb'])
+    expect(titles('votes', 'desc')).toEqual(['Cc', 'Aa', 'Bb'])
+    expect(titles('votes', 'asc')).toEqual(['Aa', 'Cc', 'Bb'])
+    expect(
+      sortMoviesByRules(
+        [movies[0], { ...movies[1], year: '----' }, movies[3]],
+        [{ key: 'year', direction: 'desc' }],
+      ).map((item) => item.title),
+    ).toEqual(['A Quiet Place', 'Zodiac', 'Before Sunrise'])
+  })
+
+  it('computes Bayesian weighted ratings and leaves unrated movies null', () => {
+    const pool = [
+      { ...movies[0], ratingValue: 8, voteCount: 100 },
+      { ...movies[1], ratingValue: 6, voteCount: 300 },
+      { ...movies[2], ratingValue: 9, voteCount: 0 },
+      { ...movies[3], ratingValue: null, voteCount: 500 },
+      { ...movies[4], ratingValue: 7, voteCount: null },
+    ]
+    const [first, second, third, fourth, fifth] = withWeightedRatings(pool)
+    // C = mean(8, 6) = 7, m = median(100, 300) = 200
+    expect(first.weightedRating).toBeCloseTo((100 / 300) * 8 + (200 / 300) * 7)
+    expect(second.weightedRating).toBeCloseTo((300 / 500) * 6 + (200 / 500) * 7)
+    expect(third.weightedRating).toBeNull()
+    expect(fourth.weightedRating).toBeNull()
+    expect(fifth.weightedRating).toBeNull()
+  })
+
+  it('normalizes a 0.0 vote average to a null rating', () => {
+    const mapped = mapMovie(
+      { id: '1', title: 'X', vote_average: '0.0', vote_count: 12 },
+      0,
+      new Set(),
+    )
+    expect(mapped.ratingValue).toBeNull()
+    expect(mapped.rating).toBe('')
+    expect(mapped.voteCount).toBe(12)
+    expect(formatMovieMeta(mapped)).toContain('Rating: N/A')
+  })
+
+  it('groups by runtime, votes and popularity with unknown groups last', () => {
+    const pool = [
+      { ...movies[0], runtimeMinutes: 80, voteCount: 20000, popularity: 100 },
+      { ...movies[1], runtimeMinutes: 100, voteCount: 2000, popularity: 50 },
+      { ...movies[2], runtimeMinutes: 150, voteCount: 200, popularity: 10 },
+      { ...movies[3], runtimeMinutes: null, voteCount: null, popularity: null },
+      { ...movies[4], runtimeMinutes: 90, voteCount: 10, popularity: 1 },
+    ]
+    const runtime = groupMoviesByRuntime(pool)
+    expect(Object.keys(runtime).sort()).toEqual(
+      ['1h 30–2h', 'Over 2h', 'Under 1h 30', 'Unknown'].sort(),
+    )
+    expect(runtime['1h 30–2h']).toHaveLength(2)
+    expect(Object.keys(groupMoviesByVotes(pool)).sort()).toEqual(
+      ['10k+', '1k–10k', '100–1k', 'Under 100', 'Unknown'].sort(),
+    )
+    const popular = groupMoviesByPopularity(pool)
+    expect(popular['Top 25%']).toEqual([pool[0]])
+    expect(popular['Top 50%']).toEqual([pool[1]])
+    expect(popular.Rest).toEqual([pool[2], pool[4]])
+    expect(popular.Unknown).toEqual([pool[3]])
+    const order = (direction: 'asc' | 'desc') =>
+      Object.keys(runtime).sort((a, b) =>
+        compareListGroups(a, b, 'runtime', direction),
+      )
+    expect(order('asc')).toEqual([
+      'Under 1h 30',
+      '1h 30–2h',
+      'Over 2h',
+      'Unknown',
+    ])
+    expect(order('desc')).toEqual([
+      'Over 2h',
+      '1h 30–2h',
+      'Under 1h 30',
+      'Unknown',
+    ])
   })
 })

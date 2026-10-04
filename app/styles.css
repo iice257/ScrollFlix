@@ -1184,6 +1184,8 @@
     bottom: 84px;
     z-index: 32;
     display: grid;
+    max-height: calc(100dvh - 84px - 72px);
+    overflow-y: auto;
     width: min(320px, calc(100vw - 32px));
     gap: 10px;
     translate: -50% 0;
