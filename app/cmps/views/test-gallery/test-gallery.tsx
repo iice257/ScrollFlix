@@ -1341,7 +1341,6 @@ export const TestGalleryApp = () => {
           randomRequest={listRandomNonce}
           searchQuery={listSearchQuery}
           searchResultCount={searchableListMovies.length}
-          totalMovieCount={movies.length}
           onOpenMovie={handleOpenMovie}
           onPickRandomMovie={handlePickRandomMovie}
           onSearchQueryChange={setListSearchQuery}
@@ -1766,7 +1765,6 @@ type WarpListProps = {
   randomRequest: number
   searchQuery: string
   searchResultCount: number
-  totalMovieCount: number
   onOpenMovie: (movie: TestMovie) => void
   onPickRandomMovie: (movie: TestMovie) => void
   onSearchQueryChange: (searchQuery: string) => void
@@ -1897,7 +1895,6 @@ const WarpList = ({
   randomRequest,
   searchQuery,
   searchResultCount,
-  totalMovieCount,
   onOpenMovie,
   onPickRandomMovie,
   onSearchQueryChange,
@@ -2068,7 +2065,7 @@ const WarpList = ({
               ? loadState
               : searchQuery.trim()
                 ? `${searchResultCount.toLocaleString()} title matches`
-                : `${totalMovieCount.toLocaleString()} movies in index`}
+                : '20k+ movies to choose from'}
           </p>
         </div>
         <form
@@ -2159,7 +2156,13 @@ const WarpList = ({
                   onClick={() => toggleCollapsedGroup(group)}
                 >
                   <span>
-                    <h2>{group}</h2>
+                    <h2>
+                      {group === '#' || group === 'Rest'
+                        ? 'The rest'
+                        : group === '2023'
+                          ? '2023+'
+                          : group}
+                    </h2>
                     <small>
                       {groupMovies.length}{' '}
                       {groupMovies.length === 1 ? 'title' : 'titles'}
@@ -2451,7 +2454,7 @@ const SortPanel = ({
       <p className='warp-sort-hint'>
         {pending
           ? `Pick a direction for ${SORT_LABELS[pending.key]} to apply it.`
-          : 'The first key groups the index; tick more to break ties.'}
+          : 'Select multiple to stack'}
       </p>
     </section>
   )
@@ -2608,8 +2611,7 @@ const GenresView = ({
       <div>
         <h1>Genres</h1>
         <p>
-          Select one or more lanes. The gallery ranks exact overlap first, then
-          keeps the wall full from the wider matching set.
+          The more the merrier
         </p>
       </div>
       <div className='warp-genres-actions'>
@@ -2631,18 +2633,22 @@ const GenresView = ({
       <span>{resultCount} matching movies</span>
     </div>
     <div className='warp-genres-grid'>
-      {genres.map(({ genre, count }) => (
-        <button
-          type='button'
-          key={genre}
-          className={cn(selectedGenres.includes(genre) && 'is-active')}
-          aria-pressed={selectedGenres.includes(genre)}
-          onClick={() => onToggleGenre(genre)}
-        >
-          <span>{genre}</span>
-          <span>{count}</span>
-        </button>
-      ))}
+      {genres.map(({ genre, count }) => {
+        const isActive =
+          !selectedGenres.length || selectedGenres.includes(genre)
+        return (
+          <button
+            type='button'
+            key={genre}
+            className={cn(isActive && 'is-active')}
+            aria-pressed={isActive}
+            onClick={() => onToggleGenre(genre)}
+          >
+            <span>{genre}</span>
+            <span>{count}</span>
+          </button>
+        )
+      })}
     </div>
   </section>
 )
@@ -2659,46 +2665,45 @@ type AboutDrawerProps = {
   onToggleMaximized: () => void
 }
 
-// Pointer and touch wording differ; 'pointer' rows are hidden on touch screens.
-const ABOUT_CONTROLS: Array<{
-  keys: string[]
-  touchKeys?: string[]
-  action: string
-  pointerOnly?: boolean
-}> = [
-  { keys: ['Click'], touchKeys: ['Tap'], action: 'Open a poster' },
-  { keys: ['Hold', 'Drag'], action: 'Spin the globe' },
-  {
-    keys: ['Scroll', '↑ ↓ ← →'],
-    action: 'Spin without grabbing',
-    pointerOnly: true,
-  },
-  { keys: ['Shuffle'], action: 'Land on a random film' },
-]
-
 const AboutControls = () => (
-  <ul className='warp-about-controls'>
-    {ABOUT_CONTROLS.map((control) => (
-      <li
-        key={control.action}
-        className={cn(control.pointerOnly && 'is-pointer-only')}
-      >
-        <span className='warp-about-keys'>
-          {control.keys.map((key) => (
-            <kbd key={key} className={cn(control.touchKeys && 'is-pointer')}>
-              {key}
-            </kbd>
-          ))}
-          {control.touchKeys?.map((key) => (
-            <kbd key={key} className='is-touch'>
-              {key}
-            </kbd>
-          ))}
-        </span>
-        <span>{control.action}</span>
+  <div className='warp-about-control-sets'>
+    <ul className='warp-about-controls is-desktop-controls'>
+      <li>
+        <span className='warp-about-keys'><kbd>Click</kbd></span>
+        <span>Open a poster</span>
       </li>
-    ))}
-  </ul>
+      <li>
+        <span className='warp-about-keys'><kbd>Hold or drag</kbd></span>
+        <span>Spin the globe</span>
+      </li>
+      <li>
+        <span className='warp-about-keys'><kbd>Scroll or use arrow keys</kbd></span>
+        <span>Spin without grabbing</span>
+      </li>
+      <li>
+        <span className='warp-about-keys'><kbd>Shuffle</kbd></span>
+        <span>Land on a random film</span>
+      </li>
+    </ul>
+    <ul className='warp-about-controls is-mobile-controls'>
+      <li>
+        <span className='warp-about-keys'><kbd>Tap</kbd></span>
+        <span>Open a poster</span>
+      </li>
+      <li>
+        <span className='warp-about-keys'><kbd>Hold or drag</kbd></span>
+        <span>Spin the globe</span>
+      </li>
+      <li>
+        <span className='warp-about-keys'><kbd>Swipe</kbd></span>
+        <span>Quick spin</span>
+      </li>
+      <li>
+        <span className='warp-about-keys'><kbd>Shuffle</kbd></span>
+        <span>Land on a random film</span>
+      </li>
+    </ul>
+  </div>
 )
 
 // A small diagram of the globe: tap opens a poster, hold/drag and scroll spin.
@@ -2804,10 +2809,10 @@ const AboutDrawer = ({
           <p className='warp-about-eyebrow'>About</p>
           <h2>ScrollFlix</h2>
           <p>
-            {movieCount.toLocaleString()} films on a globe of posters, for the
-            nights you can&apos;t decide. Spin it, filter it, or let Shuffle
-            pick, then open a film to see what it is and where it&apos;s
-            showing.
+            20k+ movies, Roll the dice. Nothing’s more annoying than trying to
+            relax and still being stuck choosing a movie 20 minutes later and
+            prolly more frustrated than before (I’m looking at you, Netflix).
+            This is an attempt to make picking a movie a little less annoying.
           </p>
         </div>
         <div className='warp-about-page-actions'>
@@ -2852,9 +2857,9 @@ const AboutDrawer = ({
             </div>
           </dl>
           <p>
-            The globe shows up to 900 posters at a time and shrinks to stay
-            dense when filters narrow it down. The index always lists every
-            match.
+            Wonder why I went with that exact number? 🌚
+            <br />
+            See if you can find the easter egg.
           </p>
         </section>
 
@@ -2878,22 +2883,16 @@ const AboutDrawer = ({
         <section className='warp-about-section'>
           <h3>Watch links</h3>
           <p>
-            Let&apos;s Watch lists the usual places to stream, rent or find a
-            trailer. Availability isn&apos;t checked per film yet, so those
-            options stay disabled until it is, rather than sending you to a dead
-            end.
+            Links are a work in progress and are disabled for now. You can find
+            any movie seen here with a quick Google search.
           </p>
         </section>
 
         <section className='warp-about-section'>
           <h3>Credits</h3>
           <p>
-            Built by ICE (Kingsley Aremu). ScrollFlix grew out of a fork of
-            Nothing to Watch, whose Voroforce engine still lives in the
-            repository.
-          </p>
-          <p className='warp-about-fineprint'>
-            Code: MIT. Shaders: CC BY-NC-SA 3.0. Film data: ODC-By 1.0.
+            Carefully put together by my humble self -{' '}
+            <a href='https://kingsleyaremu.vercel.app/'>ICE</a>.
           </p>
         </section>
       </div>
@@ -2943,9 +2942,6 @@ const AboutDrawer = ({
           ))}
         </div>
       </fieldset>
-      <p className='warp-about-fineprint'>
-        Film data from TMDB via Kaggle (ODC-By). Not endorsed by TMDB.
-      </p>
       <button
         type='button'
         className='warp-about-more'
