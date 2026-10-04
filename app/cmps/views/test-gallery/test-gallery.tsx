@@ -2078,7 +2078,11 @@ const FilterPanel = ({
           }
         >
           <span>{filter.label}</span>
-          {filter.meta ? <span>{filter.meta}</span> : null}
+          {filter.meta ? (
+            <span className='warp-soon-tag' aria-label={filter.meta}>
+              Soon
+            </span>
+          ) : null}
         </button>
       ))}
     </div>

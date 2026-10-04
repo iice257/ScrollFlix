@@ -773,7 +773,7 @@
     z-index: 30;
     display: grid;
     grid-template-columns: minmax(180px, 0.55fr) minmax(260px, 1fr) minmax(112px, 0.36fr) auto;
-    align-items: start;
+    align-items: center;
     gap: clamp(18px, 3vw, 54px);
     pointer-events: none;
     color: #fff;
@@ -1829,11 +1829,32 @@
     width: min(360px, calc(100vw - 48px));
     max-height: min(560px, calc(100dvh - 160px));
     overflow: auto;
+    overscroll-behavior: contain;
     padding: 14px;
     border: 1px solid rgb(255 255 255 / 0.14);
     border-radius: 20px;
     background: rgb(8 8 8 / 0.96);
+    /* A native scrollbar would square off the rounded corner; the list is
+       short and still scrolls by wheel, touch and keyboard. */
+    scrollbar-width: none;
     animation: warp-filter-panel-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .warp-filter-panel::-webkit-scrollbar {
+    display: none;
+  }
+
+  .warp-soon-tag {
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.1);
+    padding: 3px 6px;
+    color: rgb(255 255 255 / 0.6);
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    line-height: 1;
+    text-transform: uppercase;
+    white-space: nowrap;
   }
 
   .warp-filter-panel[data-motion="exit"] {
@@ -2699,9 +2720,13 @@
   .warp-list-groups {
     display: grid;
     max-width: 1180px;
-    gap: 72px;
+    gap: 44px;
     margin: 0 auto;
-    padding-top: 28px;
+    padding-top: 8px;
+  }
+
+  .warp-list-group:first-child .warp-list-group-heading {
+    border-top-color: transparent;
   }
 
   .warp-list-group {
@@ -3737,6 +3762,10 @@
       gap: 0;
     }
 
+    .warp-list-groups {
+      gap: 26px;
+    }
+
     .warp-list-group-heading {
       top: 96px;
       padding: 17px 0 13px;
@@ -3821,11 +3850,11 @@
 
     .warp-details-layer {
       place-items: end center;
-      padding: 54px 10px 0;
+      padding: 54px 10px 10px;
     }
 
     .warp-details-card {
-      --details-max-height: calc(100dvh - 18px);
+      --details-max-height: calc(100dvh - 28px);
       grid-template-columns: 1fr;
       grid-template-rows: auto minmax(0, 1fr);
       align-items: stretch;
@@ -3833,7 +3862,7 @@
       width: min(430px, 100%);
       height: min(76dvh, 680px);
       padding: 0;
-      border-radius: 28px 28px 0 0;
+      border-radius: 28px;
       box-shadow: 0 -32px 140px rgb(0 0 0 / 0.78);
       animation: warp-details-sheet-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
     }
@@ -3843,7 +3872,7 @@
     }
 
     .warp-details-card.is-expanded {
-      height: calc(100dvh - 18px);
+      height: calc(100dvh - 28px);
     }
 
     .warp-details-ambient {
