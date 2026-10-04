@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  type GalleryKeyState,
   applySortDirection,
   applySortToggle,
   compareListGroups,
@@ -20,6 +21,7 @@ import {
   groupMoviesByYear,
   mapMovie,
   resolveMoviePosterUrls,
+  shouldHandleGalleryKey,
   sortMoviesByRules,
   sortMoviesForList,
   withWeightedRatings,
@@ -447,5 +449,39 @@ describe('year and rating filters', () => {
         filterMoviesByYearAndRating(pool, { kind: 'decade', value: 1990 }, 8),
       ),
     ).toEqual(['a'])
+  })
+})
+
+describe('shouldHandleGalleryKey', () => {
+  const base = {
+    key: 'shuffle' as const,
+    mode: 'wall',
+    galleryReady: true,
+    overlayOpen: false,
+    hasTarget: true,
+    repeat: false,
+    hasModifier: false,
+    activeElementKind: 'body' as const,
+  }
+
+  it('handles the key when nothing blocks it', () => {
+    expect(shouldHandleGalleryKey(base)).toBe(true)
+    expect(shouldHandleGalleryKey({ ...base, key: 'open' })).toBe(true)
+    expect(
+      shouldHandleGalleryKey({ ...base, activeElementKind: 'canvas' }),
+    ).toBe(true)
+  })
+
+  it.each<[string, Partial<GalleryKeyState>]>([
+    ['index mode', { mode: 'list' }],
+    ['filters mode', { mode: 'filters' }],
+    ['gallery not ready', { galleryReady: false }],
+    ['an overlay open', { overlayOpen: true }],
+    ['no target movie', { hasTarget: false }],
+    ['a repeated key', { repeat: true }],
+    ['a modifier held', { hasModifier: true }],
+    ['an interactive element focused', { activeElementKind: 'interactive' }],
+  ])('ignores the key with %s', (_label, override) => {
+    expect(shouldHandleGalleryKey({ ...base, ...override })).toBe(false)
   })
 })

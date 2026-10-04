@@ -155,6 +155,11 @@
   color: rgb(247 240 225);
 }
 
+.warp-shell[data-theme="light"] .warp-cta:not(:disabled):hover,
+.warp-shell[data-theme="light"] .warp-cta:not(:disabled):focus-visible {
+  background: rgb(33 26 16 / 0.82);
+}
+
 .warp-shell[data-theme="light"] .warp-active-peek span:first-child {
   color: rgb(33 26 16);
 }
@@ -182,17 +187,22 @@
   background: rgb(255 252 245);
 }
 
+.warp-shell[data-theme="light"] .warp-mode-toggle button[aria-pressed="false"]:hover,
+.warp-shell[data-theme="light"] .warp-mode-toggle button[aria-pressed="false"]:focus-visible {
+  background: rgb(255 252 245 / 0.7);
+}
+
 .warp-shell[data-theme="light"] .warp-grid-icon {
   background: linear-gradient(rgb(62 55 44) 0 0) 0 0 / 7px 7px no-repeat,
-      linear-gradient(rgb(62 55 44) 0 0) 11px 0 / 7px 7px no-repeat,
-      linear-gradient(rgb(62 55 44) 0 0) 0 11px / 7px 7px no-repeat,
-      linear-gradient(rgb(62 55 44) 0 0) 11px 11px / 7px 7px no-repeat;
+      linear-gradient(rgb(62 55 44) 0 0) 10px 0 / 7px 7px no-repeat,
+      linear-gradient(rgb(62 55 44) 0 0) 0 10px / 7px 7px no-repeat,
+      linear-gradient(rgb(62 55 44) 0 0) 10px 10px / 7px 7px no-repeat;
 }
 
 .warp-shell[data-theme="light"] .warp-list-icon {
-  background: linear-gradient(rgb(62 55 44) 0 0) 0 2px / 18px 2px no-repeat,
-      linear-gradient(rgb(62 55 44) 0 0) 0 8px / 18px 2px no-repeat,
-      linear-gradient(rgb(62 55 44) 0 0) 0 14px / 18px 2px no-repeat;
+  background: linear-gradient(rgb(62 55 44) 0 0) 0 2px / 17px 2px no-repeat,
+      linear-gradient(rgb(62 55 44) 0 0) 0 7.5px / 17px 2px no-repeat,
+      linear-gradient(rgb(62 55 44) 0 0) 0 13px / 17px 2px no-repeat;
 }
 
 .warp-shell[data-theme="light"] .warp-main-nav button {
@@ -200,6 +210,11 @@
 }
 
 .warp-shell[data-theme="light"] .warp-main-nav button.is-active {
+  background: rgb(255 252 245);
+}
+
+.warp-shell[data-theme="light"] .warp-main-nav button:not(:disabled):not(.is-active):not(.warp-nav-clear):hover,
+.warp-shell[data-theme="light"] .warp-main-nav button:not(:disabled):not(.is-active):not(.warp-nav-clear):focus-visible {
   background: rgb(255 252 245);
 }
 
@@ -211,6 +226,16 @@
 .warp-shell[data-theme="light"] .warp-filter-button.is-open {
   background: rgb(255 252 245);
   color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-filter-button:not(.is-open):hover,
+.warp-shell[data-theme="light"] .warp-filter-button:not(.is-open):focus-visible {
+  background: rgb(255 252 245);
+}
+
+.warp-shell[data-theme="light"] .warp-dock .warp-filter-actions .warp-filter-button:not(.is-open):hover,
+.warp-shell[data-theme="light"] .warp-dock .warp-filter-actions .warp-filter-button:not(.is-open):focus-visible {
+  background: rgb(255 252 245);
 }
 
 .warp-shell[data-theme="light"] .warp-dock .warp-filter-actions .warp-filter-button.is-open {
@@ -373,13 +398,9 @@
 
 .warp-shell[data-theme="light"] .warp-title-card {
   border: 1px solid rgb(255 252 245 / 0.2);
+  background: rgb(255 252 245);
   color: rgb(42 35 25);
   box-shadow: 0 14px 44px rgb(110 78 34 / 0.143);
-}
-
-.warp-shell[data-theme="light"] .warp-title-card:hover,
-.warp-shell[data-theme="light"] .warp-title-card:focus-visible {
-  background: rgb(255 252 245);
 }
 
 .warp-shell[data-theme="light"] .warp-title-card-meta {
@@ -524,6 +545,12 @@
 .warp-shell[data-theme="light"] .warp-watch-links button {
   border: 1px solid rgb(33 26 16 / 0.12);
   background: rgb(33 26 16 / 0.06);
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-watch-close:hover,
+.warp-shell[data-theme="light"] .warp-watch-close:focus-visible {
+  background: rgb(33 26 16 / 0.16);
   color: rgb(33 26 16);
 }
 
@@ -708,6 +735,16 @@
 .warp-shell[data-theme="light"] .warp-list-search-toggle {
   background: rgb(33 26 16 / 0.12);
   color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-list-search-clear:hover,
+.warp-shell[data-theme="light"] .warp-list-search-clear:focus-visible {
+  background: rgb(33 26 16 / 0.26);
+}
+
+.warp-shell[data-theme="light"] .warp-list-search-toggle:hover,
+.warp-shell[data-theme="light"] .warp-list-search-toggle:focus-visible {
+  background: rgb(33 26 16 / 0.2);
 }
 
 .warp-shell[data-theme="light"] .warp-list-group {

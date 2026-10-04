@@ -871,6 +871,16 @@
     letter-spacing: -0.025em;
   }
 
+  .warp-cta {
+    transition: background-color 150ms ease;
+  }
+
+  .warp-cta:not(:disabled):hover,
+  .warp-cta:not(:disabled):focus-visible {
+    background: rgb(255 255 255 / 0.82);
+    outline: none;
+  }
+
   .warp-cta:disabled {
     opacity: 0.52;
   }
@@ -907,9 +917,10 @@
   .warp-mode-toggle {
     left: 16px;
     bottom: 32px;
-    width: 150px;
+    width: auto;
     height: var(--warp-control-height);
     justify-content: space-between;
+    gap: 2px;
     padding: 3px;
     border: 1px solid rgb(255 255 255 / 0.2);
     box-shadow: 0 14px 44px rgb(0 0 0 / 0.34);
@@ -917,11 +928,12 @@
 
   .warp-mode-toggle button {
     display: flex;
-    width: 69px;
+    width: auto;
     height: var(--warp-control-inner-height);
     align-items: center;
     justify-content: center;
-    gap: 5px;
+    gap: 7px;
+    padding: 0 14px 0 12px;
     border: 0;
     border-radius: 999px;
     background: transparent;
@@ -936,9 +948,9 @@
 
   .warp-mode-label {
     display: inline;
-    font-size: 11px;
-    font-weight: 900;
-    letter-spacing: 0;
+    font-size: 16px;
+    font-weight: 750;
+    letter-spacing: -0.025em;
   }
 
   .warp-mode-toggle button[aria-pressed="true"] {
@@ -946,27 +958,35 @@
     opacity: 1;
   }
 
+  .warp-mode-toggle button[aria-pressed="false"]:hover,
+  .warp-mode-toggle button[aria-pressed="false"]:focus-visible {
+    background: rgb(255 255 255 / 0.7);
+    opacity: 1;
+    outline: none;
+  }
+
   .warp-grid-icon,
   .warp-list-icon {
     position: relative;
     display: block;
-    width: 18px;
-    height: 18px;
+    flex: none;
+    width: 17px;
+    height: 17px;
   }
 
   .warp-grid-icon {
     background:
       linear-gradient(#222 0 0) 0 0 / 7px 7px no-repeat,
-      linear-gradient(#222 0 0) 11px 0 / 7px 7px no-repeat,
-      linear-gradient(#222 0 0) 0 11px / 7px 7px no-repeat,
-      linear-gradient(#222 0 0) 11px 11px / 7px 7px no-repeat;
+      linear-gradient(#222 0 0) 10px 0 / 7px 7px no-repeat,
+      linear-gradient(#222 0 0) 0 10px / 7px 7px no-repeat,
+      linear-gradient(#222 0 0) 10px 10px / 7px 7px no-repeat;
   }
 
   .warp-list-icon {
     background:
-      linear-gradient(#222 0 0) 0 2px / 18px 2px no-repeat,
-      linear-gradient(#222 0 0) 0 8px / 18px 2px no-repeat,
-      linear-gradient(#222 0 0) 0 14px / 18px 2px no-repeat;
+      linear-gradient(#222 0 0) 0 2px / 17px 2px no-repeat,
+      linear-gradient(#222 0 0) 0 7.5px / 17px 2px no-repeat,
+      linear-gradient(#222 0 0) 0 13px / 17px 2px no-repeat;
   }
 
   .warp-main-nav {
@@ -1000,6 +1020,12 @@
 
   .warp-main-nav button.is-active {
     background: #fff;
+  }
+
+  .warp-main-nav button:not(:disabled):not(.is-active):not(.warp-nav-clear):hover,
+  .warp-main-nav button:not(:disabled):not(.is-active):not(.warp-nav-clear):focus-visible {
+    background: #fff;
+    outline: none;
   }
 
   .warp-main-nav button span,
@@ -1061,6 +1087,16 @@
   .warp-filter-button.is-open {
     background: #fff;
     color: #000;
+  }
+
+  .warp-filter-button:not(.is-open):hover,
+  .warp-filter-button:not(.is-open):focus-visible {
+    background: #fff;
+  }
+
+  .warp-dock .warp-filter-actions .warp-filter-button:not(.is-open):hover,
+  .warp-dock .warp-filter-actions .warp-filter-button:not(.is-open):focus-visible {
+    background: #fff;
   }
 
   .warp-filter-button.is-open {
@@ -1628,7 +1664,7 @@
     gap: 6px;
     border: 1px solid rgb(255 255 255 / 0.2);
     border-radius: 999px;
-    background: var(--warp-pill-bg);
+    background: #fff;
     padding: 10px 26px 11px;
     color: #0b0b0b;
     cursor: pointer;
@@ -1646,7 +1682,7 @@
   .warp-title-card:hover,
   .warp-title-card:focus-visible {
     outline: none;
-    background: #fff;
+    background: var(--warp-pill-bg);
   }
 
   .warp-title-card:active {
@@ -1789,6 +1825,10 @@
     background: rgb(18 18 18);
     translate: -50% 0;
     rotate: 45deg;
+  }
+
+  .warp-spin-hint-pointer {
+    white-space: nowrap;
   }
 
   .warp-spin-hint-keys {
@@ -2170,6 +2210,13 @@
   .warp-watch-links button:disabled {
     cursor: not-allowed;
     opacity: 0.72;
+  }
+
+  .warp-watch-close:hover,
+  .warp-watch-close:focus-visible {
+    outline: none;
+    background: rgb(255 255 255 / 0.16);
+    color: #fff;
   }
 
   .warp-watch-close:active,
@@ -2820,6 +2867,18 @@
     height: var(--warp-control-height);
     background: rgb(255 255 255 / 0.12);
     color: #fff;
+  }
+
+  .warp-list-search-clear:hover,
+  .warp-list-search-clear:focus-visible {
+    outline: none;
+    background: rgb(255 255 255 / 0.26);
+  }
+
+  .warp-list-search-toggle:hover,
+  .warp-list-search-toggle:focus-visible {
+    outline: none;
+    background: rgb(255 255 255 / 0.2);
   }
 
   .warp-list-tools {
@@ -4066,6 +4125,7 @@
 
     .warp-mode-toggle button {
       display: flex;
+      padding: 0;
       width: var(--warp-control-inner-height);
       height: var(--warp-control-inner-height);
       gap: 3px;

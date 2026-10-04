@@ -211,6 +211,34 @@ const SERIES_RUNTIME_FILTERS: Array<{
 const RUNTIME_FILTERS = [...MOVIE_RUNTIME_FILTERS, ...SERIES_RUNTIME_FILTERS]
 const RATING_PRESETS = [6, 7, 8]
 
+export type GalleryKeyState = {
+  key: 'shuffle' | 'open'
+  mode: string
+  galleryReady: boolean
+  overlayOpen: boolean
+  hasTarget: boolean
+  repeat: boolean
+  hasModifier: boolean
+  activeElementKind: 'body' | 'canvas' | 'interactive'
+}
+
+// Space/Enter shortcuts only act when nothing else owns the key press.
+export const shouldHandleGalleryKey = (state: GalleryKeyState) =>
+  state.mode === 'wall' &&
+  state.galleryReady &&
+  !state.overlayOpen &&
+  state.hasTarget &&
+  !state.repeat &&
+  !state.hasModifier &&
+  state.activeElementKind !== 'interactive'
+
+const getActiveElementKind = (): GalleryKeyState['activeElementKind'] => {
+  const element = document.activeElement
+  if (!element || element === document.body) return 'body'
+  if (element.classList.contains('warp-infinite-menu-canvas')) return 'canvas'
+  return 'interactive'
+}
+
 export const getRuntimeBucket = (
   runtimeMinutes: number | null,
 ): RuntimeFilter | null =>
@@ -1355,6 +1383,48 @@ export const TestGalleryApp = () => {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [aboutOpen, detailsMovieId, filterOpen, sortOpen, watchMovieId])
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isSpace = event.code === 'Space' || event.key === ' '
+      const isEnter = event.key === 'Enter'
+      if (!isSpace && !isEnter) return
+      const action = isSpace ? 'shuffle' : 'open'
+      const allowed = shouldHandleGalleryKey({
+        key: action,
+        mode,
+        galleryReady: initialGalleryReady,
+        overlayOpen: Boolean(
+          detailsMovieId || watchMovieId || aboutOpen || filterOpen || sortOpen,
+        ),
+        hasTarget:
+          action === 'open' ? Boolean(activeMovie) : visibleMovies.length > 0,
+        repeat: event.repeat,
+        hasModifier:
+          event.ctrlKey || event.altKey || event.metaKey || event.shiftKey,
+        activeElementKind: getActiveElementKind(),
+      })
+      if (!allowed) return
+      event.preventDefault()
+      if (action === 'shuffle') handleShuffle()
+      else if (activeMovie) handleOpenMovie(activeMovie)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [
+    aboutOpen,
+    activeMovie,
+    detailsMovieId,
+    filterOpen,
+    handleOpenMovie,
+    handleShuffle,
+    initialGalleryReady,
+    mode,
+    sortOpen,
+    visibleMovies.length,
+    watchMovieId,
+  ])
+
   return (
     <main
       className='phantom-test-shell warp-shell min-h-dvh overflow-hidden bg-black text-white'
@@ -1448,7 +1518,7 @@ export const TestGalleryApp = () => {
                     <kbd>↓</kbd>
                   </span>
                   <span className='warp-spin-hint-pointer'>
-                    Scroll or use the arrow keys to spin
+                    Scroll or ↑↓ to spin · Space shuffles · Enter opens
                   </span>
                   <span className='warp-spin-hint-touch'>Drag to spin</span>
                   <button
