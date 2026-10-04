@@ -1,5 +1,7 @@
 import {
   ArrowDown,
+  ArrowLeft,
+  ArrowRight,
   ArrowUp,
   ArrowUpDown,
   Check,
@@ -20,6 +22,7 @@ import {
 } from 'lucide-react'
 import {
   type CSSProperties,
+  Fragment,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
   memo,
@@ -31,6 +34,12 @@ import {
 } from 'react'
 import { useMediaQuery } from '../../../hooks/use-media-query'
 import { cn } from '../../../utils/tw'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '../../ui/tooltip'
 import {
   InfiniteMovieMenu,
   type InfiniteMovieMenuItem,
@@ -54,6 +63,9 @@ type TestMovie = {
   runtimeMinutes: number | null
   rating: string
   ratingValue: number | null
+  voteCount: number | null
+  popularity: number | null
+  weightedRating: number | null
   countries: string
   posterUrl: string
   // Catalogue films (beyond the local set) use TMDB-hosted posters: a larger
@@ -64,15 +76,20 @@ type TestMovie = {
   textIndex?: number
 }
 
-type ViewMode = 'wall' | 'list' | 'genres'
-type ListGrouping = 'year' | 'alpha' | 'rating'
+type ViewMode = 'wall' | 'list' | 'filters'
+type ListGrouping =
+  | 'alpha'
+  | 'year'
+  | 'rating'
+  | 'runtime'
+  | 'popularity'
+  | 'votes'
 type LoadState = 'loading' | 'ready' | 'error'
 type ContentFilter = 'all' | 'movies' | 'series'
-type RuntimeFilter =
-  | 'movie30to60'
+export type RuntimeFilter =
+  | 'movieUnder90'
   | 'movie90to120'
-  | 'movie150to180'
-  | 'movie210plus'
+  | 'movieOver120'
   | 'seriesUnder25'
   | 'series40plus'
   | 'seriesSingleSeason'
@@ -103,9 +120,12 @@ const DETAILS_CLOSE_DRAG_PX = 68
 const DETAILS_COMPACT_DRAG_PX = 38
 const EXIT_ANIMATION_MS = 220
 const SPIN_HINT_STORAGE_KEY = 'wtw:spin-hint-seen'
+const FULLSCREEN_HINT_STORAGE_KEY = 'wtw:fullscreen-hint-seen'
 const THEME_STORAGE_KEY = 'wtw:theme'
 
 type Theme = 'dark' | 'light'
+type ShuffleProVariant = 'standard' | 'rare' | 'max'
+type ShuffleProPhase = 'spinning' | 'transition'
 
 const readTheme = (): Theme => {
   try {
@@ -120,6 +140,14 @@ const readTheme = (): Theme => {
 const readSpinHintSeen = () => {
   try {
     return window.localStorage.getItem(SPIN_HINT_STORAGE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+const readFullscreenHintSeen = () => {
+  try {
+    return window.localStorage.getItem(FULLSCREEN_HINT_STORAGE_KEY) === '1'
   } catch {
     return false
   }
@@ -141,27 +169,21 @@ const MOVIE_RUNTIME_FILTERS: Array<{
   test: (runtimeMinutes: number | null) => boolean
 }> = [
   {
-    id: 'movie30to60',
-    label: '30 mins to 1 hr',
+    id: 'movieUnder90',
+    label: 'Under 1 hr 30',
     test: (runtimeMinutes) =>
-      Boolean(runtimeMinutes && runtimeMinutes >= 30 && runtimeMinutes <= 60),
+      runtimeMinutes !== null && runtimeMinutes > 0 && runtimeMinutes < 90,
   },
   {
     id: 'movie90to120',
-    label: '1 hr 30 mins to 2 hrs',
+    label: '1 hr 30 to 2 hrs',
     test: (runtimeMinutes) =>
-      Boolean(runtimeMinutes && runtimeMinutes >= 90 && runtimeMinutes <= 120),
+      runtimeMinutes !== null && runtimeMinutes >= 90 && runtimeMinutes <= 120,
   },
   {
-    id: 'movie150to180',
-    label: '2 hr 30 mins to 3 hrs',
-    test: (runtimeMinutes) =>
-      Boolean(runtimeMinutes && runtimeMinutes >= 150 && runtimeMinutes <= 180),
-  },
-  {
-    id: 'movie210plus',
-    label: '3 hr 30 mins and longer',
-    test: (runtimeMinutes) => Boolean(runtimeMinutes && runtimeMinutes >= 210),
+    id: 'movieOver120',
+    label: 'Over 2 hrs',
+    test: (runtimeMinutes) => runtimeMinutes !== null && runtimeMinutes > 120,
   },
 ]
 const SERIES_RUNTIME_FILTERS: Array<{
@@ -208,6 +230,91 @@ const SERIES_RUNTIME_FILTERS: Array<{
   },
 ]
 const RUNTIME_FILTERS = [...MOVIE_RUNTIME_FILTERS, ...SERIES_RUNTIME_FILTERS]
+const RATING_PRESETS = [6, 7, 8]
+
+export type GalleryKeyState = {
+  key: 'shuffle' | 'open'
+  mode: string
+  galleryReady: boolean
+  overlayOpen: boolean
+  detailsOpen?: boolean
+  hasTarget: boolean
+  repeat: boolean
+  hasModifier: boolean
+  activeElementKind: 'body' | 'canvas' | 'interactive'
+}
+
+// Space can reshuffle through a details card; other overlays own the shortcut.
+export const shouldHandleGalleryKey = (state: GalleryKeyState) =>
+  (state.mode === 'wall' ||
+    (state.mode === 'list' && state.key === 'shuffle')) &&
+  state.galleryReady &&
+  !state.overlayOpen &&
+  (!state.detailsOpen || state.key === 'shuffle') &&
+  state.hasTarget &&
+  !state.repeat &&
+  !state.hasModifier &&
+  (state.activeElementKind !== 'interactive' ||
+    Boolean(state.detailsOpen && state.key === 'shuffle'))
+
+const getActiveElementKind = (): GalleryKeyState['activeElementKind'] => {
+  const element = document.activeElement
+  if (!element || element === document.body) return 'body'
+  if (element.classList.contains('warp-infinite-menu-canvas')) return 'canvas'
+  return 'interactive'
+}
+
+export const getRuntimeBucket = (
+  runtimeMinutes: number | null,
+): RuntimeFilter | null =>
+  MOVIE_RUNTIME_FILTERS.find((filter) => filter.test(runtimeMinutes))?.id ??
+  null
+
+export type YearFilter = { kind: 'year' | 'decade'; value: number }
+
+export const matchesYearFilter = (
+  movie: TestMovie,
+  yearFilter: YearFilter | null,
+) => {
+  if (!yearFilter) return true
+  const year = Number.parseInt(movie.year, 10)
+  if (!Number.isFinite(year)) return false
+  return yearFilter.kind === 'year'
+    ? year === yearFilter.value
+    : year >= yearFilter.value && year <= yearFilter.value + 9
+}
+
+export const matchesRatingMin = (
+  movie: TestMovie,
+  ratingMin: number | null,
+) => {
+  if (ratingMin === null) return true
+  return movie.ratingValue !== null && movie.ratingValue >= ratingMin
+}
+
+export const filterMoviesByYearAndRating = (
+  movies: TestMovie[],
+  yearFilter: YearFilter | null,
+  ratingMin: number | null,
+) => {
+  if (!yearFilter && ratingMin === null) return movies
+  return movies.filter(
+    (movie) =>
+      matchesYearFilter(movie, yearFilter) &&
+      matchesRatingMin(movie, ratingMin),
+  )
+}
+
+const getDecadeSummaries = (movies: TestMovie[]) => {
+  const decades = new Set<number>()
+  for (const movie of movies) {
+    const year = Number.parseInt(movie.year, 10)
+    if (Number.isFinite(year)) decades.add(Math.floor(year / 10) * 10)
+  }
+  return [...decades].sort((a, b) => b - a)
+}
+
+const formatRatingMin = (value: number) => `${Number(value.toFixed(1))}+`
 const MOOD_FILTERS: Array<{
   genres?: string[]
   id: MoodFilter
@@ -242,7 +349,7 @@ const MOOD_FILTERS: Array<{
   {
     id: 'highRated',
     label: 'High-rated',
-    test: (movie) => Boolean(movie.ratingValue && movie.ratingValue >= 7.5),
+    test: (movie) => movie.ratingValue !== null && movie.ratingValue >= 7.5,
   },
 ]
 
@@ -255,6 +362,13 @@ const getText = (raw: RawMovie, key: string) => {
 const getPositiveNumber = (raw: RawMovie, key: string) => {
   const value = Number(raw[key])
   return Number.isFinite(value) && value > 0 ? value : null
+}
+
+const getNonNegativeNumber = (raw: RawMovie, key: string) => {
+  const value = raw[key]
+  if (value === null || value === undefined || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) && number >= 0 ? number : null
 }
 
 const splitList = (value: string, maxItems = Number.POSITIVE_INFINITY) =>
@@ -298,18 +412,23 @@ const formatRuntimeLabel = (movie: TestMovie) => {
   return runtime === '-' ? null : runtime
 }
 
+const RATING_NOT_AVAILABLE = 'N/A'
+
+const formatRating = (movie: TestMovie) =>
+  movie.ratingValue === null ? RATING_NOT_AVAILABLE : movie.rating
+
 const formatCompactMeta = (movie: TestMovie) =>
   [
     movie.year && movie.year !== '----' ? movie.year : null,
-    movie.ratingValue ? `★ ${movie.rating}` : null,
+    `★ ${formatRating(movie)}`,
   ]
     .filter(Boolean)
     .join(' · ')
 
 export const formatMovieMeta = (movie: TestMovie) =>
-  `Year: ${movie.year && movie.year !== '----' ? movie.year : '-'} | Rating: ${
-    movie.ratingValue ? movie.rating : '-'
-  } | Hour: ${formatRuntime(movie.runtime, movie.runtimeMinutes)}`
+  `Year: ${movie.year && movie.year !== '----' ? movie.year : '-'} | Rating: ${formatRating(
+    movie,
+  )} | Hour: ${formatRuntime(movie.runtime, movie.runtimeMinutes)}`
 
 const hasLatinLeadingTitle = (movie: TestMovie) =>
   /^[A-Za-z]/.test(movie.title.trim())
@@ -555,19 +674,46 @@ export type SortRule = { key: ListGrouping; direction: SortDirection | null }
 
 export const DEFAULT_SORT_DIRECTION: Record<ListGrouping, SortDirection> = {
   alpha: 'asc',
+  popularity: 'desc',
   rating: 'desc',
-  year: 'asc',
+  runtime: 'asc',
+  votes: 'desc',
+  year: 'desc',
 }
 
-const compareMoviesByKey = (
+// Numeric sort value per key; null means unknown and always sorts last.
+const getSortValue = (movie: TestMovie, key: ListGrouping): number | null => {
+  switch (key) {
+    case 'year':
+      return getYearNumber(movie) || null
+    case 'rating':
+      return movie.weightedRating
+    case 'runtime':
+      return movie.runtimeMinutes
+    case 'popularity':
+      return movie.popularity
+    case 'votes':
+      return movie.voteCount
+    default:
+      return null
+  }
+}
+
+// Returns the order for the given direction; unknown values stay last.
+const compareMoviesByRule = (
   movieA: TestMovie,
   movieB: TestMovie,
   key: ListGrouping,
+  direction: SortDirection,
 ) => {
-  if (key === 'alpha') return movieA.title.localeCompare(movieB.title)
-  if (key === 'rating')
-    return (movieA.ratingValue ?? -1) - (movieB.ratingValue ?? -1)
-  return getYearNumber(movieA) - getYearNumber(movieB)
+  const sign = direction === 'desc' ? -1 : 1
+  if (key === 'alpha') return sign * movieA.title.localeCompare(movieB.title)
+  const valueA = getSortValue(movieA, key)
+  const valueB = getSortValue(movieB, key)
+  if (valueA === null || valueB === null) {
+    return valueA === valueB ? 0 : valueA === null ? 1 : -1
+  }
+  return sign * (valueA - valueB)
 }
 
 export const getActiveSortRules = (rules: SortRule[]) => {
@@ -577,7 +723,7 @@ export const getActiveSortRules = (rules: SortRule[]) => {
   )
   return active.length
     ? active
-    : [{ key: 'year' as const, direction: 'asc' as const }]
+    : [{ key: 'alpha' as const, direction: 'asc' as const }]
 }
 
 export const sortMoviesByRules = (movies: TestMovie[], rules: SortRule[]) => {
@@ -588,8 +734,13 @@ export const sortMoviesByRules = (movies: TestMovie[], rules: SortRule[]) => {
 
   return [...sortableMovies].sort((movieA, movieB) => {
     for (const rule of active) {
-      const order = compareMoviesByKey(movieA, movieB, rule.key)
-      if (order) return rule.direction === 'desc' ? -order : order
+      const order = compareMoviesByRule(
+        movieA,
+        movieB,
+        rule.key,
+        rule.direction,
+      )
+      if (order) return order
     }
     return movieA.title.localeCompare(movieB.title)
   })
@@ -628,11 +779,63 @@ export const applySortDirection = (
     ? rules.map((rule) => (rule.key === key ? { ...rule, direction } : rule))
     : [...rules, { key, direction }]
 
+const UNKNOWN_GROUP = 'Unknown'
+const UNRATED_GROUP = 'Unrated'
+
+const RUNTIME_GROUPS = ['Under 1h 30', '1h 30–2h', 'Over 2h']
+const POPULARITY_GROUPS = ['Rest', 'Top 50%', 'Top 25%', 'Top 10%']
+const VOTES_GROUPS = ['Under 100', '100–1k', '1k–10k', '10k+']
+
+const getRatingGroupKey = (movie: TestMovie) => {
+  if (movie.weightedRating === null) return UNRATED_GROUP
+  const band = Math.floor(movie.weightedRating)
+  return band >= 10 ? '10' : `${band}+`
+}
+
+const getRuntimeGroupKey = (movie: TestMovie) => {
+  const minutes = movie.runtimeMinutes
+  if (minutes === null) return UNKNOWN_GROUP
+  if (minutes < 90) return RUNTIME_GROUPS[0]
+  return minutes < 120 ? RUNTIME_GROUPS[1] : RUNTIME_GROUPS[2]
+}
+
+const getVotesGroupKey = (movie: TestMovie) => {
+  const votes = movie.voteCount
+  if (votes === null) return UNKNOWN_GROUP
+  if (votes >= 10000) return VOTES_GROUPS[3]
+  if (votes >= 1000) return VOTES_GROUPS[2]
+  return votes >= 100 ? VOTES_GROUPS[1] : VOTES_GROUPS[0]
+}
+
+// Percentile bucket by popularity rank among the movies passed in.
+export const getPopularityGroups = (movies: TestMovie[]) => {
+  const ranked = movies
+    .filter((movie) => movie.popularity !== null)
+    .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
+  const groups = new Map<string, string>()
+  ranked.forEach((movie, index) => {
+    const share = (index + 1) / ranked.length
+    groups.set(
+      movie.id,
+      share <= 0.1
+        ? 'Top 10%'
+        : share <= 0.25
+          ? 'Top 25%'
+          : share <= 0.5
+            ? 'Top 50%'
+            : 'Rest',
+    )
+  })
+  return groups
+}
+
+const getAlphaGroupKey = (movie: TestMovie) => {
+  const letter = movie.title.charAt(0).toUpperCase() || '#'
+  return /[A-Z]/.test(letter) ? letter : '#'
+}
+
 // Appends in place: copying each group per film is quadratic at catalogue size.
-const groupMoviesBy = (
-  movies: TestMovie[],
-  getKey: (movie: TestMovie) => string,
-) =>
+const groupBy = (movies: TestMovie[], getKey: (movie: TestMovie) => string) =>
   movies.reduce<Record<string, TestMovie[]>>((groups, movie) => {
     const key = getKey(movie)
     const group = groups[key]
@@ -642,28 +845,72 @@ const groupMoviesBy = (
   }, {})
 
 export const groupMoviesByYear = (movies: TestMovie[]) =>
-  groupMoviesBy(movies, (movie) => movie.year || '----')
+  groupBy(movies, (movie) => movie.year || '----')
 
 export const groupMoviesAlphabetically = (movies: TestMovie[]) =>
-  groupMoviesBy(movies, (movie) => {
-    const letter = movie.title.charAt(0).toUpperCase() || '#'
-    return /[A-Z]/.test(letter) ? letter : '#'
-  })
-
-const UNRATED_GROUP = 'Unrated'
-
-const getRatingGroupKey = (movie: TestMovie) => {
-  if (!movie.ratingValue) return UNRATED_GROUP
-  const band = Math.floor(movie.ratingValue)
-  return band >= 10 ? '10' : `${band}+`
-}
+  groupBy(movies, getAlphaGroupKey)
 
 export const groupMoviesByRating = (movies: TestMovie[]) =>
-  groupMoviesBy(movies, getRatingGroupKey)
+  groupBy(movies, getRatingGroupKey)
 
-// Highest band first; "Unrated" (NaN) always last.
-const compareRatingGroups = (groupA: string, groupB: string) =>
-  (Number.parseFloat(groupB) || -1) - (Number.parseFloat(groupA) || -1)
+export const groupMoviesByRuntime = (movies: TestMovie[]) =>
+  groupBy(movies, getRuntimeGroupKey)
+
+export const groupMoviesByVotes = (movies: TestMovie[]) =>
+  groupBy(movies, getVotesGroupKey)
+
+export const groupMoviesByPopularity = (movies: TestMovie[]) => {
+  const groups = getPopularityGroups(movies)
+  return groupBy(movies, (movie) => groups.get(movie.id) ?? UNKNOWN_GROUP)
+}
+
+export const groupMoviesForList = (
+  movies: TestMovie[],
+  grouping: ListGrouping,
+) => {
+  switch (grouping) {
+    case 'alpha':
+      return groupMoviesAlphabetically(movies)
+    case 'rating':
+      return groupMoviesByRating(movies)
+    case 'runtime':
+      return groupMoviesByRuntime(movies)
+    case 'popularity':
+      return groupMoviesByPopularity(movies)
+    case 'votes':
+      return groupMoviesByVotes(movies)
+    default:
+      return groupMoviesByYear(movies)
+  }
+}
+
+const isUnknownGroup = (group: string) =>
+  group === UNKNOWN_GROUP || group === UNRATED_GROUP
+
+// Position of a group in ascending order; unknown groups are handled apart.
+const getGroupOrder = (group: string, grouping: ListGrouping) => {
+  if (grouping === 'runtime') return RUNTIME_GROUPS.indexOf(group)
+  if (grouping === 'popularity') return POPULARITY_GROUPS.indexOf(group)
+  if (grouping === 'votes') return VOTES_GROUPS.indexOf(group)
+  return Number.parseFloat(group)
+}
+
+// Group headers follow the sort direction; unknown groups always come last.
+export const compareListGroups = (
+  groupA: string,
+  groupB: string,
+  grouping: ListGrouping,
+  direction: SortDirection,
+) => {
+  const unknownA = isUnknownGroup(groupA)
+  const unknownB = isUnknownGroup(groupB)
+  if (unknownA || unknownB) return Number(unknownA) - Number(unknownB)
+  const sign = direction === 'desc' ? -1 : 1
+  if (grouping === 'alpha') return sign * groupA.localeCompare(groupB)
+  return (
+    sign * (getGroupOrder(groupA, grouping) - getGroupOrder(groupB, grouping))
+  )
+}
 
 const SORT_OPTIONS: Array<{
   key: ListGrouping
@@ -671,27 +918,58 @@ const SORT_OPTIONS: Array<{
   asc: string
   desc: string
 }> = [
-  { key: 'year', label: 'Year', asc: 'Oldest first', desc: 'Newest first' },
   { key: 'alpha', label: 'A–Z', asc: 'A to Z', desc: 'Z to A' },
+  { key: 'year', label: 'Year', asc: 'Oldest first', desc: 'Newest first' },
   {
     key: 'rating',
     label: 'Rating',
     asc: 'Lowest first',
     desc: 'Highest first',
   },
+  {
+    key: 'runtime',
+    label: 'Runtime',
+    asc: 'Shortest first',
+    desc: 'Longest first',
+  },
+  {
+    key: 'popularity',
+    label: 'Popularity',
+    asc: 'Least popular',
+    desc: 'Most popular',
+  },
+  {
+    key: 'votes',
+    label: 'Vote count',
+    asc: 'Fewest votes',
+    desc: 'Most votes',
+  },
 ]
 const SORT_LABELS = Object.fromEntries(
   SORT_OPTIONS.map((option) => [option.key, option.label]),
 ) as Record<ListGrouping, string>
 
-const getMovieListGroupKey = (movie: TestMovie, grouping: ListGrouping) => {
-  if (grouping === 'rating') return getRatingGroupKey(movie)
-  if (grouping === 'alpha') {
-    const letter = movie.title.charAt(0).toUpperCase() || '#'
-    return /[A-Z]/.test(letter) ? letter : '#'
+// `popularityGroups` is needed only for popularity, where a movie's bucket
+// depends on the whole list.
+const getMovieListGroupKey = (
+  movie: TestMovie,
+  grouping: ListGrouping,
+  popularityGroups?: Map<string, string>,
+) => {
+  switch (grouping) {
+    case 'alpha':
+      return getAlphaGroupKey(movie)
+    case 'rating':
+      return getRatingGroupKey(movie)
+    case 'runtime':
+      return getRuntimeGroupKey(movie)
+    case 'votes':
+      return getVotesGroupKey(movie)
+    case 'popularity':
+      return popularityGroups?.get(movie.id) ?? UNKNOWN_GROUP
+    default:
+      return movie.year || '----'
   }
-
-  return movie.year || '----'
 }
 
 const getGenreSummaries = (movies: TestMovie[]): GenreSummary[] => {
@@ -707,6 +985,37 @@ const getGenreSummaries = (movies: TestMovie[]): GenreSummary[] => {
     .sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre))
 }
 
+export const withWeightedRatings = (movies: TestMovie[]): TestMovie[] => {
+  const rated = movies.filter(
+    (movie) =>
+      movie.ratingValue !== null &&
+      movie.voteCount !== null &&
+      movie.voteCount > 0,
+  )
+  if (!rated.length)
+    return movies.map((movie) => ({ ...movie, weightedRating: null }))
+
+  const meanRating =
+    rated.reduce((sum, movie) => sum + (movie.ratingValue ?? 0), 0) /
+    rated.length
+  const votes = rated.map((movie) => movie.voteCount ?? 0).sort((a, b) => a - b)
+  const middle = Math.floor(votes.length / 2)
+  const medianVotes =
+    votes.length % 2 ? votes[middle] : (votes[middle - 1] + votes[middle]) / 2
+
+  return movies.map((movie) => {
+    const { ratingValue, voteCount } = movie
+    if (ratingValue === null || voteCount === null || voteCount <= 0)
+      return { ...movie, weightedRating: null }
+    const total = voteCount + medianVotes
+    return {
+      ...movie,
+      weightedRating:
+        (voteCount / total) * ratingValue + (medianVotes / total) * meanRating,
+    }
+  })
+}
+
 export const resolveMoviePosterUrls = (
   movieId: string,
   catalogIndex: number,
@@ -720,12 +1029,14 @@ export const resolveMoviePosterUrls = (
   return { posterUrl }
 }
 
-const mapMovie = (
+export const mapMovie = (
   raw: RawMovie,
   index: number,
   localPosterIds: ReadonlySet<string>,
 ): TestMovie => {
   const rating = getPositiveNumber(raw, 'vote_average')
+  const voteCount = getNonNegativeNumber(raw, 'vote_count')
+  const popularity = getNonNegativeNumber(raw, 'popularity')
   const runtimeMinutes = getPositiveNumber(raw, 'runtime_minutes')
   const year = getText(raw, 'release_year') || '----'
   const rawId = getText(raw, 'id')
@@ -744,6 +1055,9 @@ const mapMovie = (
     runtimeMinutes,
     rating: rating ? rating.toFixed(1) : '',
     ratingValue: rating,
+    voteCount,
+    popularity,
+    weightedRating: null,
     countries: splitList(getText(raw, 'production_countries'), 1).join(', '),
     ...posterUrls,
   }
@@ -779,10 +1093,11 @@ const loadMovieDataset = () => {
 
   movieDatasetPromise ??= Promise.all([datasetRequest, posterManifestRequest])
     .then(([datasets, localPosterIds]) => {
-      cachedMovieDataset = datasets
-        .flat()
-        .map((raw, index) => mapMovie(raw, index, localPosterIds))
-        .filter((movie) => Boolean(movie.posterUrl))
+      cachedMovieDataset = withWeightedRatings(
+        datasets
+          .flat()
+          .map((raw, index) => mapMovie(raw, index, localPosterIds)),
+      ).filter((movie) => Boolean(movie.posterUrl))
       return cachedMovieDataset
     })
     .catch((error: unknown) => {
@@ -795,7 +1110,8 @@ const loadMovieDataset = () => {
 
 // The wider catalogue (scripts/build-catalog.mjs): compact rows of
 // [tmdbId, title, year, rating x10, genre indices, country index, poster path,
-// colour], with the genre and country names in the manifest.
+// colour, vote count, popularity x10], with the genre and country names in the
+// manifest.
 export type CatalogRow = [
   number,
   string,
@@ -805,16 +1121,79 @@ export type CatalogRow = [
   number,
   string,
   string,
+  number,
+  number,
 ]
 export type CatalogTables = { countries: string[]; genres: string[] }
 type CatalogManifest = CatalogTables & {
   chunks: string[]
+  chunkSize: number
   count: number
   textChunkSize: number
 }
 
+// Phones and weaker machines load the most popular ~5,000 films; everything
+// else gets the whole catalogue. Decided once, so rotating a phone or
+// resizing a window never changes what is loaded.
+export const MOBILE_FILM_TARGET = 5000
+
+export type DeviceSignals = {
+  coarsePointer: boolean
+  narrowViewport: boolean
+  memoryGb?: number
+  cores?: number
+}
+
+export const isLightweightDevice = ({
+  coarsePointer,
+  narrowViewport,
+  memoryGb,
+  cores,
+}: DeviceSignals) =>
+  (coarsePointer && narrowViewport) ||
+  (memoryGb !== undefined && memoryGb <= 4) ||
+  (cores !== undefined && cores <= 4)
+
+let lightweightDevice: boolean | null = null
+const detectLightweightDevice = () => {
+  lightweightDevice ??= isLightweightDevice({
+    coarsePointer: window.matchMedia('(pointer: coarse)').matches,
+    narrowViewport: window.matchMedia('(max-width: 900px)').matches,
+    memoryGb: (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
+    cores: navigator.hardwareConcurrency,
+  })
+  return lightweightDevice
+}
+
+// How many catalogue chunks a device needs, given the films it already has.
+export const getCatalogChunkCount = (
+  manifest: Pick<CatalogManifest, 'chunks' | 'chunkSize'>,
+  localCount: number,
+  lightweight: boolean,
+) =>
+  lightweight
+    ? Math.min(
+        manifest.chunks.length,
+        Math.max(
+          1,
+          Math.ceil((MOBILE_FILM_TARGET - localCount) / manifest.chunkSize),
+        ),
+      )
+    : manifest.chunks.length
+
 export const mapCatalogRow = (
-  [tmdbId, title, year, rating10, genres, country, poster, colour]: CatalogRow,
+  [
+    tmdbId,
+    title,
+    year,
+    rating10,
+    genres,
+    country,
+    poster,
+    colour,
+    voteCount,
+    popularity10,
+  ]: CatalogRow,
   textIndex: number,
   rank: number,
   tables: CatalogTables,
@@ -834,6 +1213,9 @@ export const mapCatalogRow = (
     runtimeMinutes: null,
     rating: rating ? rating.toFixed(1) : '',
     ratingValue: rating,
+    voteCount,
+    popularity: popularity10 / 10,
+    weightedRating: null,
     countries: tables.countries[country] ?? '',
     posterUrl: `${TMDB_IMAGE_URL}/w154/${poster}.jpg`,
     posterDetailUrl: `${TMDB_IMAGE_URL}/w342/${poster}.jpg`,
@@ -862,35 +1244,50 @@ const loadCatalogManifest = () => {
   return catalogManifestPromise
 }
 
-let cachedCatalogMovies: TestMovie[] | null = null
-let catalogMoviesPromise: Promise<TestMovie[]> | null = null
+// The local films followed by everything loaded from the catalogue.
+let cachedAllMovies: TestMovie[] | null = null
+let allMoviesPromise: Promise<TestMovie[]> | null = null
 
 // Loaded after the globe is up; the local films keep their ranks and the
 // catalogue follows them, so the default globe window never changes.
-const loadCatalogMovies = (rankOffset: number) => {
-  if (cachedCatalogMovies) return Promise.resolve(cachedCatalogMovies)
-  catalogMoviesPromise ??= loadCatalogManifest()
+const loadAllMovies = (localMovies: TestMovie[]) => {
+  if (cachedAllMovies) return Promise.resolve(cachedAllMovies)
+  const rankOffset = localMovies.reduce(
+    (highest, movie) => Math.max(highest, movie.rank),
+    0,
+  )
+  allMoviesPromise ??= loadCatalogManifest()
     .then(async (manifest) => {
+      const chunkCount = getCatalogChunkCount(
+        manifest,
+        localMovies.length,
+        detectLightweightDevice(),
+      )
       const chunks = await Promise.all(
-        manifest.chunks.map((chunk) =>
+        manifest.chunks.slice(0, chunkCount).map((chunk) =>
           fetch(`${CATALOG_URL}/${chunk}`).then((response) => {
             if (!response.ok) throw new Error(`Catalogue ${response.status}`)
             return response.json() as Promise<CatalogRow[]>
           }),
         ),
       )
-      cachedCatalogMovies = chunks
-        .flat()
-        .map((row, index) =>
-          mapCatalogRow(row, index, rankOffset + index + 1, manifest),
-        )
-      return cachedCatalogMovies
+      // Weighted ratings are relative to the whole set, so they are worked
+      // out again over local and catalogue films together.
+      cachedAllMovies = withWeightedRatings([
+        ...localMovies,
+        ...chunks
+          .flat()
+          .map((row, index) =>
+            mapCatalogRow(row, index, rankOffset + index + 1, manifest),
+          ),
+      ])
+      return cachedAllMovies
     })
     .catch((error: unknown) => {
-      catalogMoviesPromise = null
+      allMoviesPromise = null
       throw error
     })
-  return catalogMoviesPromise
+  return allMoviesPromise
 }
 
 type MovieText = { overview: string; tagline: string }
@@ -956,15 +1353,16 @@ const useMovieText = (movie: TestMovie) => {
   return text
 }
 
-// Keeps the previous array when the contents are the same objects, so a
-// background append never hands the globe a "new" list and rebuilds it.
-const useStableList = <T,>(list: T[]) => {
+// Keeps the previous array when it holds the same films in the same order, so
+// a background append (which also refreshes weighted ratings on every film)
+// never hands the globe a "new" list and rebuilds it.
+const useStableList = (list: TestMovie[]) => {
   const ref = useRef(list)
   const previous = ref.current
   if (
     previous !== list &&
     (previous.length !== list.length ||
-      previous.some((item, index) => item !== list[index]))
+      previous.some((movie, index) => movie.id !== list[index].id))
   ) {
     ref.current = list
   }
@@ -972,17 +1370,25 @@ const useStableList = <T,>(list: T[]) => {
 }
 
 export const TestGalleryApp = () => {
-  const [movies, setMovies] = useState<TestMovie[]>(() =>
-    cachedMovieDataset
-      ? [...cachedMovieDataset, ...(cachedCatalogMovies ?? [])]
-      : [],
+  const isMobileViewport = useMediaQuery('(max-width: 900px)')
+  const shellRef = useRef<HTMLElement | null>(null)
+  const fullscreenHintTimerRef = useRef<number | null>(null)
+  const fullscreenHintSeenRef = useRef<boolean | null>(null)
+  if (fullscreenHintSeenRef.current === null)
+    fullscreenHintSeenRef.current = readFullscreenHintSeen()
+  const [isFullscreenActive, setIsFullscreenActive] = useState(false)
+  const [showFullscreenHint, setShowFullscreenHint] = useState(false)
+  const [proMaxActive, setProMaxActive] = useState(false)
+  const [movies, setMovies] = useState<TestMovie[]>(
+    cachedAllMovies ?? cachedMovieDataset ?? [],
   )
   const [mode, setMode] = useState<ViewMode>('wall')
   const [sortRules, setSortRules] = useState<SortRule[]>([
-    { key: 'year', direction: 'asc' },
+    { key: 'alpha', direction: 'asc' },
   ])
   const [sortOpen, setSortOpen] = useState(false)
   const [listRandomNonce, setListRandomNonce] = useState(0)
+  const reopenDetailsAfterListShuffleRef = useRef(false)
   const [activeMovieId, setActiveMovieId] = useState<string | null>(
     cachedMovieDataset?.[0]?.id ?? null,
   )
@@ -994,6 +1400,8 @@ export const TestGalleryApp = () => {
   )
   const [selectedRuntimeFilter, setSelectedRuntimeFilter] =
     useState<RuntimeFilter | null>(null)
+  const [selectedYear, setSelectedYear] = useState<YearFilter | null>(null)
+  const [ratingMin, setRatingMin] = useState<number | null>(null)
   const [contentFilter, setContentFilter] = useState<ContentFilter>('all')
   const [listSearchQuery, setListSearchQuery] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
@@ -1008,6 +1416,75 @@ export const TestGalleryApp = () => {
   const [timeLabel, setTimeLabel] = useState('')
   const [isGlobeMoving, setIsGlobeMoving] = useState(false)
   const [theme, setTheme] = useState<Theme>(readTheme)
+  const [shuffleProPresentation, setShuffleProPresentation] = useState<{
+    phase: ShuffleProPhase
+    variant: ShuffleProVariant
+  } | null>(null)
+  const [premiumSuggestion, setPremiumSuggestion] = useState<{
+    movieId: string
+    variant: ShuffleProVariant
+  } | null>(null)
+  const shuffleStreakRef = useRef(0)
+  const proComboStreakRef = useRef(0)
+  const quickSpinStreakRef = useRef(0)
+  const resetShuffleStreak = useCallback(() => {
+    shuffleStreakRef.current = 0
+    proComboStreakRef.current = 0
+    quickSpinStreakRef.current = 0
+  }, [])
+
+  useEffect(() => {
+    const syncFullscreen = () => {
+      const active = document.fullscreenElement === shellRef.current
+      setIsFullscreenActive(active)
+      setProMaxActive(active && isMobileViewport)
+    }
+    document.addEventListener('fullscreenchange', syncFullscreen)
+    syncFullscreen()
+    return () =>
+      document.removeEventListener('fullscreenchange', syncFullscreen)
+  }, [isMobileViewport])
+
+  useEffect(
+    () => () => {
+      if (fullscreenHintTimerRef.current !== null)
+        window.clearTimeout(fullscreenHintTimerRef.current)
+    },
+    [],
+  )
+
+  const promptFullscreenHint = useCallback(() => {
+    if (
+      !isMobileViewport ||
+      isFullscreenActive ||
+      fullscreenHintSeenRef.current
+    ) {
+      return
+    }
+    fullscreenHintSeenRef.current = true
+    try {
+      window.localStorage.setItem(FULLSCREEN_HINT_STORAGE_KEY, '1')
+    } catch {
+      // Storage can be unavailable (private mode, blocked site data).
+    }
+    setShowFullscreenHint(true)
+    if (fullscreenHintTimerRef.current !== null)
+      window.clearTimeout(fullscreenHintTimerRef.current)
+    fullscreenHintTimerRef.current = window.setTimeout(
+      () => setShowFullscreenHint(false),
+      5000,
+    )
+  }, [isFullscreenActive, isMobileViewport])
+
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen()
+      else await shellRef.current?.requestFullscreen({ navigationUI: 'hide' })
+    } catch {
+      // Fullscreen is unavailable in embedded or permission-restricted contexts.
+    }
+    setShowFullscreenHint(false)
+  }, [])
 
   const changeTheme = useCallback((nextTheme: Theme) => {
     setTheme(nextTheme)
@@ -1020,6 +1497,8 @@ export const TestGalleryApp = () => {
   const [spinRequest, setSpinRequest] = useState<{
     itemId: string
     nonce: number
+    shuffleProAutomatic?: boolean
+    shuffleProAutomaticVariant?: ShuffleProVariant
   } | null>(null)
   const [spinHintSeen, setSpinHintSeen] = useState(readSpinHintSeen)
 
@@ -1034,6 +1513,25 @@ export const TestGalleryApp = () => {
       return true
     })
   }, [])
+
+  const handleUserSpin = useCallback(() => {
+    markSpinHintSeen()
+    promptFullscreenHint()
+  }, [markSpinHintSeen, promptFullscreenHint])
+
+  const maybePromptFullscreenHint = useCallback(
+    (target: EventTarget | null) => {
+      if (mode !== 'wall' || detailsMovieId) return
+      if (
+        target instanceof Element &&
+        target.closest('.warp-fullscreen-control')
+      ) {
+        return
+      }
+      promptFullscreenHint()
+    },
+    [detailsMovieId, mode, promptFullscreenHint],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -1088,18 +1586,14 @@ export const TestGalleryApp = () => {
     if (!initialGalleryReady || loadState !== 'ready' || !catalogWanted) return
     let cancelled = false
     const localMovies = cachedMovieDataset ?? []
-    const rankOffset = localMovies.reduce(
-      (highest, movie) => Math.max(highest, movie.rank),
-      0,
-    )
     const timer = window.setTimeout(() => {
-      loadCatalogMovies(rankOffset)
-        .then((catalogMovies) => {
+      loadAllMovies(localMovies)
+        .then((allMovies) => {
           if (cancelled) return
           setMovies((currentMovies) =>
             currentMovies.length > localMovies.length
               ? currentMovies
-              : [...currentMovies, ...catalogMovies],
+              : allMovies,
           )
         })
         .catch(() => {
@@ -1114,9 +1608,16 @@ export const TestGalleryApp = () => {
 
   const genreSummaries = useMemo(() => getGenreSummaries(movies), [movies])
 
+  const decadeOptions = useMemo(() => getDecadeSummaries(movies), [movies])
+
+  const baseMovies = useMemo(
+    () => filterMoviesByYearAndRating(movies, selectedYear, ratingMin),
+    [movies, selectedYear, ratingMin],
+  )
+
   const genreFilteredMovies = useMemo(
-    () => filterMoviesByGenres(movies, selectedGenres),
-    [movies, selectedGenres],
+    () => filterMoviesByGenres(baseMovies, selectedGenres),
+    [baseMovies, selectedGenres],
   )
 
   const decisionFilterResult = useMemo(
@@ -1134,6 +1635,8 @@ export const TestGalleryApp = () => {
     selectedGenres.length +
     selectedMoodFilters.length +
     (selectedRuntimeFilter ? 1 : 0) +
+    (selectedYear ? 1 : 0) +
+    (ratingMin !== null ? 1 : 0) +
     (contentFilter !== 'all' ? 1 : 0)
 
   const visibleMovies = useStableList(
@@ -1213,9 +1716,10 @@ export const TestGalleryApp = () => {
     )
   }, [])
 
-  const clearGenres = useCallback(() => setSelectedGenres([]), [])
   const clearAllFilters = useCallback(() => {
     setContentFilter('all')
+    setSelectedYear(null)
+    setRatingMin(null)
     setSelectedGenres([])
     setSelectedMoodFilters([])
     setSelectedRuntimeFilter(null)
@@ -1239,6 +1743,40 @@ export const TestGalleryApp = () => {
     )
   }, [])
 
+  const toggleYear = useCallback((next: YearFilter) => {
+    setSelectedYear((current) =>
+      current?.kind === next.kind && current.value === next.value ? null : next,
+    )
+  }, [])
+
+  const toggleRatingMin = useCallback((min: number) => {
+    setRatingMin((current) => (current === min ? null : min))
+  }, [])
+
+  // Entry points for applying a filter from elsewhere (e.g. the movie card).
+  const applyYearFilter = useCallback((year: number) => {
+    setSelectedYear({ kind: 'year', value: year })
+  }, [])
+  const applyRatingFilter = useCallback((min: number) => {
+    setRatingMin(min)
+  }, [])
+  const applyRuntimeFilter = useCallback((id: RuntimeFilter) => {
+    setSelectedRuntimeFilter(id)
+  }, [])
+
+  // Filters applied from the movie card: close the card and show the gallery.
+  const handleApplyCardFilter = useCallback(
+    (filter: MovieCardFilter) => {
+      if (filter.kind === 'year') applyYearFilter(filter.year)
+      else if (filter.kind === 'rating') applyRatingFilter(filter.min)
+      else if (filter.kind === 'runtime') applyRuntimeFilter(filter.id)
+      else setSelectedGenres([filter.genre])
+      setDetailsMovieId(null)
+      setMode('wall')
+    },
+    [applyRatingFilter, applyRuntimeFilter, applyYearFilter],
+  )
+
   const selectContentFilter = useCallback(
     (nextContentFilter: ContentFilter) => {
       if (nextContentFilter === 'series') return
@@ -1248,9 +1786,31 @@ export const TestGalleryApp = () => {
     [],
   )
 
+  const filterSectionProps: FilterSectionsProps = {
+    allActive: selectedFilterCount === 0,
+    contentFilter,
+    decades: decadeOptions,
+    genres: genreSummaries,
+    ratingMin,
+    runtimeFilter: selectedRuntimeFilter,
+    selectedGenres,
+    selectedMoodFilters,
+    selectedYear,
+    onClear: clearAllFilters,
+    onSelectContentFilter: selectContentFilter,
+    onToggleGenre: toggleGenre,
+    onToggleMoodFilter: toggleMoodFilter,
+    onToggleRating: toggleRatingMin,
+    onToggleRuntimeFilter: toggleRuntimeFilter,
+    onToggleYear: toggleYear,
+  }
+
   const handleOpenMovie = useCallback((movie: TestMovie) => {
     setActiveMovieId(movie.id)
     setDetailsMovieId(movie.id)
+    setPremiumSuggestion((current) =>
+      current?.movieId === movie.id ? current : null,
+    )
     setWatchMovieId(null)
     setFilterOpen(false)
     setAboutOpen(false)
@@ -1263,22 +1823,173 @@ export const TestGalleryApp = () => {
     setFilterOpen(false)
   }, [])
 
-  const handleShuffle = useCallback(() => {
-    const candidates = visibleMovies.filter(
-      (movie) => movie.id !== activeMovieId,
-    )
-    const movie = candidates[Math.floor(Math.random() * candidates.length)]
-    if (!movie) return
-    setFilterOpen(false)
-    setAboutOpen(false)
-    setSpinRequest({ itemId: movie.id, nonce: performance.now() })
-  }, [activeMovieId, visibleMovies])
+  const handleShuffle = useCallback(
+    (
+      options: {
+        premiumVariant?: ShuffleProVariant
+        automatic?: boolean
+        countAction?: boolean
+      } = {},
+    ) => {
+      if (mode === 'list') {
+        shuffleStreakRef.current = 0
+        proComboStreakRef.current = 0
+        quickSpinStreakRef.current = 0
+        setSortOpen(false)
+        reopenDetailsAfterListShuffleRef.current = Boolean(detailsMovieId)
+        setListRandomNonce((nonce) => nonce + 1)
+        setPremiumSuggestion(null)
+        return
+      }
+
+      const candidates = visibleMovies.filter(
+        (movie) => movie.id !== activeMovieId,
+      )
+      const movie = candidates[Math.floor(Math.random() * candidates.length)]
+      if (!movie) return
+      let premiumVariant = options.premiumVariant
+      let shuffleProAutomatic = Boolean(options.automatic)
+      const countAction = options.countAction !== false
+      const nextStreak = countAction ? shuffleStreakRef.current + 1 : 0
+      const nextCombo = countAction ? proComboStreakRef.current + 1 : 0
+      quickSpinStreakRef.current = 0
+      if (
+        countAction &&
+        proMaxActive &&
+        !premiumVariant &&
+        (nextStreak >= 5 || nextCombo >= 6)
+      ) {
+        premiumVariant = 'max'
+        shuffleProAutomatic = true
+        shuffleStreakRef.current = 0
+        proComboStreakRef.current = 0
+      } else if (
+        countAction &&
+        !premiumVariant &&
+        nextCombo >= (proMaxActive ? 6 : 10)
+      ) {
+        premiumVariant = proMaxActive ? 'max' : 'rare'
+        shuffleProAutomatic = true
+        shuffleStreakRef.current = 0
+        proComboStreakRef.current = 0
+      } else if (!premiumVariant && nextStreak >= 10 && Math.random() < 0.05) {
+        premiumVariant = 'rare'
+        shuffleProAutomatic = true
+        shuffleStreakRef.current = 0
+      } else {
+        if (countAction) {
+          shuffleStreakRef.current = nextStreak
+          proComboStreakRef.current = nextCombo
+        }
+      }
+      setPremiumSuggestion(
+        premiumVariant ? { movieId: movie.id, variant: premiumVariant } : null,
+      )
+      setDetailsMovieId(null)
+      setFilterOpen(false)
+      setAboutOpen(false)
+      setSpinRequest({
+        itemId: movie.id,
+        nonce: performance.now(),
+        shuffleProAutomatic,
+        shuffleProAutomaticVariant: shuffleProAutomatic
+          ? premiumVariant
+          : undefined,
+      })
+    },
+    [activeMovieId, detailsMovieId, mode, proMaxActive, visibleMovies],
+  )
+
+  const handleSpinGestureEnd = useCallback(
+    (kind: 'quick' | 'hold' | null) => {
+      shuffleStreakRef.current = 0
+      if (!kind) {
+        proComboStreakRef.current = 0
+        quickSpinStreakRef.current = 0
+        return
+      }
+      proComboStreakRef.current += 1
+      if (kind === 'quick') quickSpinStreakRef.current += 1
+      else quickSpinStreakRef.current = 0
+
+      const quickSpinTarget = proMaxActive ? 3 : 5
+      const comboTarget = proMaxActive ? 6 : 10
+      if (
+        quickSpinStreakRef.current >= quickSpinTarget ||
+        proComboStreakRef.current >= comboTarget
+      ) {
+        const variant: ShuffleProVariant = proMaxActive ? 'max' : 'rare'
+        proComboStreakRef.current = 0
+        quickSpinStreakRef.current = 0
+        shuffleStreakRef.current = 0
+        handleShuffle({
+          premiumVariant: variant,
+          automatic: true,
+          countAction: false,
+        })
+      }
+    },
+    [handleShuffle, proMaxActive],
+  )
+
+  const handleShuffleProPhase = useCallback(
+    (phase: ShuffleProPhase | null, variant?: ShuffleProVariant) => {
+      setShuffleProPresentation(phase && variant ? { phase, variant } : null)
+    },
+    [],
+  )
+
+  const handleShuffleProRelease = useCallback(
+    (transitioned: boolean, variant: ShuffleProVariant) => {
+      setShuffleProPresentation(null)
+      handleShuffle(transitioned ? { premiumVariant: variant } : undefined)
+    },
+    [handleShuffle],
+  )
+
+  useEffect(() => {
+    const resetStreakForOtherActions = (event: Event) => {
+      if (event.type === 'pointerdown') {
+        const target = event.target
+        const pointerEvent = event as PointerEvent
+        if (
+          target instanceof Element &&
+          target.closest('[data-shuffle-action]')
+        ) {
+          return
+        }
+        if (
+          target instanceof Element &&
+          target.closest('.warp-infinite-menu-canvas') &&
+          (pointerEvent.pointerType !== 'mouse' || pointerEvent.button === 0)
+        ) {
+          return
+        }
+      }
+      resetShuffleStreak()
+    }
+
+    document.addEventListener('pointerdown', resetStreakForOtherActions, true)
+    document.addEventListener('wheel', resetStreakForOtherActions, true)
+    return () => {
+      document.removeEventListener(
+        'pointerdown',
+        resetStreakForOtherActions,
+        true,
+      )
+      document.removeEventListener('wheel', resetStreakForOtherActions, true)
+    }
+  }, [resetShuffleStreak])
 
   const handlePickRandomMovie = useCallback((movie: TestMovie) => {
     setActiveMovieId(movie.id)
     setFilterOpen(false)
     setAboutOpen(false)
-    setDetailsMovieId(null)
+    setDetailsMovieId(
+      reopenDetailsAfterListShuffleRef.current ? movie.id : null,
+    )
+    setPremiumSuggestion(null)
+    reopenDetailsAfterListShuffleRef.current = false
   }, [])
 
   useEffect(() => {
@@ -1305,15 +2016,127 @@ export const TestGalleryApp = () => {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [aboutOpen, detailsMovieId, filterOpen, sortOpen, watchMovieId])
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isSpace = event.code === 'Space' || event.key === ' '
+      const isEnter = event.key === 'Enter'
+      const target = event.target
+      if (
+        target instanceof Element &&
+        target.closest('[data-shuffle-action]')
+      ) {
+        return
+      }
+      if (!isSpace && !isEnter) {
+        shuffleStreakRef.current = 0
+        return
+      }
+      const action = isSpace ? 'shuffle' : 'open'
+      const allowed = shouldHandleGalleryKey({
+        key: action,
+        mode,
+        galleryReady: initialGalleryReady,
+        overlayOpen: Boolean(
+          watchMovieId || aboutOpen || filterOpen || sortOpen,
+        ),
+        detailsOpen: Boolean(detailsMovieId),
+        hasTarget:
+          action === 'open'
+            ? Boolean(activeMovie)
+            : mode === 'list'
+              ? listMovies.length > 0
+              : visibleMovies.length > 0,
+        repeat: event.repeat,
+        hasModifier:
+          event.ctrlKey || event.altKey || event.metaKey || event.shiftKey,
+        activeElementKind: getActiveElementKind(),
+      })
+      if (!allowed) {
+        shuffleStreakRef.current = 0
+        return
+      }
+      if (action !== 'shuffle') shuffleStreakRef.current = 0
+      event.preventDefault()
+      if (action === 'shuffle') {
+        handleShuffle()
+      } else if (activeMovie) handleOpenMovie(activeMovie)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [
+    aboutOpen,
+    activeMovie,
+    detailsMovieId,
+    filterOpen,
+    handleOpenMovie,
+    handleShuffle,
+    initialGalleryReady,
+    listMovies.length,
+    mode,
+    sortOpen,
+    visibleMovies.length,
+    watchMovieId,
+  ])
+
   return (
     <main
+      ref={shellRef}
       className='phantom-test-shell warp-shell min-h-dvh overflow-hidden bg-black text-white'
+      onPointerDownCapture={(event) => maybePromptFullscreenHint(event.target)}
+      onClickCapture={(event) => maybePromptFullscreenHint(event.target)}
+      onWheelCapture={(event) => maybePromptFullscreenHint(event.target)}
+      onKeyDownCapture={(event) => {
+        if (
+          ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(
+            event.key,
+          )
+        ) {
+          maybePromptFullscreenHint(event.target)
+        }
+      }}
       data-details-open={detailsPresence.isPresent ? 'true' : 'false'}
       data-filter-open={filterPresence.isPresent ? 'true' : 'false'}
       data-gallery-ready={initialGalleryReady ? 'true' : 'false'}
       data-mode={mode}
       data-theme={theme}
+      data-shuffle-pro-phase={shuffleProPresentation?.phase}
+      data-shuffle-pro-variant={shuffleProPresentation?.variant}
+      data-immersive={isFullscreenActive ? 'true' : 'false'}
     >
+      {isMobileViewport && mode === 'wall' && !detailsMovieId ? (
+        <div className='warp-fullscreen-control'>
+          <button
+            type='button'
+            className='warp-fullscreen-button'
+            aria-label={
+              isFullscreenActive ? 'Exit full screen' : 'Go full screen'
+            }
+            aria-pressed={isFullscreenActive}
+            onClick={() => void toggleFullscreen()}
+          >
+            {isFullscreenActive ? (
+              <Minimize2 aria-hidden='true' size={18} />
+            ) : (
+              <Maximize2 aria-hidden='true' size={18} />
+            )}
+          </button>
+          {showFullscreenHint ? (
+            <span className='warp-fullscreen-tip' role='tooltip'>
+              Go full screen for maximum immersion
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      <output className='warp-shuffle-pro-announcement' aria-live='polite'>
+        {shuffleProPresentation?.phase === 'transition'
+          ? shuffleProPresentation.variant === 'rare'
+            ? 'The stars have chosen your pick.'
+            : shuffleProPresentation.variant === 'max'
+              ? 'Release to reveal your Shuffle Pro Max pick.'
+              : 'Release to reveal your Shuffle Pro pick.'
+          : ''}
+      </output>
       {/* Stays mounted in other views so returning to the gallery is instant. */}
       <WarpWall
         activeMovieId={activeMovie?.id ?? null}
@@ -1326,8 +2149,13 @@ export const TestGalleryApp = () => {
         onOpenMovie={handleOpenMovie}
         onReady={handleGalleryReady}
         onSelectMovie={handleSelectMovie}
-        onUserSpin={markSpinHintSeen}
+        onUserSpin={handleUserSpin}
         spinRequest={spinRequest}
+        onShuffleProPhase={handleShuffleProPhase}
+        onShuffleProRelease={handleShuffleProRelease}
+        onNonShuffleInteraction={resetShuffleStreak}
+        onSpinGestureEnd={handleSpinGestureEnd}
+        isShuffleProMax={proMaxActive}
       />
 
       {mode === 'list' ? (
@@ -1348,14 +2176,11 @@ export const TestGalleryApp = () => {
         />
       ) : null}
 
-      {mode === 'genres' ? (
-        <GenresView
-          genres={genreSummaries}
+      {mode === 'filters' ? (
+        <FiltersView
+          {...filterSectionProps}
           resultCount={filteredMovies.length}
-          selectedGenres={selectedGenres}
-          onBackToGallery={() => setMode('list')}
-          onClear={clearGenres}
-          onToggleGenre={toggleGenre}
+          selectedFilterCount={selectedFilterCount}
         />
       ) : null}
 
@@ -1366,11 +2191,12 @@ export const TestGalleryApp = () => {
         movieCount={movies.length}
         selectedFilterCount={selectedFilterCount}
         timeLabel={timeLabel}
+        onClearFilters={clearAllFilters}
         onOpenActiveMovie={() => {
           if (activeMovie) handleOpenWatchLinks(activeMovie)
         }}
-        onOpenGenres={() => {
-          setMode('genres')
+        onOpenFilters={() => {
+          setMode('filters')
           setAboutOpen(false)
           setFilterOpen(false)
           setSortOpen(false)
@@ -1393,13 +2219,61 @@ export const TestGalleryApp = () => {
           mode === 'wall' ? (
             <>
               {initialGalleryReady && !spinHintSeen && !detailsMovieId ? (
-                <div className='warp-spin-hint' role='note'>
-                  <span className='warp-spin-hint-keys' aria-hidden='true'>
-                    <kbd>↑</kbd>
-                    <kbd>↓</kbd>
-                  </span>
+                <div
+                  className='warp-spin-hint max-[900px]:hidden'
+                  role='note'
+                  aria-label='Use the up, down, left, and right arrow keys to scroll. Hit Spacebar to shuffle, Escape to cancel or return, and Enter to select.'
+                >
                   <span className='warp-spin-hint-pointer'>
-                    Scroll or use the arrow keys to spin
+                    Use{' '}
+                    <kbd
+                      aria-label='Up arrow'
+                      className='inline-grid align-middle'
+                    >
+                      <ArrowUp aria-hidden='true' size={12} strokeWidth={2.8} />
+                    </kbd>{' '}
+                    and{' '}
+                    <kbd
+                      aria-label='Down arrow'
+                      className='inline-grid align-middle'
+                    >
+                      <ArrowDown
+                        aria-hidden='true'
+                        size={12}
+                        strokeWidth={2.8}
+                      />
+                    </kbd>
+                    ,{' '}
+                    <kbd
+                      aria-label='Left arrow'
+                      className='inline-grid align-middle'
+                    >
+                      <ArrowLeft
+                        aria-hidden='true'
+                        size={12}
+                        strokeWidth={2.8}
+                      />
+                    </kbd>{' '}
+                    and{' '}
+                    <kbd
+                      aria-label='Right arrow'
+                      className='inline-grid align-middle'
+                    >
+                      <ArrowRight
+                        aria-hidden='true'
+                        size={12}
+                        strokeWidth={2.8}
+                      />
+                    </kbd>{' '}
+                    to scroll. Hit{' '}
+                    <kbd className='is-wide inline-grid align-middle'>
+                      Spacebar
+                    </kbd>{' '}
+                    to shuffle,{' '}
+                    <kbd className='inline-grid align-middle'>Esc</kbd> to
+                    cancel/return and{' '}
+                    <kbd className='inline-grid align-middle'>Enter</kbd> to
+                    select.
                   </span>
                   <span className='warp-spin-hint-touch'>Drag to spin</span>
                   <button
@@ -1465,12 +2339,10 @@ export const TestGalleryApp = () => {
               <button
                 type='button'
                 className='warp-shuffle-button'
+                data-shuffle-action
                 aria-label='Jump to a random movie in the index'
                 disabled={!listMovies.length}
-                onClick={() => {
-                  setSortOpen(false)
-                  setListRandomNonce((nonce) => nonce + 1)
-                }}
+                onClick={() => handleShuffle()}
               >
                 <Dices className='warp-shuffle-icon' aria-hidden='true' />
                 <span className='warp-shuffle-label'>Shuffle</span>
@@ -1484,9 +2356,10 @@ export const TestGalleryApp = () => {
               <button
                 type='button'
                 className='warp-shuffle-button'
+                data-shuffle-action
                 aria-label='Shuffle to a random movie'
                 disabled={!visibleMovies.length}
-                onClick={handleShuffle}
+                onClick={() => handleShuffle()}
               >
                 <Dices className='warp-shuffle-icon' aria-hidden='true' />
                 <span className='warp-shuffle-label'>Shuffle</span>
@@ -1522,19 +2395,19 @@ export const TestGalleryApp = () => {
                   {filterOpen ? (
                     <X className='warp-filter-icon' aria-hidden='true' />
                   ) : (
-                    <SlidersHorizontal
-                      className='warp-filter-icon'
-                      aria-hidden='true'
-                    />
+                    <>
+                      <SlidersHorizontal
+                        className='warp-filter-icon'
+                        aria-hidden='true'
+                      />
+                      <span className='warp-filter-label'>Filters</span>
+                      {selectedFilterCount ? (
+                        <span className='warp-filter-count'>
+                          {selectedFilterCount}
+                        </span>
+                      ) : null}
+                    </>
                   )}
-                  <span className='warp-filter-label'>
-                    {filterOpen ? 'Close' : 'Filter'}
-                  </span>
-                  {selectedFilterCount ? (
-                    <span className='warp-filter-count'>
-                      {selectedFilterCount}
-                    </span>
-                  ) : null}
                 </button>
               </div>
             ) : null}
@@ -1579,9 +2452,9 @@ export const TestGalleryApp = () => {
               className='warp-preloader-skip'
               onClick={() => setInitialGalleryReady(true)}
             >
-              Skip
+              Skip first time load
             </button>
-            <em>Shows the globe now; posters keep sharpening as they load.</em>
+            <em>Images will load in the background</em>
           </span>
         </output>
       ) : null}
@@ -1593,7 +2466,7 @@ export const TestGalleryApp = () => {
           onDirection={(key, direction) =>
             setSortRules((rules) => applySortDirection(rules, key, direction))
           }
-          onReset={() => setSortRules([{ key: 'year', direction: 'asc' }])}
+          onReset={() => setSortRules([{ key: 'alpha', direction: 'asc' }])}
           onToggle={(key) =>
             setSortRules((rules) => applySortToggle(rules, key))
           }
@@ -1602,31 +2475,22 @@ export const TestGalleryApp = () => {
 
       {filterPresence.isPresent ? (
         <FilterPanel
+          {...filterSectionProps}
           broadened={decisionFilterResult.broadened}
-          genres={genreSummaries}
           motionPhase={filterPresence.motionPhase}
           resultCount={filteredMovies.length}
-          contentFilter={contentFilter}
-          runtimeFilter={selectedRuntimeFilter}
-          selectedGenres={selectedGenres}
-          selectedMoodFilters={selectedMoodFilters}
           strictResultCount={decisionFilterResult.strictCount}
-          onClear={clearAllFilters}
-          onSelectContentFilter={selectContentFilter}
-          onToggleRuntimeFilter={toggleRuntimeFilter}
-          onToggleGenre={toggleGenre}
-          onToggleMoodFilter={toggleMoodFilter}
         />
       ) : null}
 
       {aboutPresence.isPresent ? (
         <AboutDrawer
+          movieCount={movies.length}
           theme={theme}
           onThemeChange={changeTheme}
           genreCount={genreSummaries.length}
           globeCount={visibleMovies.length}
           maximized={aboutMaximized}
-          movieCount={movies.length}
           motionPhase={aboutPresence.motionPhase}
           onClose={() => setAboutOpen(false)}
           onToggleMaximized={() =>
@@ -1652,14 +2516,19 @@ export const TestGalleryApp = () => {
           movies={movies}
           motionPhase={detailsPresence.motionPhase}
           movie={detailsPresence.value}
-          onClose={() => setDetailsMovieId(null)}
+          premiumVariant={
+            premiumSuggestion?.movieId === detailsPresence.value.id
+              ? premiumSuggestion.variant
+              : null
+          }
+          onClose={() => {
+            setDetailsMovieId(null)
+            setPremiumSuggestion(null)
+          }}
           onOpenMovie={handleOpenMovie}
           onWatch={handleOpenWatchLinks}
-          onSelectGenre={(genre) => {
-            setSelectedGenres([genre])
-            setDetailsMovieId(null)
-            setMode('wall')
-          }}
+          onApplyFilter={handleApplyCardFilter}
+          onNextSuggestion={handleShuffle}
         />
       ) : null}
     </main>
@@ -1678,7 +2547,23 @@ type WarpWallProps = {
   onReady: () => void
   onSelectMovie: (movie: TestMovie) => void
   onUserSpin: () => void
-  spinRequest: { itemId: string; nonce: number } | null
+  spinRequest: {
+    itemId: string
+    nonce: number
+    shuffleProAutomatic?: boolean
+    shuffleProAutomaticVariant?: ShuffleProVariant
+  } | null
+  onShuffleProPhase: (
+    phase: ShuffleProPhase | null,
+    variant?: ShuffleProVariant,
+  ) => void
+  onShuffleProRelease: (
+    transitioned: boolean,
+    variant: ShuffleProVariant,
+  ) => void
+  onNonShuffleInteraction: () => void
+  onSpinGestureEnd: (kind: 'quick' | 'hold' | null) => void
+  isShuffleProMax: boolean
 }
 
 const WarpWall = ({
@@ -1693,6 +2578,11 @@ const WarpWall = ({
   onReady,
   onSelectMovie,
   onUserSpin,
+  onShuffleProPhase,
+  onShuffleProRelease,
+  onNonShuffleInteraction,
+  onSpinGestureEnd,
+  isShuffleProMax,
   spinRequest,
 }: WarpWallProps) => {
   const menuItems = useMemo<InfiniteMovieMenuItem<TestMovie>[]>(
@@ -1746,6 +2636,11 @@ const WarpWall = ({
         onOpenItem={handleOpenItem}
         onReady={onReady}
         onUserSpin={onUserSpin}
+        onShuffleProPhase={onShuffleProPhase}
+        onShuffleProRelease={onShuffleProRelease}
+        onNonShuffleInteraction={onNonShuffleInteraction}
+        onSpinGestureEnd={onSpinGestureEnd}
+        isShuffleProMax={isShuffleProMax}
         scale={0.9}
         spinRequest={spinRequest}
         onActiveItemChange={handleActiveItemChange}
@@ -1908,29 +2803,18 @@ const WarpList = ({
   const pulseTimerRef = useRef<number | null>(null)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
 
-  const groupedMovies = useMemo(() => {
-    const groups =
-      grouping === 'alpha'
-        ? groupMoviesAlphabetically(movies)
-        : grouping === 'rating'
-          ? groupMoviesByRating(movies)
-          : groupMoviesByYear(movies)
-    const sign = groupDirection === 'desc' ? -1 : 1
-    return Object.entries(groups).sort(([groupA], [groupB]) => {
-      if (grouping === 'rating') {
-        // Bands run high to low by default; Unrated always stays last.
-        if (groupA === UNRATED_GROUP || groupB === UNRATED_GROUP)
-          return compareRatingGroups(groupA, groupB)
-        return -sign * compareRatingGroups(groupA, groupB)
-      }
-      return (
-        sign *
-        (grouping === 'alpha'
-          ? groupA.localeCompare(groupB)
-          : Number(groupA) - Number(groupB))
-      )
-    })
-  }, [groupDirection, grouping, movies])
+  const groupedMovies = useMemo(
+    () =>
+      Object.entries(groupMoviesForList(movies, grouping)).sort(
+        ([groupA], [groupB]) =>
+          compareListGroups(groupA, groupB, grouping, groupDirection),
+      ),
+    [groupDirection, grouping, movies],
+  )
+  const popularityGroups = useMemo(
+    () => (grouping === 'popularity' ? getPopularityGroups(movies) : undefined),
+    [grouping, movies],
+  )
 
   // The first screenful renders straight away; the rest as it scrolls near.
   const eagerChunkKeys = useMemo(() => {
@@ -1998,7 +2882,7 @@ const WarpList = ({
     const movie = movies[Math.floor(Math.random() * Math.max(movies.length, 1))]
     if (!movie) return
 
-    const movieGroup = getMovieListGroupKey(movie, grouping)
+    const movieGroup = getMovieListGroupKey(movie, grouping, popularityGroups)
     setCollapsedGroups((currentGroups) => {
       if (!currentGroups.has(movieGroup)) return currentGroups
       const nextGroups = new Set(currentGroups)
@@ -2065,7 +2949,7 @@ const WarpList = ({
               ? loadState
               : searchQuery.trim()
                 ? `${searchResultCount.toLocaleString()} title matches`
-                : '20k+ movies to choose from'}
+                : `${movies.length.toLocaleString()} movies to choose from`}
           </p>
         </div>
         <form
@@ -2157,7 +3041,7 @@ const WarpList = ({
                 >
                   <span>
                     <h2>
-                      {group === '#' || group === 'Rest'
+                      {group === 'Rest'
                         ? 'The rest'
                         : group === '2023'
                           ? '2023+'
@@ -2232,7 +3116,8 @@ type WarpChromeProps = {
   selectedFilterCount: number
   timeLabel: string
   onOpenActiveMovie: () => void
-  onOpenGenres: () => void
+  onClearFilters: () => void
+  onOpenFilters: () => void
   onResetGallery: () => void
   onModeChange: (mode: ViewMode) => void
 }
@@ -2248,7 +3133,8 @@ const WarpChrome = ({
   selectedFilterCount,
   timeLabel,
   onOpenActiveMovie,
-  onOpenGenres,
+  onClearFilters,
+  onOpenFilters,
   onResetGallery,
   onModeChange,
 }: WarpChromeProps) => (
@@ -2277,10 +3163,12 @@ const WarpChrome = ({
       <button
         type='button'
         className='warp-cta'
-        disabled={!activeMovie}
-        onClick={onOpenActiveMovie}
+        disabled={mode !== 'filters' && !activeMovie}
+        onClick={
+          mode === 'filters' ? () => onModeChange('wall') : onOpenActiveMovie
+        }
       >
-        Let&apos;s Watch
+        {mode === 'filters' ? 'Home' : "Let's Watch"}
       </button>
     </header>
 
@@ -2309,7 +3197,7 @@ const WarpChrome = ({
           <button
             type='button'
             aria-label='Movie index'
-            aria-pressed={mode === 'list' || mode === 'genres'}
+            aria-pressed={mode === 'list' || mode === 'filters'}
             onClick={() => onModeChange('list')}
           >
             <span className='warp-list-icon' />
@@ -2319,7 +3207,7 @@ const WarpChrome = ({
 
         {dockLead}
         {/* Gallery: Watch opens the watch options for the current film. Index:
-            Genres, which reads Back while the genres page is open. About lives
+            Filters, which reads Back while the filters page is open. About lives
             on the i button. */}
         <nav className='warp-main-nav' aria-label='Gallery navigation'>
           {mode === 'wall' ? (
@@ -2333,19 +3221,32 @@ const WarpChrome = ({
               Watch
             </button>
           ) : (
-            <button
-              type='button'
-              className={cn(mode === 'genres' && 'is-active')}
-              aria-pressed={mode === 'genres'}
-              onClick={
-                mode === 'genres' ? () => onModeChange('list') : onOpenGenres
-              }
-            >
-              {mode === 'genres' ? 'Back' : 'Genres'}
-              {mode !== 'genres' && selectedFilterCount ? (
-                <span>{selectedFilterCount}</span>
+            <>
+              <button
+                type='button'
+                className={cn(mode === 'filters' && 'is-active')}
+                aria-pressed={mode === 'filters'}
+                onClick={
+                  mode === 'filters'
+                    ? () => onModeChange('list')
+                    : onOpenFilters
+                }
+              >
+                {mode === 'filters' ? 'Back' : 'Filters'}
+                {mode !== 'filters' && selectedFilterCount ? (
+                  <span>{selectedFilterCount}</span>
+                ) : null}
+              </button>
+              {mode === 'filters' && selectedFilterCount > 0 ? (
+                <button
+                  type='button'
+                  className='warp-nav-clear'
+                  onClick={onClearFilters}
+                >
+                  Clear
+                </button>
               ) : null}
-            </button>
+            </>
           )}
         </nav>
         {dockActions}
@@ -2372,7 +3273,7 @@ const SortPanel = ({
   const pending = rules.find((rule) => !rule.direction)
   const isDefault =
     rules.length === 1 &&
-    rules[0].key === 'year' &&
+    rules[0].key === 'alpha' &&
     rules[0].direction === 'asc'
 
   return (
@@ -2460,38 +3361,214 @@ const SortPanel = ({
   )
 }
 
-type FilterPanelProps = {
-  broadened: boolean
+type FilterSectionsProps = {
+  allActive: boolean
   contentFilter: ContentFilter
+  decades: number[]
   genres: GenreSummary[]
-  motionPhase: MotionPhase
-  resultCount: number
+  ratingMin: number | null
   runtimeFilter: RuntimeFilter | null
   selectedGenres: string[]
   selectedMoodFilters: MoodFilter[]
-  strictResultCount: number
+  selectedYear: YearFilter | null
   onClear: () => void
   onSelectContentFilter: (contentFilter: ContentFilter) => void
-  onToggleRuntimeFilter: (runtimeFilter: RuntimeFilter) => void
   onToggleGenre: (genre: string) => void
   onToggleMoodFilter: (moodFilter: MoodFilter) => void
+  onToggleRating: (min: number) => void
+  onToggleRuntimeFilter: (runtimeFilter: RuntimeFilter) => void
+  onToggleYear: (year: YearFilter) => void
+}
+
+// Shared by the gallery popover and the Filters page so both stay in step.
+const FilterSections = ({
+  allActive,
+  contentFilter,
+  decades,
+  genres,
+  ratingMin,
+  runtimeFilter,
+  selectedGenres,
+  selectedMoodFilters,
+  selectedYear,
+  onClear,
+  onSelectContentFilter,
+  onToggleGenre,
+  onToggleMoodFilter,
+  onToggleRating,
+  onToggleRuntimeFilter,
+  onToggleYear,
+}: FilterSectionsProps) => {
+  const ratingOptions = [...RATING_PRESETS]
+  if (ratingMin !== null && !ratingOptions.includes(ratingMin)) {
+    ratingOptions.push(ratingMin)
+    ratingOptions.sort((a, b) => a - b)
+  }
+
+  return (
+    <>
+      <section className='warp-fs-section' data-section='content'>
+        <p>Content type</p>
+        <div className='warp-fs-chips'>
+          {CONTENT_FILTERS.map((filter) => (
+            <button
+              type='button'
+              className={cn(
+                'warp-fs-chip',
+                contentFilter === filter.id &&
+                  (filter.id !== 'all' || allActive) &&
+                  'is-active',
+                filter.disabled && 'is-disabled',
+              )}
+              key={filter.id}
+              aria-disabled={filter.disabled || undefined}
+              aria-pressed={contentFilter === filter.id}
+              disabled={filter.disabled}
+              title={filter.disabled ? filter.meta : undefined}
+              onClick={() =>
+                filter.id === 'all'
+                  ? onClear()
+                  : onSelectContentFilter(filter.id)
+              }
+            >
+              <span>{filter.label}</span>
+              {filter.meta ? (
+                <span className='warp-soon-tag' aria-label={filter.meta}>
+                  Soon
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className='warp-fs-section'>
+        <p>{contentFilter === 'series' ? 'Episode runtime' : 'Runtime'}</p>
+        <div className='warp-fs-chips'>
+          {(contentFilter === 'series'
+            ? SERIES_RUNTIME_FILTERS
+            : MOVIE_RUNTIME_FILTERS
+          ).map((filter) => (
+            <button
+              type='button'
+              className={cn(
+                'warp-fs-chip',
+                runtimeFilter === filter.id && 'is-active',
+                filter.disabled && 'is-disabled',
+              )}
+              disabled={filter.disabled}
+              key={filter.id}
+              aria-pressed={runtimeFilter === filter.id}
+              onClick={() => onToggleRuntimeFilter(filter.id)}
+            >
+              <span>{filter.label}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className='warp-fs-section'>
+        <p>Year</p>
+        <div className='warp-fs-chips'>
+          {selectedYear?.kind === 'year' ? (
+            <button
+              type='button'
+              className='warp-fs-chip is-active'
+              aria-pressed='true'
+              onClick={() => onToggleYear(selectedYear)}
+            >
+              <span>{selectedYear.value}</span>
+            </button>
+          ) : null}
+          {decades.map((decade) => {
+            const active =
+              selectedYear?.kind === 'decade' && selectedYear.value === decade
+            return (
+              <button
+                type='button'
+                className={cn('warp-fs-chip', active && 'is-active')}
+                key={decade}
+                aria-pressed={active}
+                onClick={() => onToggleYear({ kind: 'decade', value: decade })}
+              >
+                <span>{decade}s</span>
+              </button>
+            )
+          })}
+        </div>
+      </section>
+      <section className='warp-fs-section'>
+        <p>Rating</p>
+        <div className='warp-fs-chips'>
+          {ratingOptions.map((min) => (
+            <button
+              type='button'
+              className={cn('warp-fs-chip', ratingMin === min && 'is-active')}
+              key={min}
+              aria-pressed={ratingMin === min}
+              onClick={() => onToggleRating(min)}
+            >
+              <span>{formatRatingMin(min)}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className='warp-fs-section'>
+        <p>Mood</p>
+        <div className='warp-fs-chips'>
+          {MOOD_FILTERS.map((filter) => (
+            <button
+              type='button'
+              className={cn(
+                'warp-fs-chip',
+                selectedMoodFilters.includes(filter.id) && 'is-active',
+              )}
+              key={filter.id}
+              aria-pressed={selectedMoodFilters.includes(filter.id)}
+              onClick={() => onToggleMoodFilter(filter.id)}
+            >
+              <span>{filter.label}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className='warp-fs-section' data-section='genres'>
+        <p>Genres</p>
+        <small>The more the merrier</small>
+        <div className='warp-fs-chips'>
+          {genres.map(({ genre, count }) => {
+            const active =
+              !selectedGenres.length || selectedGenres.includes(genre)
+            return (
+              <button
+                type='button'
+                className={cn('warp-fs-chip', active && 'is-active')}
+                key={genre}
+                aria-pressed={active}
+                onClick={() => onToggleGenre(genre)}
+              >
+                <span>{genre}</span>
+                <span>{count}</span>
+              </button>
+            )
+          })}
+        </div>
+      </section>
+    </>
+  )
+}
+
+type FilterPanelProps = FilterSectionsProps & {
+  broadened: boolean
+  motionPhase: MotionPhase
+  resultCount: number
+  strictResultCount: number
 }
 
 const FilterPanel = ({
   broadened,
-  contentFilter,
-  genres,
   motionPhase,
   resultCount,
-  runtimeFilter,
-  selectedGenres,
-  selectedMoodFilters,
   strictResultCount,
-  onClear,
-  onSelectContentFilter,
-  onToggleRuntimeFilter,
-  onToggleGenre,
-  onToggleMoodFilter,
+  ...sections
 }: FilterPanelProps) => (
   <aside className='warp-filter-panel' data-motion={motionPhase}>
     <div className='warp-filter-panel-heading'>
@@ -2500,167 +3577,63 @@ const FilterPanel = ({
         {resultCount} {broadened ? 'broadened' : 'matches'}
       </span>
     </div>
-    <div className='warp-content-filter' aria-label='Content type'>
-      {CONTENT_FILTERS.map((filter) => (
-        <button
-          type='button'
-          className={cn(
-            contentFilter === filter.id &&
-              (filter.id !== 'all' ||
-                (!selectedGenres.length &&
-                  !selectedMoodFilters.length &&
-                  !runtimeFilter)) &&
-              'is-active',
-            filter.disabled && 'is-disabled',
-          )}
-          key={filter.id}
-          aria-disabled={filter.disabled || undefined}
-          aria-pressed={contentFilter === filter.id}
-          disabled={filter.disabled}
-          title={filter.disabled ? filter.meta : undefined}
-          onClick={() =>
-            filter.id === 'all' ? onClear() : onSelectContentFilter(filter.id)
-          }
-        >
-          <span>{filter.label}</span>
-          {filter.meta ? (
-            <span className='warp-soon-tag' aria-label={filter.meta}>
-              Soon
-            </span>
-          ) : null}
-        </button>
-      ))}
-    </div>
     {broadened ? (
       <p className='warp-filter-note'>
         Broadened from {strictResultCount} exact matches to keep the wall full.
       </p>
     ) : null}
-    <div className='warp-filter-panel-section'>
-      <p>{contentFilter === 'series' ? 'Episode runtime' : 'Movie runtime'}</p>
-      {(contentFilter === 'series'
-        ? SERIES_RUNTIME_FILTERS
-        : MOVIE_RUNTIME_FILTERS
-      ).map((filter) => (
-        <button
-          type='button'
-          className={cn(
-            runtimeFilter === filter.id && 'is-active',
-            filter.disabled && 'is-disabled',
-          )}
-          disabled={filter.disabled}
-          key={filter.id}
-          aria-pressed={runtimeFilter === filter.id}
-          onClick={() => onToggleRuntimeFilter(filter.id)}
-        >
-          <span>{filter.label}</span>
-        </button>
-      ))}
-    </div>
-    <div className='warp-filter-panel-section'>
-      <p>Mood</p>
-      {MOOD_FILTERS.map((filter) => (
-        <button
-          type='button'
-          className={cn(selectedMoodFilters.includes(filter.id) && 'is-active')}
-          key={filter.id}
-          aria-pressed={selectedMoodFilters.includes(filter.id)}
-          onClick={() => onToggleMoodFilter(filter.id)}
-        >
-          <span>{filter.label}</span>
-        </button>
-      ))}
-    </div>
-    <div className='warp-filter-panel-section'>
-      <p>Genres</p>
-      {genres.map(({ genre, count }) => (
-        <button
-          type='button'
-          className={cn(selectedGenres.includes(genre) && 'is-active')}
-          key={genre}
-          aria-pressed={selectedGenres.includes(genre)}
-          onClick={() => onToggleGenre(genre)}
-        >
-          <span>{genre}</span>
-          <span>{count}</span>
-        </button>
-      ))}
-    </div>
+    <FilterSections {...sections} />
   </aside>
 )
 
-type GenresViewProps = {
-  genres: GenreSummary[]
+type FiltersViewProps = FilterSectionsProps & {
   resultCount: number
-  selectedGenres: string[]
-  onBackToGallery: () => void
-  onClear: () => void
-  onToggleGenre: (genre: string) => void
+  selectedFilterCount: number
 }
 
-const GenresView = ({
-  genres,
+const FiltersView = ({
   resultCount,
-  selectedGenres,
-  onBackToGallery,
-  onClear,
-  onToggleGenre,
-}: GenresViewProps) => (
-  <section className='warp-genres-view' aria-label='Genre curation'>
+  selectedFilterCount,
+  ...sections
+}: FiltersViewProps) => (
+  <section className='warp-filters-view' aria-label='Filters'>
     <header>
       <div>
-        <h1>Genres</h1>
-        <p>
-          The more the merrier
-        </p>
+        <h1>Filters</h1>
+        <p>Narrow the wall by runtime, year, rating, mood and genre.</p>
       </div>
-      <div className='warp-genres-actions'>
+      {selectedFilterCount > 0 ? (
         <button
           type='button'
-          className='is-danger'
-          onClick={onClear}
-          disabled={!selectedGenres.length}
+          className='warp-filters-clear'
+          onClick={sections.onClear}
         >
           Clear
         </button>
-        <button type='button' onClick={onBackToGallery}>
-          Back
-        </button>
-      </div>
+      ) : null}
     </header>
-    <div className='warp-genres-summary'>
-      <span>{selectedGenres.length || 'All'} selected</span>
+    <div className='warp-filters-summary'>
+      <span>{selectedFilterCount || 'No'} selected</span>
       <span>{resultCount} matching movies</span>
     </div>
-    <div className='warp-genres-grid'>
-      {genres.map(({ genre, count }) => {
-        const isActive =
-          !selectedGenres.length || selectedGenres.includes(genre)
-        return (
-          <button
-            type='button'
-            key={genre}
-            className={cn(isActive && 'is-active')}
-            aria-pressed={isActive}
-            onClick={() => onToggleGenre(genre)}
-          >
-            <span>{genre}</span>
-            <span>{count}</span>
-          </button>
-        )
-      })}
+    <div className='warp-filters-body'>
+      <FilterSections {...sections} />
     </div>
   </section>
 )
 
+// "10k+" for the copy; the exact figure shows where there is room for it.
+export const formatFilmCount = (count: number) =>
+  count >= 1000 ? `${Math.floor(count / 1000)}k+` : String(count)
+
 type AboutDrawerProps = {
   theme: Theme
+  movieCount: number
   onThemeChange: (theme: Theme) => void
   genreCount: number
   globeCount: number
   maximized: boolean
   motionPhase: MotionPhase
-  movieCount: number
   onClose: () => void
   onToggleMaximized: () => void
 }
@@ -2669,37 +3642,53 @@ const AboutControls = () => (
   <div className='warp-about-control-sets'>
     <ul className='warp-about-controls is-desktop-controls'>
       <li>
-        <span className='warp-about-keys'><kbd>Click</kbd></span>
+        <span className='warp-about-keys'>
+          <kbd>Click</kbd>
+        </span>
         <span>Open a poster</span>
       </li>
       <li>
-        <span className='warp-about-keys'><kbd>Hold or drag</kbd></span>
+        <span className='warp-about-keys'>
+          <kbd>Hold or drag</kbd>
+        </span>
         <span>Spin the globe</span>
       </li>
       <li>
-        <span className='warp-about-keys'><kbd>Scroll or use arrow keys</kbd></span>
+        <span className='warp-about-keys'>
+          <kbd>Scroll or use arrow keys</kbd>
+        </span>
         <span>Spin without grabbing</span>
       </li>
       <li>
-        <span className='warp-about-keys'><kbd>Shuffle</kbd></span>
+        <span className='warp-about-keys'>
+          <kbd>Shuffle</kbd>
+        </span>
         <span>Land on a random film</span>
       </li>
     </ul>
     <ul className='warp-about-controls is-mobile-controls'>
       <li>
-        <span className='warp-about-keys'><kbd>Tap</kbd></span>
+        <span className='warp-about-keys'>
+          <kbd>Tap</kbd>
+        </span>
         <span>Open a poster</span>
       </li>
       <li>
-        <span className='warp-about-keys'><kbd>Hold or drag</kbd></span>
+        <span className='warp-about-keys'>
+          <kbd>Hold or drag</kbd>
+        </span>
         <span>Spin the globe</span>
       </li>
       <li>
-        <span className='warp-about-keys'><kbd>Swipe</kbd></span>
+        <span className='warp-about-keys'>
+          <kbd>Swipe</kbd>
+        </span>
         <span>Quick spin</span>
       </li>
       <li>
-        <span className='warp-about-keys'><kbd>Shuffle</kbd></span>
+        <span className='warp-about-keys'>
+          <kbd>Shuffle</kbd>
+        </span>
         <span>Land on a random film</span>
       </li>
     </ul>
@@ -2788,12 +3777,12 @@ const AboutGlobeDiagram = () => (
 
 const AboutDrawer = ({
   theme,
+  movieCount,
   onThemeChange,
   genreCount,
   globeCount,
   maximized,
   motionPhase,
-  movieCount,
   onClose,
   onToggleMaximized,
 }: AboutDrawerProps) =>
@@ -2809,10 +3798,11 @@ const AboutDrawer = ({
           <p className='warp-about-eyebrow'>About</p>
           <h2>ScrollFlix</h2>
           <p>
-            20k+ movies, Roll the dice. Nothing’s more annoying than trying to
-            relax and still being stuck choosing a movie 20 minutes later and
-            prolly more frustrated than before (I’m looking at you, Netflix).
-            This is an attempt to make picking a movie a little less annoying.
+            {formatFilmCount(movieCount)} movies, Roll the dice. Nothing’s more
+            annoying than trying to relax and still being stuck choosing a movie
+            20 minutes later and prolly more frustrated than before (I’m looking
+            at you, Netflix). This is an attempt to make picking a movie a
+            little less annoying.
           </p>
         </div>
         <div className='warp-about-page-actions'>
@@ -2907,7 +3897,7 @@ const AboutDrawer = ({
         <div>
           <h2>ScrollFlix</h2>
           <p>
-            {movieCount.toLocaleString()} films on a globe you can spin, filter
+            {formatFilmCount(movieCount)} films on a globe you can spin, filter
             and shuffle.
           </p>
         </div>
@@ -3017,13 +4007,21 @@ const WatchLinksDialog = ({
   </section>
 )
 
+type MovieCardFilter =
+  | { kind: 'year'; year: number }
+  | { kind: 'rating'; min: number }
+  | { kind: 'runtime'; id: RuntimeFilter }
+  | { kind: 'genre'; genre: string }
+
 type MovieDetailsCardProps = {
   movies: TestMovie[]
   motionPhase: MotionPhase
   movie: TestMovie
+  premiumVariant: ShuffleProVariant | null
   onClose: () => void
   onOpenMovie: (movie: TestMovie) => void
-  onSelectGenre: (genre: string) => void
+  onApplyFilter: (filter: MovieCardFilter) => void
+  onNextSuggestion: () => void
   onWatch: (movie: TestMovie) => void
 }
 
@@ -3031,9 +4029,11 @@ const MovieDetailsCard = ({
   movies,
   motionPhase,
   movie,
+  premiumVariant,
   onClose,
   onOpenMovie,
-  onSelectGenre,
+  onApplyFilter,
+  onNextSuggestion,
   onWatch,
 }: MovieDetailsCardProps) => {
   // Wide screens get a centred panel with everything visible; small screens
@@ -3096,12 +4096,77 @@ const MovieDetailsCard = ({
   }
 
   const showFullContent = isWide || isExpanded
-  const stats = [
-    movie.year && movie.year !== '----' ? movie.year : null,
-    movie.ratingValue ? `★ ${movie.rating}` : null,
-    formatRuntimeLabel(movie),
-    movie.countries || null,
-  ].filter((stat): stat is string => Boolean(stat))
+  const yearNumber = Number.parseInt(movie.year, 10)
+  const runtimeBucket = getRuntimeBucket(movie.runtimeMinutes)
+  const runtimeLabel = formatRuntimeLabel(movie)
+  const ratingValue = movie.ratingValue
+  const hasYear = Boolean(movie.year) && movie.year !== '----'
+  const stats: ReactNode[] = []
+  if (hasYear) {
+    stats.push(
+      Number.isFinite(yearNumber) ? (
+        <FilterTag
+          key='year'
+          onClick={() => onApplyFilter({ kind: 'year', year: yearNumber })}
+        >
+          {movie.year}
+        </FilterTag>
+      ) : (
+        <span key='year'>{movie.year}</span>
+      ),
+    )
+  }
+  stats.push(
+    ratingValue === null ? (
+      <span key='rating'>★ {formatRating(movie)}</span>
+    ) : (
+      <FilterTag
+        key='rating'
+        onClick={() => onApplyFilter({ kind: 'rating', min: ratingValue })}
+      >
+        ★ {formatRating(movie)}
+      </FilterTag>
+    ),
+  )
+  if (runtimeLabel) {
+    stats.push(
+      runtimeBucket ? (
+        <FilterTag
+          key='runtime'
+          onClick={() => onApplyFilter({ kind: 'runtime', id: runtimeBucket })}
+        >
+          {runtimeLabel}
+        </FilterTag>
+      ) : (
+        <span key='runtime'>{runtimeLabel}</span>
+      ),
+    )
+  }
+  if (movie.countries)
+    stats.push(<span key='countries'>{movie.countries}</span>)
+  const nextSuggestionButton = (
+    <button
+      type='button'
+      className='warp-details-next'
+      data-shuffle-action
+      onClick={onNextSuggestion}
+    >
+      <Dices aria-hidden='true' size={15} strokeWidth={2.4} />
+      Re-shuffle
+    </button>
+  )
+  const mobileReshuffleButton = (
+    <button
+      type='button'
+      className='warp-details-next warp-details-next-mobile'
+      data-shuffle-action
+      aria-label='Re-shuffle to another movie'
+      onClick={onNextSuggestion}
+    >
+      <Dices aria-hidden='true' size={15} strokeWidth={2.4} />
+      Re-shuffle
+    </button>
+  )
   const detailsStyle = {
     '--details-drag-y': `${dragOffset}px`,
     // CSS images are fetched without CORS, so catalogue films use a size the
@@ -3119,148 +4184,197 @@ const MovieDetailsCard = ({
   )
 
   return (
-    <section
-      className='warp-details-layer'
-      data-motion={motionPhase}
-      aria-label={`${movie.title} details`}
-    >
-      <button
-        type='button'
-        className='warp-details-backdrop'
-        aria-label='Close details'
-        onClick={onClose}
-      />
-      <dialog
-        open
-        className={cn(
-          'warp-details-card',
-          isExpanded && 'is-expanded',
-          dragOffset !== 0 && 'is-dragging',
-        )}
-        style={detailsStyle}
-        aria-modal='true'
-        data-snap={isExpanded ? 'expanded' : 'compact'}
+    <TooltipProvider delayDuration={300}>
+      <section
+        className='warp-details-layer'
+        data-motion={motionPhase}
+        aria-label={`${movie.title} details`}
       >
-        <span className='warp-details-ambient' aria-hidden='true' />
         <button
           type='button'
-          className='warp-details-close'
+          className='warp-details-backdrop'
           aria-label='Close details'
           onClick={onClose}
+        />
+        <dialog
+          open
+          className={cn(
+            'warp-details-card',
+            premiumVariant && 'is-premium',
+            isExpanded && 'is-expanded',
+            dragOffset !== 0 && 'is-dragging',
+          )}
+          style={detailsStyle}
+          aria-modal='true'
+          data-snap={isExpanded ? 'expanded' : 'compact'}
+          data-premium-variant={premiumVariant ?? undefined}
         >
-          <X aria-hidden='true' size={17} strokeWidth={3} />
-        </button>
-        {isWide ? null : (
-          <div
-            className='warp-details-grip-zone'
-            onPointerCancel={handleDragEnd}
-            onPointerDown={handleDragStart}
-            onPointerMove={handleDragMove}
-            onPointerUp={handleDragEnd}
-          >
-            <span className='warp-details-handle' />
-          </div>
-        )}
-        <div className='warp-details-poster'>
-          <MoviePoster loading='eager' movie={movie} size='detail' />
-        </div>
-        <div className='warp-details-copy'>
-          <div className='warp-details-copy-scroll'>
-            {stats.length ? (
-              <ul className='warp-details-stats' aria-label='Movie facts'>
-                {stats.map((stat) => (
-                  <li key={stat}>{stat}</li>
-                ))}
-              </ul>
-            ) : null}
-            <h2>{movie.title}</h2>
-            {movieText?.tagline ? (
-              <p className='warp-details-tagline'>{movieText.tagline}</p>
-            ) : null}
-            <p
-              className='warp-details-overview'
-              aria-busy={movieText ? undefined : true}
-            >
-              {movieText
-                ? movieText.overview || 'No overview available yet.'
-                : 'Loading the overview…'}
-            </p>
-            <div className='warp-details-genres'>
-              {movie.genres.map((genre) => (
-                <button
-                  type='button'
-                  key={genre}
-                  onClick={() => onSelectGenre(genre)}
-                >
-                  {genre}
-                </button>
-              ))}
-            </div>
-            <div className='warp-details-actions'>
-              <button
-                type='button'
-                className='warp-details-watch'
-                onClick={() => onWatch(movie)}
-              >
-                <Play aria-hidden='true' size={15} strokeWidth={2.6} />
-                Where to watch
-              </button>
-            </div>
-            {showFullContent ? (
-              <div className='warp-details-expanded-content'>
-                {similarMovies.length ? (
-                  <section
-                    className='warp-details-similar'
-                    aria-label='Similar movies'
-                  >
-                    <header>
-                      <h3>Similar movies</h3>
-                      <span>{movie.genres.slice(0, 2).join(' | ')}</span>
-                    </header>
-                    <div className='warp-details-similar-list'>
-                      {similarMovies.map((similarMovie) => (
-                        <button
-                          type='button'
-                          key={similarMovie.id}
-                          onClick={() => onOpenMovie(similarMovie)}
-                        >
-                          <span className='warp-details-similar-poster'>
-                            <MoviePoster movie={similarMovie} />
-                          </span>
-                          <span className='warp-details-similar-copy'>
-                            <strong>{similarMovie.title}</strong>
-                            <span>{formatCompactMeta(similarMovie)}</span>
-                            <em>
-                              {getCachedMovieText(similarMovie)?.overview ||
-                                similarMovie.genres.slice(0, 3).join(' · ') ||
-                                'Movie'}
-                            </em>
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        </div>
-        {isWide ? null : (
+          <span className='warp-details-ambient' aria-hidden='true' />
+          {premiumVariant ? (
+            <span className='warp-details-premium-badge'>
+              <span aria-hidden='true'>✦</span>
+              {premiumVariant === 'max' ? 'Shuffle Pro Max' : 'Shuffle Pro'}
+              {premiumVariant === 'rare' ? ' · Rare' : ''}
+            </span>
+          ) : null}
           <button
             type='button'
-            className='warp-details-more'
-            aria-expanded={isExpanded}
-            onClick={() => setIsExpanded((expanded) => !expanded)}
+            className='warp-details-close'
+            aria-label='Close details'
+            onClick={onClose}
           >
-            <span>{isExpanded ? 'Less' : 'More'}</span>
-            {isExpanded ? (
-              <ChevronsUp aria-hidden='true' size={17} strokeWidth={2.8} />
-            ) : (
-              <ChevronsDown aria-hidden='true' size={17} strokeWidth={2.8} />
-            )}
+            <X aria-hidden='true' size={17} strokeWidth={3} />
           </button>
-        )}
-      </dialog>
-    </section>
+          {isWide ? null : mobileReshuffleButton}
+          {isWide ? null : (
+            <div
+              className='warp-details-grip-zone'
+              onPointerCancel={handleDragEnd}
+              onPointerDown={handleDragStart}
+              onPointerMove={handleDragMove}
+              onPointerUp={handleDragEnd}
+            >
+              <span className='warp-details-handle' />
+            </div>
+          )}
+          {isWide ? (
+            <div className='warp-details-poster-col'>
+              <div className='warp-details-poster'>
+                <MoviePoster loading='eager' movie={movie} size='detail' />
+              </div>
+              {nextSuggestionButton}
+            </div>
+          ) : (
+            <div className='warp-details-poster'>
+              <MoviePoster loading='eager' movie={movie} size='detail' />
+            </div>
+          )}
+          <div className='warp-details-copy'>
+            <div className='warp-details-copy-scroll'>
+              {stats.length ? (
+                <div className='warp-details-stats'>
+                  {stats.map((stat, index) => (
+                    <Fragment key={(stat as { key: string }).key}>
+                      {index ? (
+                        <span
+                          className='warp-details-stats-sep'
+                          aria-hidden='true'
+                        >
+                          {' · '}
+                        </span>
+                      ) : null}
+                      {stat}
+                    </Fragment>
+                  ))}
+                </div>
+              ) : null}
+              <h2>{movie.title}</h2>
+              {movieText?.tagline ? (
+                <p className='warp-details-tagline'>{movieText.tagline}</p>
+              ) : null}
+              <p
+                className='warp-details-overview'
+                aria-busy={movieText ? undefined : true}
+              >
+                {movieText
+                  ? movieText.overview || 'No overview available yet.'
+                  : 'Loading the overview…'}
+              </p>
+              <div className='warp-details-genres'>
+                {movie.genres.map((genre) => (
+                  <FilterTag
+                    key={genre}
+                    onClick={() => onApplyFilter({ kind: 'genre', genre })}
+                  >
+                    {genre}
+                  </FilterTag>
+                ))}
+              </div>
+              <div className='warp-details-actions'>
+                <button
+                  type='button'
+                  className='warp-details-watch'
+                  onClick={() => onWatch(movie)}
+                >
+                  <Play aria-hidden='true' size={15} strokeWidth={2.6} />
+                  Where to watch
+                </button>
+              </div>
+              {showFullContent ? (
+                <div className='warp-details-expanded-content'>
+                  {similarMovies.length ? (
+                    <section
+                      className='warp-details-similar'
+                      aria-label='Similar movies'
+                    >
+                      <header>
+                        <h3>Similar movies</h3>
+                        <span>{movie.genres.slice(0, 2).join(' | ')}</span>
+                      </header>
+                      <div className='warp-details-similar-list'>
+                        {similarMovies.map((similarMovie) => (
+                          <button
+                            type='button'
+                            key={similarMovie.id}
+                            onClick={() => onOpenMovie(similarMovie)}
+                          >
+                            <span className='warp-details-similar-poster'>
+                              <MoviePoster movie={similarMovie} />
+                            </span>
+                            <span className='warp-details-similar-copy'>
+                              <strong>{similarMovie.title}</strong>
+                              <span>{formatCompactMeta(similarMovie)}</span>
+                              <em>
+                                {getCachedMovieText(similarMovie)?.overview ||
+                                  similarMovie.genres.slice(0, 3).join(' · ') ||
+                                  'Movie'}
+                              </em>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </div>
+          {isWide ? null : (
+            <button
+              type='button'
+              className='warp-details-more'
+              aria-expanded={isExpanded}
+              onClick={() => setIsExpanded((expanded) => !expanded)}
+            >
+              <span>{isExpanded ? 'Less' : 'More'}</span>
+              {isExpanded ? (
+                <ChevronsUp aria-hidden='true' size={17} strokeWidth={2.8} />
+              ) : (
+                <ChevronsDown aria-hidden='true' size={17} strokeWidth={2.8} />
+              )}
+            </button>
+          )}
+        </dialog>
+      </section>
+    </TooltipProvider>
   )
 }
+
+const FilterTag = ({
+  children,
+  onClick,
+}: {
+  children: ReactNode
+  onClick: () => void
+}) => (
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <button type='button' onClick={onClick}>
+        {children}
+      </button>
+    </TooltipTrigger>
+    <TooltipContent className='warp-details-tip' sideOffset={6}>
+      Click to filter
+    </TooltipContent>
+  </Tooltip>
+)

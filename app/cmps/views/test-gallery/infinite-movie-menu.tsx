@@ -38,9 +38,25 @@ type InfiniteMovieMenuProps<T> = {
   onMovingChange?: (moving: boolean) => void
   onOpenItem?: (item: InfiniteMovieMenuItem<T>) => void
   // Spin to this item, then open it (Shuffle). The nonce re-triggers repeats.
-  spinRequest?: { itemId: string; nonce: number } | null
+  spinRequest?: {
+    itemId: string
+    nonce: number
+    shuffleProAutomatic?: boolean
+    shuffleProAutomaticVariant?: 'standard' | 'rare' | 'max'
+  } | null
   onReady?: () => void
   onUserSpin?: () => void
+  onShuffleProPhase?: (
+    phase: 'spinning' | 'transition' | null,
+    variant?: 'standard' | 'rare' | 'max',
+  ) => void
+  onShuffleProRelease?: (
+    transitioned: boolean,
+    variant: 'standard' | 'rare' | 'max',
+  ) => void
+  onNonShuffleInteraction?: () => void
+  onSpinGestureEnd?: (kind: 'quick' | 'hold' | null) => void
+  isShuffleProMax?: boolean
 }
 
 type Vec2 = [number, number]
@@ -70,22 +86,39 @@ const DETAIL_SLOW_EASE_MS = 900
 const DETAIL_CLOSE_EASE_MS = 460
 // Gesture tuning: a press released within HOLD_TO_DRAG_MS that moved less
 // than CLICK_MOVE_TOLERANCE_PX is a click (opens the poster); holding longer or
-// moving further turns into a drag. CENTER_HIT_BOOST enlarges hit areas by up
-// to that fraction for posters near the screen centre. Tune live with
+// moving further turns into a drag. Clicks resolve inside a large central
+// ellipse (HIT_REGION_*, as ratios of the canvas). Tune live with
 // ?gesture-debug in the URL.
 const HOLD_TO_DRAG_MS = 220
 const CLICK_MOVE_TOLERANCE_PX = 8
+const SHUFFLE_PRO_MOVE_TOLERANCE_PX = 8
+const SHUFFLE_PRO_STATIONARY_MS = 5000
+const SHUFFLE_PRO_MOVING_MS = 10000
+const SHUFFLE_PRO_TRANSITION_MS = 5000
+const SHUFFLE_PRO_MAX_SPEED = 0.00042
+const SHUFFLE_PRO_MAX_TRANSITION_MS = 2300
+const SHUFFLE_PRO_MAX_SPEED_CAP = 0.00062
+const SHUFFLE_PRO_BLUR_THRESHOLD = 0.35
+const SHUFFLE_PRO_BLUR_CAP_PX = 1.5
+const SHUFFLE_PRO_MIN_SCALE = 0.7
+const GLOBE_BLUR_VELOCITY_THRESHOLD = 0.015
+const GLOBE_BLUR_VELOCITY_CAP = 0.06
 // Shuffle: snap strength while spinning to a poster, and how close (cosine of
 // the angle to the centre) counts as arrived before the card opens.
 const SPIN_SNAP_STRENGTH = 0.085
 const SPIN_ARRIVAL_DOT = 0.9994
-const CENTER_HIT_BOOST = 0.35
+// Hit region ellipse, as ratios of the canvas rect: centre y, radii x and y.
+const HIT_REGION_CENTER_Y = 0.48
+const HIT_REGION_RX = 0.34
+const HIT_REGION_RY = 0.37
 const GESTURE_DEBUG =
   typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('gesture-debug')
 
 type GestureTuning = {
-  centerBoost: number
+  regionCenterY: number
+  regionRx: number
+  regionRy: number
   holdMs: number
   moveTolerancePx: number
 }
@@ -106,9 +139,16 @@ type PressState = {
   lastY: number
   maxMovedPx: number
   pointerId: number
+  snapshot: PickSnapshot | null
   startTime: number
   x: number
   y: number
+  shuffleProStarted?: boolean
+  shuffleProTransitioned?: boolean
+  shuffleProVariant?: 'standard' | 'rare' | 'max'
+  shuffleProTimer?: number | null
+  transitionTimer?: number | null
+  autoTarget?: InfiniteMovieMenuItem<unknown>
 }
 const NUDGE_RELEASE_MS = 140
 const WHEEL_NUDGE_SCALE = 0.6
@@ -192,6 +232,149 @@ export type PosterHit<T> = {
   item: InfiniteMovieMenuItem<T>
   // Screen-space outline of the hit area, for the gesture debug overlay.
   quad: Vec2[]
+}
+
+export type PickEllipse = { cx: number; cy: number; rx: number; ry: number }
+
+// A poster's screen-space footprint: centre, half-axes u/v and the unpadded
+// quad (corners at (-1,-1), (1,-1), (1,1), (-1,1) in u/v), plus world depth z.
+export type PickCandidate = {
+  center: Vec2
+  index: number
+  quad: Vec2[]
+  u: Vec2
+  v: Vec2
+  z: number
+}
+
+export type PickSnapshot = {
+  candidates: PickCandidate[]
+  ellipse: PickEllipse
+}
+
+// Distances within this many px count as a tie when choosing the nearest poster.
+const PICK_DISTANCE_TIE_PX = 0.5
+
+export const createPickCandidate = (
+  index: number,
+  z: number,
+  center: Vec2,
+  u: Vec2,
+  v: Vec2,
+): PickCandidate => {
+  const corner = (sa: number, sb: number): Vec2 => [
+    center[0] + u[0] * sa + v[0] * sb,
+    center[1] + u[1] * sa + v[1] * sb,
+  ]
+  return {
+    center,
+    index,
+    quad: [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)],
+    u,
+    v,
+    z,
+  }
+}
+
+const distanceToSegment = (point: Vec2, start: Vec2, end: Vec2) => {
+  const ex = end[0] - start[0]
+  const ey = end[1] - start[1]
+  const lengthSq = ex * ex + ey * ey
+  const t =
+    lengthSq === 0
+      ? 0
+      : Math.max(
+          0,
+          Math.min(
+            1,
+            ((point[0] - start[0]) * ex + (point[1] - start[1]) * ey) /
+              lengthSq,
+          ),
+        )
+  return Math.hypot(
+    point[0] - (start[0] + ex * t),
+    point[1] - (start[1] + ey * t),
+  )
+}
+
+// Distance from a point to a convex quad (any winding); 0 when inside or on it.
+export const pointToQuadDistance = (point: Vec2, quad: Vec2[]) => {
+  let hasPositive = false
+  let hasNegative = false
+  let edgeDistance = Number.POSITIVE_INFINITY
+  for (let i = 0; i < quad.length; i += 1) {
+    const start = quad[i]
+    const end = quad[(i + 1) % quad.length]
+    const cross =
+      (end[0] - start[0]) * (point[1] - start[1]) -
+      (end[1] - start[1]) * (point[0] - start[0])
+    if (cross > 0) hasPositive = true
+    if (cross < 0) hasNegative = true
+    edgeDistance = Math.min(edgeDistance, distanceToSegment(point, start, end))
+  }
+  return hasPositive && hasNegative ? edgeDistance : 0
+}
+
+// True when the quad overlaps or touches the ellipse. In ellipse space the
+// ellipse is the unit circle and the quad stays a parallelogram.
+export const ellipseIntersectsQuad = (quad: Vec2[], ellipse: PickEllipse) => {
+  const scaled = quad.map(
+    ([x, y]): Vec2 => [
+      (x - ellipse.cx) / ellipse.rx,
+      (y - ellipse.cy) / ellipse.ry,
+    ],
+  )
+  return pointToQuadDistance([0, 0], scaled) <= 1
+}
+
+const isInsideEllipse = (point: Vec2, ellipse: PickEllipse) =>
+  ((point[0] - ellipse.cx) / ellipse.rx) ** 2 +
+    ((point[1] - ellipse.cy) / ellipse.ry) ** 2 <=
+  1
+
+const isInsideCandidate = (candidate: PickCandidate, point: Vec2) => {
+  const { center, u, v } = candidate
+  const det = u[0] * v[1] - u[1] * v[0]
+  if (det === 0) return false
+  const dx = point[0] - center[0]
+  const dy = point[1] - center[1]
+  const a = (dx * v[1] - dy * v[0]) / det
+  const b = (u[0] * dy - u[1] * dx) / det
+  return Math.abs(a) <= 1 && Math.abs(b) <= 1
+}
+
+const frontMost = (left: PickCandidate, right: PickCandidate) =>
+  right.z > left.z || (right.z === left.z && right.index < left.index)
+    ? right
+    : left
+
+// Deterministic winner for a point: (a) front-most poster containing it, else
+// (b) inside the ellipse, the nearest poster (ties: front-most), else (c) null.
+// Candidates are expected to already be eligible (touching the ellipse).
+export const pickWinner = (
+  candidates: PickCandidate[],
+  point: Vec2,
+  ellipse: PickEllipse,
+): PickCandidate | null => {
+  let winner: PickCandidate | null = null
+  for (const candidate of candidates) {
+    if (!isInsideCandidate(candidate, point)) continue
+    winner = winner ? frontMost(winner, candidate) : candidate
+  }
+  if (winner) return winner
+  if (!isInsideEllipse(point, ellipse)) return null
+
+  let nearest = Number.POSITIVE_INFINITY
+  const distances = candidates.map((candidate) => {
+    const distance = pointToQuadDistance(point, candidate.quad)
+    nearest = Math.min(nearest, distance)
+    return distance
+  })
+  candidates.forEach((candidate, i) => {
+    if (distances[i] > nearest + PICK_DISTANCE_TIE_PX) return
+    winner = winner ? frontMost(winner, candidate) : candidate
+  })
+  return winner
 }
 
 const vertexShaderSource = `#version 300 es
@@ -674,6 +857,9 @@ class ArcballControl {
 
   private pointerPos: Vec2 = [0, 0]
   private previousPointerPos: Vec2 = [0, 0]
+  private previousMoveAt = 0
+  private pointerVelocityPxMs = 0
+  private releaseDecayMs = 170
   private combinedQuat: Quat = identityQuat()
   private smoothedRotationVelocity = 0
   private readonly cleanupHandlers: Array<() => void> = []
@@ -692,6 +878,8 @@ class ArcballControl {
   beginDrag(clientX: number, clientY: number, pointerId?: number) {
     this.pointerPos = [clientX, clientY]
     this.previousPointerPos = [...this.pointerPos]
+    this.previousMoveAt = performance.now()
+    this.pointerVelocityPxMs = 0
     this.isPointerDown = true
     if (pointerId !== undefined) {
       try {
@@ -703,11 +891,28 @@ class ArcballControl {
   }
 
   moveDrag(clientX: number, clientY: number) {
-    if (this.isPointerDown) this.pointerPos = [clientX, clientY]
+    if (!this.isPointerDown) return
+    const now = performance.now()
+    const deltaTime = now - this.previousMoveAt
+    if (deltaTime > 0 && deltaTime < 120) {
+      const distance = Math.hypot(
+        clientX - this.pointerPos[0],
+        clientY - this.pointerPos[1],
+      )
+      const speed = Math.min(1.6, distance / Math.max(8, deltaTime))
+      this.pointerVelocityPxMs = this.pointerVelocityPxMs * 0.35 + speed * 0.65
+    } else if (deltaTime >= 120) {
+      this.pointerVelocityPxMs = 0
+    }
+    this.pointerPos = [clientX, clientY]
+    this.previousMoveAt = now
   }
 
   endDrag(pointerId?: number) {
     this.isPointerDown = false
+    const releaseSpeed = this.pointerVelocityPxMs
+    this.releaseDecayMs = 150 + Math.min(1, releaseSpeed / 1.4) * 240
+    this.pointerVelocityPxMs = 0
     if (pointerId !== undefined) {
       try {
         this.canvas.releasePointerCapture?.(pointerId)
@@ -715,10 +920,12 @@ class ArcballControl {
         // Browsers throw when capture was already released or never acquired.
       }
     }
+    return releaseSpeed
   }
 
   cancelDrag(pointerId?: number) {
     this.pointerRotation = slerpQuat(this.pointerRotation, identityQuat(), 0.35)
+    this.pointerVelocityPxMs = 0
     this.endDrag(pointerId)
   }
 
@@ -763,7 +970,9 @@ class ArcballControl {
         )
       }
     } else {
-      const intensity = 0.1 * timeScale
+      // Keep a little more momentum after a fast release. The decay is capped
+      // so a flick feels lively without letting the globe spin away forever.
+      const intensity = 1 - Math.exp(-deltaTime / this.releaseDecayMs)
       this.pointerRotation = slerpQuat(
         this.pointerRotation,
         identityQuat(),
@@ -900,6 +1109,7 @@ class InfiniteMovieEngine<T> {
     private readonly onMovementChange: (moving: boolean) => void,
     private readonly onLoadProgress: (percent: number) => void,
     private readonly onFatalError: (message: string) => void,
+    private readonly onRotationVelocity: (velocity: number) => void,
   ) {
     const gl = canvas.getContext('webgl2', {
       alpha: true,
@@ -1047,10 +1257,17 @@ class InfiniteMovieEngine<T> {
   }
 
   endPointerDrag(pointerId?: number) {
-    this.control.endDrag(pointerId)
+    return this.control.endDrag(pointerId)
   }
 
   cancelPointerDrag(pointerId?: number) {
+    this.control.cancelDrag(pointerId)
+  }
+
+  stopNudge(pointerId?: number) {
+    if (this.nudgeTimer) window.clearTimeout(this.nudgeTimer)
+    this.nudgeTimer = null
+    this.nudgePos = null
     this.control.cancelDrag(pointerId)
   }
 
@@ -1147,15 +1364,26 @@ class InfiniteMovieEngine<T> {
     return Math.abs(this.smoothRotationVelocity) > 0.01
   }
 
-  // Projects every poster with the same matrices the shader uses and returns
-  // the front-most one under the point. Hit areas grow toward the screen
-  // centre by up to `centerBoost` so the focal posters are easiest to hit.
-  pickInstanceAt(
-    clientX: number,
-    clientY: number,
-    centerBoost = 0,
-  ): PosterHit<T> | null {
+  // Projects every front-facing poster with the same matrices the shader uses
+  // and keeps those whose unpadded quad touches the hit ellipse. Taken at
+  // press so the result doesn't depend on globe drift before release.
+  capturePickSnapshot(
+    region = {
+      centerY: HIT_REGION_CENTER_Y,
+      rx: HIT_REGION_RX,
+      ry: HIT_REGION_RY,
+    },
+  ): PickSnapshot {
     const rect = this.canvas.getBoundingClientRect()
+    const ellipse: PickEllipse = {
+      cx: rect.left + 0.5 * rect.width,
+      cy: rect.top + region.centerY * rect.height,
+      rx: region.rx * rect.width,
+      ry: region.ry * rect.height,
+    }
+    const candidates: PickCandidate[] = []
+    if (ellipse.rx <= 0 || ellipse.ry <= 0) return { candidates, ellipse }
+
     const viewProjection = multiplyMat4(
       identityMat4(),
       this.projectionMatrix,
@@ -1172,13 +1400,6 @@ class InfiniteMovieEngine<T> {
         rect.top + ((1 - clipY / clipW) / 2) * rect.height,
       ]
     }
-    const screenCenter: Vec2 = [
-      rect.left + rect.width / 2,
-      rect.top + rect.height / 2,
-    ]
-    const focusRadius = Math.max(1, Math.min(rect.width, rect.height) / 2)
-    let best: { index: number; quad: Vec2[]; score: number; z: number } | null =
-      null
 
     this.instanceMatrices.forEach((matrix, index) => {
       // World is identity, so the instance translation is the poster centre;
@@ -1194,46 +1415,30 @@ class InfiniteMovieEngine<T> {
 
       const u: Vec2 = [right[0] - center[0], right[1] - center[1]]
       const v: Vec2 = [up[0] - center[0], up[1] - center[1]]
-      const det = u[0] * v[1] - u[1] * v[0]
-      if (Math.abs(det) < 0.0001) return
+      if (Math.abs(u[0] * v[1] - u[1] * v[0]) < 0.0001) return
 
-      const proximity = Math.max(
-        0,
-        1 -
-          Math.hypot(center[0] - screenCenter[0], center[1] - screenCenter[1]) /
-            focusRadius,
-      )
-      const pad = 1 + centerBoost * proximity
-      const dx = clientX - center[0]
-      const dy = clientY - center[1]
-      // Express the pointer in the poster's own (u, v) axes: |a|,|b| <= 1 is inside.
-      const a = (dx * v[1] - dy * v[0]) / det
-      const b = (u[0] * dy - u[1] * dx) / det
-      if (Math.abs(a) > pad || Math.abs(b) > pad) return
-
-      const score = a * a + b * b
-      if (
-        !best ||
-        score < best.score - 0.05 ||
-        (Math.abs(score - best.score) <= 0.05 && centerZ > best.z)
-      ) {
-        const corner = (sa: number, sb: number): Vec2 => [
-          center[0] + (u[0] * sa + v[0] * sb) * pad,
-          center[1] + (u[1] * sa + v[1] * sb) * pad,
-        ]
-        best = {
-          index,
-          quad: [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)],
-          score,
-          z: centerZ,
-        }
-      }
+      const candidate = createPickCandidate(index, centerZ, center, u, v)
+      if (ellipseIntersectsQuad(candidate.quad, ellipse))
+        candidates.push(candidate)
     })
 
-    if (!best) return null
-    const { index, quad } = best
-    const item = this.items[index % Math.max(1, this.items.length)]
-    return item ? { index, item, quad } : null
+    return { candidates, ellipse }
+  }
+
+  // Resolves a click against a snapshot; same snapshot and point, same poster.
+  pickFromSnapshot(
+    snapshot: PickSnapshot,
+    clientX: number,
+    clientY: number,
+  ): PosterHit<T> | null {
+    const winner = pickWinner(
+      snapshot.candidates,
+      [clientX, clientY],
+      snapshot.ellipse,
+    )
+    if (!winner) return null
+    const item = this.items[winner.index % Math.max(1, this.items.length)]
+    return item ? { index: winner.index, item, quad: winner.quad } : null
   }
 
   private initGeometry() {
@@ -1676,6 +1881,7 @@ class InfiniteMovieEngine<T> {
   private animate(deltaTime: number) {
     const gl = this.gl
     this.control.update(deltaTime)
+    this.onRotationVelocity(this.control.rotationVelocity)
     const detailStep = 1 - Math.exp(-deltaTime / this.detailEaseMs)
     this.detailProgress +=
       (this.detailTargetProgress - this.detailProgress) * detailStep
@@ -1962,6 +2168,11 @@ export const InfiniteMovieMenu = <T,>({
   onOpenItem,
   onReady,
   onUserSpin,
+  onShuffleProPhase,
+  onShuffleProRelease,
+  onNonShuffleInteraction,
+  onSpinGestureEnd,
+  isShuffleProMax = false,
   spinRequest = null,
 }: InfiniteMovieMenuProps<T>) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -1973,18 +2184,39 @@ export const InfiniteMovieMenu = <T,>({
   const isActiveRef = useRef(isActive)
   isActiveRef.current = isActive
   const pressRef = useRef<PressState | null>(null)
+  const touchOpenClickGuardRef = useRef<(() => void) | null>(null)
+  const onShuffleProPhaseRef = useRef(onShuffleProPhase)
+  onShuffleProPhaseRef.current = onShuffleProPhase
+  const onShuffleProReleaseRef = useRef(onShuffleProRelease)
+  onShuffleProReleaseRef.current = onShuffleProRelease
+  const onSpinGestureEndRef = useRef(onSpinGestureEnd)
+  onSpinGestureEndRef.current = onSpinGestureEnd
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
+  const prefersReducedMotionRef = useRef(prefersReducedMotion)
+  prefersReducedMotionRef.current = prefersReducedMotion
+  const shuffleProFrameRef = useRef<number | null>(null)
   const tuningRef = useRef<GestureTuning>({
-    centerBoost: CENTER_HIT_BOOST,
+    regionCenterY: HIT_REGION_CENTER_Y,
+    regionRx: HIT_REGION_RX,
+    regionRy: HIT_REGION_RY,
     holdMs: HOLD_TO_DRAG_MS,
     moveTolerancePx: CLICK_MOVE_TOLERANCE_PX,
   })
   const [gestureLog, setGestureLog] = useState<GestureLogEntry[]>([])
-  const [debugQuad, setDebugQuad] = useState<Vec2[] | null>(null)
+  const [debugPick, setDebugPick] = useState<DebugPick | null>(null)
   const [activeItem, setActiveItem] = useState<InfiniteMovieMenuItem<T> | null>(
     null,
   )
   const [isHoldPrimed, setIsHoldPrimed] = useState(false)
   const [webglError, setWebglError] = useState('')
+
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const update = () => setPrefersReducedMotion(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
 
   useEffect(() => {
     const nextActive =
@@ -2023,6 +2255,26 @@ export const InfiniteMovieMenu = <T,>({
           setWebglError(message)
           onLoadProgress?.(100)
           onReady?.()
+        },
+        (velocity) => {
+          const canvasElement = canvasRef.current
+          if (!canvasElement || pressRef.current?.shuffleProStarted) return
+          if (prefersReducedMotionRef.current) {
+            canvasElement.style.removeProperty('--shuffle-pro-blur')
+            return
+          }
+          const blurProgress = Math.max(
+            0,
+            Math.min(
+              1,
+              (Math.abs(velocity) - GLOBE_BLUR_VELOCITY_THRESHOLD) /
+                (GLOBE_BLUR_VELOCITY_CAP - GLOBE_BLUR_VELOCITY_THRESHOLD),
+            ),
+          )
+          canvasElement.style.setProperty(
+            '--shuffle-pro-blur',
+            `${blurProgress * SHUFFLE_PRO_BLUR_CAP_PX}px`,
+          )
         },
       )
       engineRef.current = engine
@@ -2169,6 +2421,7 @@ export const InfiniteMovieMenu = <T,>({
       if (press.dragging) return
       press.dragging = true
       press.kind = kind
+      press.snapshot = null
       if (press.holdTimer) window.clearTimeout(press.holdTimer)
       press.holdTimer = null
       // Start from the press point so movement before the drag isn't lost.
@@ -2180,6 +2433,127 @@ export const InfiniteMovieMenu = <T,>({
       onUserSpin?.()
     },
     [onUserSpin],
+  )
+
+  const startShufflePro = useCallback(
+    (
+      press: PressState,
+      requestedVariant: 'standard' | 'rare' | 'max' = 'standard',
+    ) => {
+      if (press.shuffleProStarted) return
+      const variant =
+        requestedVariant === 'max' || isShuffleProMax ? 'max' : requestedVariant
+      press.shuffleProStarted = true
+      press.shuffleProVariant = variant
+      press.dragging = true
+      press.kind = 'hold'
+      if (press.holdTimer) window.clearTimeout(press.holdTimer)
+      press.holdTimer = null
+      // End direct manipulation before autonomous spin nudges begin.
+      // Stop direct rotation without releasing the canvas capture; pointerup
+      // must still arrive here if the user moves off the globe while holding.
+      engineRef.current?.endPointerDrag()
+      setIsHoldPrimed(true)
+      onUserSpin?.()
+      onShuffleProPhaseRef.current?.('spinning', variant)
+      const startedAt = performance.now()
+      let lastAt = startedAt
+      const speedCap =
+        variant === 'max' ? SHUFFLE_PRO_MAX_SPEED_CAP : SHUFFLE_PRO_MAX_SPEED
+      const rampDuration = variant === 'max' ? 1450 : 2800
+      const animate = (time: number) => {
+        const elapsed = Math.min(48, time - lastAt)
+        lastAt = time
+        const progress = Math.min(1, (time - startedAt) / rampDuration)
+        if (!prefersReducedMotion) {
+          const velocity = Math.min(speedCap, progress * speedCap)
+          const px =
+            Math.min(
+              variant === 'max' ? 18 : 12,
+              (velocity / speedCap) * (variant === 'max' ? 18 : 12),
+            ) *
+            (elapsed / (1000 / 60))
+          engineRef.current?.nudge(px, px * 0.42)
+          const speedRatio = velocity / speedCap
+          const blurProgress = Math.max(
+            0,
+            (speedRatio - SHUFFLE_PRO_BLUR_THRESHOLD) /
+              (1 - SHUFFLE_PRO_BLUR_THRESHOLD),
+          )
+          const canvas = canvasRef.current
+          canvas?.style.setProperty(
+            '--shuffle-pro-scale',
+            String(1 - speedRatio * (1 - SHUFFLE_PRO_MIN_SCALE)),
+          )
+          canvas?.style.setProperty(
+            '--shuffle-pro-blur',
+            `${blurProgress * SHUFFLE_PRO_BLUR_CAP_PX}px`,
+          )
+        } else {
+          // Let the reduced-motion stylesheet provide its gentle pulse.
+          canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
+          canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
+        }
+        if (pressRef.current === press && press.shuffleProStarted) {
+          shuffleProFrameRef.current = window.requestAnimationFrame(animate)
+        }
+      }
+      shuffleProFrameRef.current = window.requestAnimationFrame(animate)
+      press.transitionTimer = window.setTimeout(
+        () => {
+          if (pressRef.current !== press || !press.shuffleProStarted) return
+          press.shuffleProTransitioned = true
+          onShuffleProPhaseRef.current?.('transition', variant)
+          if (press.autoTarget) {
+            const item = press.autoTarget as InfiniteMovieMenuItem<T>
+            const engine = engineRef.current
+            if (shuffleProFrameRef.current !== null) {
+              window.cancelAnimationFrame(shuffleProFrameRef.current)
+              shuffleProFrameRef.current = null
+            }
+            engine?.stopNudge()
+            if (engine)
+              engine.spinToItem(item.id, (index) => {
+                activeItemRef.current = item
+                setActiveItem(item)
+                onActiveItemChange(item)
+                engine.setDetailFocus(item.id, true, 'fast', index)
+                onOpenItem?.(item)
+                if (shuffleProFrameRef.current !== null)
+                  window.cancelAnimationFrame(shuffleProFrameRef.current)
+                shuffleProFrameRef.current = null
+                if (pressRef.current === press) pressRef.current = null
+                canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
+                canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
+                onShuffleProPhaseRef.current?.(null, variant)
+              })
+            else {
+              activeItemRef.current = item
+              setActiveItem(item)
+              onActiveItemChange(item)
+              onOpenItem?.(item)
+              if (shuffleProFrameRef.current !== null)
+                window.cancelAnimationFrame(shuffleProFrameRef.current)
+              shuffleProFrameRef.current = null
+              if (pressRef.current === press) pressRef.current = null
+              canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
+              canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
+              onShuffleProPhaseRef.current?.(null, variant)
+            }
+          }
+        },
+        variant === 'max'
+          ? SHUFFLE_PRO_MAX_TRANSITION_MS
+          : SHUFFLE_PRO_TRANSITION_MS,
+      )
+    },
+    [
+      isShuffleProMax,
+      onUserSpin,
+      onActiveItemChange,
+      onOpenItem,
+      prefersReducedMotion,
+    ],
   )
 
   const openHit = useCallback(
@@ -2198,6 +2572,36 @@ export const InfiniteMovieMenu = <T,>({
     if (!spinRequest) return
     const item = items.find((candidate) => candidate.id === spinRequest.itemId)
     if (!item) return
+    if (spinRequest.shuffleProAutomatic) {
+      const press: PressState = {
+        dragging: false,
+        holdTimer: null,
+        kind: 'hold',
+        lastX: 0,
+        lastY: 0,
+        maxMovedPx: 0,
+        pointerId: -1,
+        snapshot: null,
+        startTime: performance.now(),
+        x: 0,
+        y: 0,
+        autoTarget: item as InfiniteMovieMenuItem<unknown>,
+      }
+      pressRef.current = press
+      startShufflePro(press, spinRequest.shuffleProAutomaticVariant ?? 'rare')
+      return () => {
+        if (press.transitionTimer) window.clearTimeout(press.transitionTimer)
+        if (shuffleProFrameRef.current !== null)
+          window.cancelAnimationFrame(shuffleProFrameRef.current)
+        if (pressRef.current === press) pressRef.current = null
+        canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
+        canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
+        onShuffleProPhaseRef.current?.(
+          null,
+          spinRequest.shuffleProAutomaticVariant ?? 'rare',
+        )
+      }
+    }
     const engine = engineRef.current
     if (!engine) {
       // Fallback (no WebGL): nothing to spin, open straight away.
@@ -2217,6 +2621,8 @@ export const InfiniteMovieMenu = <T,>({
   const releasePress = () => {
     const press = pressRef.current
     if (press?.holdTimer) window.clearTimeout(press.holdTimer)
+    if (press?.shuffleProTimer) window.clearTimeout(press.shuffleProTimer)
+    if (press?.transitionTimer) window.clearTimeout(press.transitionTimer)
     pressRef.current = null
     setIsHoldPrimed(false)
     return press
@@ -2226,6 +2632,17 @@ export const InfiniteMovieMenu = <T,>({
     () => () => {
       const timer = pressRef.current?.holdTimer
       if (timer) window.clearTimeout(timer)
+      const press = pressRef.current
+      if (press?.shuffleProTimer) window.clearTimeout(press.shuffleProTimer)
+      if (press?.transitionTimer) window.clearTimeout(press.transitionTimer)
+      if (shuffleProFrameRef.current !== null)
+        window.cancelAnimationFrame(shuffleProFrameRef.current)
+      if (press?.shuffleProStarted)
+        engineRef.current?.stopNudge(press.pointerId)
+      canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
+      canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
+      touchOpenClickGuardRef.current?.()
+      onShuffleProPhaseRef.current?.(null)
     },
     [],
   )
@@ -2241,11 +2658,16 @@ export const InfiniteMovieMenu = <T,>({
       lastY: event.clientY,
       maxMovedPx: 0,
       pointerId: event.pointerId,
+      snapshot: null,
       startTime: performance.now(),
       x: event.clientX,
       y: event.clientY,
     }
     pressRef.current = press
+    press.shuffleProTimer = window.setTimeout(
+      () => startShufflePro(press, isShuffleProMax ? 'max' : 'standard'),
+      isShuffleProMax ? 3000 : SHUFFLE_PRO_STATIONARY_MS,
+    )
     try {
       event.currentTarget.setPointerCapture(event.pointerId)
     } catch {
@@ -2256,6 +2678,24 @@ export const InfiniteMovieMenu = <T,>({
     if (engineRef.current?.isSpinning()) {
       startDrag(press, 'catch')
       return
+    }
+    const { regionCenterY, regionRx, regionRy } = tuningRef.current
+    press.snapshot =
+      engineRef.current?.capturePickSnapshot({
+        centerY: regionCenterY,
+        rx: regionRx,
+        ry: regionRy,
+      }) ?? null
+    if (GESTURE_DEBUG) {
+      setDebugPick(
+        press.snapshot
+          ? {
+              ellipse: press.snapshot.ellipse,
+              quads: press.snapshot.candidates.map((c) => c.quad),
+              winner: null,
+            }
+          : null,
+      )
     }
     press.holdTimer = window.setTimeout(
       () => startDrag(press, 'hold'),
@@ -2271,6 +2711,22 @@ export const InfiniteMovieMenu = <T,>({
     const movedPx = Math.hypot(event.clientX - press.x, event.clientY - press.y)
     press.maxMovedPx = Math.max(press.maxMovedPx, movedPx)
 
+    if (
+      press.maxMovedPx > SHUFFLE_PRO_MOVE_TOLERANCE_PX &&
+      !press.shuffleProStarted
+    ) {
+      if (press.shuffleProTimer) window.clearTimeout(press.shuffleProTimer)
+      const delay = isShuffleProMax ? 3000 : SHUFFLE_PRO_MOVING_MS
+      const remaining = Math.max(
+        0,
+        delay - (performance.now() - press.startTime),
+      )
+      press.shuffleProTimer = window.setTimeout(
+        () => startShufflePro(press, isShuffleProMax ? 'max' : 'standard'),
+        remaining,
+      )
+    }
+    if (press.shuffleProStarted) return
     if (press.dragging) {
       engineRef.current?.movePointerDrag(event.clientX, event.clientY)
       return
@@ -2285,32 +2741,122 @@ export const InfiniteMovieMenu = <T,>({
     const ms = Math.round(performance.now() - press.startTime)
     const movedPx = Math.round(press.maxMovedPx)
 
-    if (press.dragging) {
+    if (press.shuffleProStarted) {
+      if (shuffleProFrameRef.current !== null)
+        window.cancelAnimationFrame(shuffleProFrameRef.current)
+      shuffleProFrameRef.current = null
+      engineRef.current?.stopNudge()
       engineRef.current?.endPointerDrag(press.pointerId)
+      canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
+      canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
+      onShuffleProReleaseRef.current?.(
+        Boolean(press.shuffleProTransitioned),
+        press.shuffleProVariant ?? 'standard',
+      )
+      onShuffleProPhaseRef.current?.(
+        null,
+        press.shuffleProVariant ?? 'standard',
+      )
+      logGesture({ kind: 'hold', ms, movedPx })
+      return
+    }
+
+    if (press.dragging) {
+      if (event.clientX !== press.lastX || event.clientY !== press.lastY) {
+        engineRef.current?.movePointerDrag(event.clientX, event.clientY)
+      }
+      const releaseSpeed =
+        engineRef.current?.endPointerDrag(press.pointerId) ?? 0
+      const isQuickSpin = releaseSpeed >= 0.55
+      onSpinGestureEndRef.current?.(isQuickSpin ? 'quick' : null)
+      if (!isQuickSpin) onNonShuffleInteraction?.()
       logGesture({ kind: press.kind ?? 'drag', ms, movedPx })
       return
     }
 
-    const hit =
-      engineRef.current?.pickInstanceAt(
-        event.clientX,
-        event.clientY,
-        tuningRef.current.centerBoost,
-      ) ?? null
-    if (GESTURE_DEBUG) setDebugQuad(hit?.quad ?? null)
+    onNonShuffleInteraction?.()
+
+    const engine = engineRef.current
+    const { regionCenterY, regionRx, regionRy } = tuningRef.current
+    const snapshot =
+      press.snapshot ??
+      engine?.capturePickSnapshot({
+        centerY: regionCenterY,
+        rx: regionRx,
+        ry: regionRy,
+      }) ??
+      null
+    const hit = snapshot
+      ? (engine?.pickFromSnapshot(snapshot, event.clientX, event.clientY) ??
+        null)
+      : null
+    if (GESTURE_DEBUG) {
+      setDebugPick(
+        snapshot
+          ? {
+              ellipse: snapshot.ellipse,
+              quads: snapshot.candidates.map((c) => c.quad),
+              winner: hit?.quad ?? null,
+            }
+          : null,
+      )
+    }
     logGesture({
       kind: hit ? 'click' : 'miss',
       ms,
       movedPx,
       title: hit?.item.title,
     })
-    if (hit && !isDetailsOpen) openHit(hit)
+    if (hit && !isDetailsOpen) {
+      if (event.pointerType === 'touch') {
+        touchOpenClickGuardRef.current?.()
+        const guardClick = (clickEvent: MouseEvent) => {
+          const clickPointerId = (clickEvent as PointerEvent).pointerId
+          if (
+            clickEvent.detail !== 0 &&
+            clickPointerId === event.pointerId &&
+            clickEvent.target instanceof Element &&
+            clickEvent.target.closest('.warp-details-backdrop')
+          ) {
+            cleanupGuard()
+            clickEvent.preventDefault()
+            clickEvent.stopImmediatePropagation()
+          }
+        }
+        const expiryTimer = window.setTimeout(() => {
+          window.removeEventListener('click', guardClick, true)
+          if (touchOpenClickGuardRef.current === cleanupGuard)
+            touchOpenClickGuardRef.current = null
+        }, 800)
+        const cleanupGuard = () => {
+          window.clearTimeout(expiryTimer)
+          window.removeEventListener('click', guardClick, true)
+          if (touchOpenClickGuardRef.current === cleanupGuard)
+            touchOpenClickGuardRef.current = null
+        }
+        touchOpenClickGuardRef.current = cleanupGuard
+        window.addEventListener('click', guardClick, true)
+      }
+      openHit(hit)
+    }
   }
 
   const handlePointerCancel = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (pressRef.current?.pointerId !== event.pointerId) return
     const press = releasePress()
     if (press?.dragging) engineRef.current?.cancelPointerDrag(press.pointerId)
+    if (press?.shuffleProStarted) {
+      if (shuffleProFrameRef.current !== null)
+        window.cancelAnimationFrame(shuffleProFrameRef.current)
+      shuffleProFrameRef.current = null
+      engineRef.current?.stopNudge(press.pointerId)
+      canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
+      canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
+      onShuffleProPhaseRef.current?.(null, press.shuffleProVariant)
+      onSpinGestureEndRef.current?.(null)
+    } else if (press?.dragging) onSpinGestureEndRef.current?.(null)
+    onNonShuffleInteraction?.()
+    if (GESTURE_DEBUG) setDebugPick(null)
   }
 
   return (
@@ -2329,6 +2875,14 @@ export const InfiniteMovieMenu = <T,>({
           ref={canvasRef}
           className='warp-infinite-menu-canvas'
           aria-label='Infinite movie poster menu'
+          style={{
+            touchAction: 'none',
+            userSelect: 'none',
+            WebkitTouchCallout: 'none',
+            WebkitUserSelect: 'none',
+            filter: 'blur(var(--shuffle-pro-blur, 0px))',
+            transition: 'none',
+          }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerCancel={handlePointerCancel}
@@ -2346,7 +2900,7 @@ export const InfiniteMovieMenu = <T,>({
         ? createPortal(
             <GestureDebugPanel
               log={gestureLog}
-              quad={debugQuad}
+              pick={debugPick}
               tuningRef={tuningRef}
             />,
             document.body,
@@ -2356,9 +2910,17 @@ export const InfiniteMovieMenu = <T,>({
   )
 }
 
+type DebugPick = {
+  ellipse: PickEllipse
+  quads: Vec2[][]
+  winner: Vec2[] | null
+}
+
+const toPoints = (quad: Vec2[]) => quad.map(([x, y]) => `${x},${y}`).join(' ')
+
 type GestureDebugPanelProps = {
   log: GestureLogEntry[]
-  quad: Vec2[] | null
+  pick: DebugPick | null
   tuningRef: { current: GestureTuning }
 }
 
@@ -2366,7 +2928,7 @@ type GestureDebugPanelProps = {
 // thresholds be tuned live. Values are not persisted.
 const GestureDebugPanel = ({
   log,
-  quad,
+  pick,
   tuningRef,
 }: GestureDebugPanelProps) => {
   const [tuning, setTuning] = useState(tuningRef.current)
@@ -2386,9 +2948,45 @@ const GestureDebugPanel = ({
 
   return (
     <>
-      {quad ? (
-        <svg className='warp-gesture-debug-quad' aria-hidden='true'>
-          <polygon points={quad.map(([x, y]) => `${x},${y}`).join(' ')} />
+      {pick ? (
+        <svg
+          aria-hidden='true'
+          style={{
+            height: '100%',
+            inset: 0,
+            pointerEvents: 'none',
+            position: 'fixed',
+            width: '100%',
+            zIndex: 9998,
+          }}
+        >
+          <ellipse
+            cx={pick.ellipse.cx}
+            cy={pick.ellipse.cy}
+            rx={pick.ellipse.rx}
+            ry={pick.ellipse.ry}
+            fill='none'
+            stroke='#38bdf8'
+            strokeDasharray='6 4'
+            strokeWidth={1.5}
+          />
+          {pick.quads.map((quad) => (
+            <polygon
+              key={toPoints(quad)}
+              points={toPoints(quad)}
+              fill='none'
+              stroke='rgba(250, 204, 21, 0.7)'
+              strokeWidth={1}
+            />
+          ))}
+          {pick.winner ? (
+            <polygon
+              points={toPoints(pick.winner)}
+              fill='rgba(52, 211, 153, 0.18)'
+              stroke='#34d399'
+              strokeWidth={3}
+            />
+          ) : null}
         </svg>
       ) : null}
       <aside className='warp-gesture-debug' aria-label='Gesture tuning'>
@@ -2418,15 +3016,41 @@ const GestureDebugPanel = ({
           />
         </label>
         <label>
-          Centre boost: {Math.round(tuning.centerBoost * 100)}%
+          Region centre Y: {tuning.regionCenterY.toFixed(2)}
           <input
             type='range'
-            min={0}
-            max={1}
-            step={0.05}
-            value={tuning.centerBoost}
+            min={0.1}
+            max={0.6}
+            step={0.01}
+            value={tuning.regionCenterY}
             onChange={(event) =>
-              update({ centerBoost: Number(event.target.value) })
+              update({ regionCenterY: Number(event.target.value) })
+            }
+          />
+        </label>
+        <label>
+          Region radius X: {tuning.regionRx.toFixed(2)}
+          <input
+            type='range'
+            min={0.1}
+            max={0.6}
+            step={0.01}
+            value={tuning.regionRx}
+            onChange={(event) =>
+              update({ regionRx: Number(event.target.value) })
+            }
+          />
+        </label>
+        <label>
+          Region radius Y: {tuning.regionRy.toFixed(2)}
+          <input
+            type='range'
+            min={0.1}
+            max={0.6}
+            step={0.01}
+            value={tuning.regionRy}
+            onChange={(event) =>
+              update({ regionRy: Number(event.target.value) })
             }
           />
         </label>

@@ -7,7 +7,7 @@
 // taglines live in small separate chunks that load only when a film is opened.
 //
 // Usage:
-//   node scripts/build-catalog.mjs --batches <dir> --posters <dir> [--total 20000] [--offline 1]
+//   node scripts/build-catalog.mjs --batches <dir> --posters <dir> [--total 10000] [--offline 1]
 //
 // --batches holds the raw dataset batches as {n}.json; missing ones are
 // downloaded. --posters holds w92 posters as {tmdbId}.jpg (also downloaded
@@ -30,10 +30,12 @@ const args = Object.fromEntries(
 )
 const batchDir = args.batches
 const posterDir = args.posters
-const TOTAL = Number(args.total ?? 20000)
+const TOTAL = Number(args.total ?? 10000)
 // --offline 1: use only what is already cached, never the network.
 const offline = Boolean(args.offline)
-const ROWS_PER_CHUNK = 5000
+// Small chunks in popularity order: phones load the first two (about 5,000
+// films with the local set), desktops load them all.
+const ROWS_PER_CHUNK = 2000
 const TEXT_ROWS_PER_CHUNK = 500
 const DATASET_URL = 'https://ntw-assets.port80.ch/json'
 const POSTER_PROBE_URL = 'https://image.tmdb.org/t/p/w92'
@@ -158,7 +160,7 @@ const tableIndex = (table, value) => {
 }
 
 // Rows: [tmdbId, title, year, rating x10, genre indices, country index,
-// poster path, colour]
+// poster path, colour, vote count, popularity x10]
 const toRow = ({ row, colour }) => [
   Number(row.id),
   clean(row.title),
@@ -172,6 +174,8 @@ const toRow = ({ row, colour }) => [
   tableIndex(countryTable, clean(row.production_countries).split(',')[0]?.trim()),
   clean(row.poster_path).slice(1, -4),
   colour,
+  Math.max(0, Math.round(Number(row.vote_count) || 0)),
+  Math.max(0, Math.round((Number.parseFloat(row.popularity) || 0) * 10)),
 ]
 const toText = ({ row }) => [clean(row.overview), clean(row.tagline)]
 
@@ -199,6 +203,7 @@ await writeFile(
   JSON.stringify({
     count: extras.length,
     chunks,
+    chunkSize: ROWS_PER_CHUNK,
     countries: countryTable,
     genres: genreTable,
     textChunkSize: TEXT_ROWS_PER_CHUNK,
