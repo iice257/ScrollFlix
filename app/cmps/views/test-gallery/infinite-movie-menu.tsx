@@ -68,8 +68,8 @@ const DETAIL_SLOW_EASE_MS = 900
 const DETAIL_CLOSE_EASE_MS = 460
 // Gesture tuning: a press released within HOLD_TO_DRAG_MS that moved less
 // than CLICK_MOVE_TOLERANCE_PX is a click (opens the poster); holding longer or
-// moving further turns into a drag. CENTER_HIT_BOOST enlarges hit areas by up
-// to that fraction for posters near the screen centre. Tune live with
+// moving further turns into a drag. Clicks resolve inside a large central
+// ellipse (HIT_REGION_*, as ratios of the canvas). Tune live with
 // ?gesture-debug in the URL.
 const HOLD_TO_DRAG_MS = 220
 const CLICK_MOVE_TOLERANCE_PX = 8
@@ -77,13 +77,18 @@ const CLICK_MOVE_TOLERANCE_PX = 8
 // the angle to the centre) counts as arrived before the card opens.
 const SPIN_SNAP_STRENGTH = 0.085
 const SPIN_ARRIVAL_DOT = 0.9994
-const CENTER_HIT_BOOST = 0.35
+// Hit region ellipse, as ratios of the canvas rect: centre y, radii x and y.
+const HIT_REGION_CENTER_Y = 0.48
+const HIT_REGION_RX = 0.34
+const HIT_REGION_RY = 0.37
 const GESTURE_DEBUG =
   typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('gesture-debug')
 
 type GestureTuning = {
-  centerBoost: number
+  regionCenterY: number
+  regionRx: number
+  regionRy: number
   holdMs: number
   moveTolerancePx: number
 }
@@ -104,6 +109,7 @@ type PressState = {
   lastY: number
   maxMovedPx: number
   pointerId: number
+  snapshot: PickSnapshot | null
   startTime: number
   x: number
   y: number
@@ -189,6 +195,149 @@ export type PosterHit<T> = {
   item: InfiniteMovieMenuItem<T>
   // Screen-space outline of the hit area, for the gesture debug overlay.
   quad: Vec2[]
+}
+
+export type PickEllipse = { cx: number; cy: number; rx: number; ry: number }
+
+// A poster's screen-space footprint: centre, half-axes u/v and the unpadded
+// quad (corners at (-1,-1), (1,-1), (1,1), (-1,1) in u/v), plus world depth z.
+export type PickCandidate = {
+  center: Vec2
+  index: number
+  quad: Vec2[]
+  u: Vec2
+  v: Vec2
+  z: number
+}
+
+export type PickSnapshot = {
+  candidates: PickCandidate[]
+  ellipse: PickEllipse
+}
+
+// Distances within this many px count as a tie when choosing the nearest poster.
+const PICK_DISTANCE_TIE_PX = 0.5
+
+export const createPickCandidate = (
+  index: number,
+  z: number,
+  center: Vec2,
+  u: Vec2,
+  v: Vec2,
+): PickCandidate => {
+  const corner = (sa: number, sb: number): Vec2 => [
+    center[0] + u[0] * sa + v[0] * sb,
+    center[1] + u[1] * sa + v[1] * sb,
+  ]
+  return {
+    center,
+    index,
+    quad: [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)],
+    u,
+    v,
+    z,
+  }
+}
+
+const distanceToSegment = (point: Vec2, start: Vec2, end: Vec2) => {
+  const ex = end[0] - start[0]
+  const ey = end[1] - start[1]
+  const lengthSq = ex * ex + ey * ey
+  const t =
+    lengthSq === 0
+      ? 0
+      : Math.max(
+          0,
+          Math.min(
+            1,
+            ((point[0] - start[0]) * ex + (point[1] - start[1]) * ey) /
+              lengthSq,
+          ),
+        )
+  return Math.hypot(
+    point[0] - (start[0] + ex * t),
+    point[1] - (start[1] + ey * t),
+  )
+}
+
+// Distance from a point to a convex quad (any winding); 0 when inside or on it.
+export const pointToQuadDistance = (point: Vec2, quad: Vec2[]) => {
+  let hasPositive = false
+  let hasNegative = false
+  let edgeDistance = Number.POSITIVE_INFINITY
+  for (let i = 0; i < quad.length; i += 1) {
+    const start = quad[i]
+    const end = quad[(i + 1) % quad.length]
+    const cross =
+      (end[0] - start[0]) * (point[1] - start[1]) -
+      (end[1] - start[1]) * (point[0] - start[0])
+    if (cross > 0) hasPositive = true
+    if (cross < 0) hasNegative = true
+    edgeDistance = Math.min(edgeDistance, distanceToSegment(point, start, end))
+  }
+  return hasPositive && hasNegative ? edgeDistance : 0
+}
+
+// True when the quad overlaps or touches the ellipse. In ellipse space the
+// ellipse is the unit circle and the quad stays a parallelogram.
+export const ellipseIntersectsQuad = (quad: Vec2[], ellipse: PickEllipse) => {
+  const scaled = quad.map(
+    ([x, y]): Vec2 => [
+      (x - ellipse.cx) / ellipse.rx,
+      (y - ellipse.cy) / ellipse.ry,
+    ],
+  )
+  return pointToQuadDistance([0, 0], scaled) <= 1
+}
+
+const isInsideEllipse = (point: Vec2, ellipse: PickEllipse) =>
+  ((point[0] - ellipse.cx) / ellipse.rx) ** 2 +
+    ((point[1] - ellipse.cy) / ellipse.ry) ** 2 <=
+  1
+
+const isInsideCandidate = (candidate: PickCandidate, point: Vec2) => {
+  const { center, u, v } = candidate
+  const det = u[0] * v[1] - u[1] * v[0]
+  if (det === 0) return false
+  const dx = point[0] - center[0]
+  const dy = point[1] - center[1]
+  const a = (dx * v[1] - dy * v[0]) / det
+  const b = (u[0] * dy - u[1] * dx) / det
+  return Math.abs(a) <= 1 && Math.abs(b) <= 1
+}
+
+const frontMost = (left: PickCandidate, right: PickCandidate) =>
+  right.z > left.z || (right.z === left.z && right.index < left.index)
+    ? right
+    : left
+
+// Deterministic winner for a point: (a) front-most poster containing it, else
+// (b) inside the ellipse, the nearest poster (ties: front-most), else (c) null.
+// Candidates are expected to already be eligible (touching the ellipse).
+export const pickWinner = (
+  candidates: PickCandidate[],
+  point: Vec2,
+  ellipse: PickEllipse,
+): PickCandidate | null => {
+  let winner: PickCandidate | null = null
+  for (const candidate of candidates) {
+    if (!isInsideCandidate(candidate, point)) continue
+    winner = winner ? frontMost(winner, candidate) : candidate
+  }
+  if (winner) return winner
+  if (!isInsideEllipse(point, ellipse)) return null
+
+  let nearest = Number.POSITIVE_INFINITY
+  const distances = candidates.map((candidate) => {
+    const distance = pointToQuadDistance(point, candidate.quad)
+    nearest = Math.min(nearest, distance)
+    return distance
+  })
+  candidates.forEach((candidate, i) => {
+    if (distances[i] > nearest + PICK_DISTANCE_TIE_PX) return
+    winner = winner ? frontMost(winner, candidate) : candidate
+  })
+  return winner
 }
 
 const vertexShaderSource = `#version 300 es
@@ -1144,15 +1293,26 @@ class InfiniteMovieEngine<T> {
     return Math.abs(this.smoothRotationVelocity) > 0.01
   }
 
-  // Projects every poster with the same matrices the shader uses and returns
-  // the front-most one under the point. Hit areas grow toward the screen
-  // centre by up to `centerBoost` so the focal posters are easiest to hit.
-  pickInstanceAt(
-    clientX: number,
-    clientY: number,
-    centerBoost = 0,
-  ): PosterHit<T> | null {
+  // Projects every front-facing poster with the same matrices the shader uses
+  // and keeps those whose unpadded quad touches the hit ellipse. Taken at
+  // press so the result doesn't depend on globe drift before release.
+  capturePickSnapshot(
+    region = {
+      centerY: HIT_REGION_CENTER_Y,
+      rx: HIT_REGION_RX,
+      ry: HIT_REGION_RY,
+    },
+  ): PickSnapshot {
     const rect = this.canvas.getBoundingClientRect()
+    const ellipse: PickEllipse = {
+      cx: rect.left + 0.5 * rect.width,
+      cy: rect.top + region.centerY * rect.height,
+      rx: region.rx * rect.width,
+      ry: region.ry * rect.height,
+    }
+    const candidates: PickCandidate[] = []
+    if (ellipse.rx <= 0 || ellipse.ry <= 0) return { candidates, ellipse }
+
     const viewProjection = multiplyMat4(
       identityMat4(),
       this.projectionMatrix,
@@ -1169,13 +1329,6 @@ class InfiniteMovieEngine<T> {
         rect.top + ((1 - clipY / clipW) / 2) * rect.height,
       ]
     }
-    const screenCenter: Vec2 = [
-      rect.left + rect.width / 2,
-      rect.top + rect.height / 2,
-    ]
-    const focusRadius = Math.max(1, Math.min(rect.width, rect.height) / 2)
-    let best: { index: number; quad: Vec2[]; score: number; z: number } | null =
-      null
 
     this.instanceMatrices.forEach((matrix, index) => {
       // World is identity, so the instance translation is the poster centre;
@@ -1191,46 +1344,30 @@ class InfiniteMovieEngine<T> {
 
       const u: Vec2 = [right[0] - center[0], right[1] - center[1]]
       const v: Vec2 = [up[0] - center[0], up[1] - center[1]]
-      const det = u[0] * v[1] - u[1] * v[0]
-      if (Math.abs(det) < 0.0001) return
+      if (Math.abs(u[0] * v[1] - u[1] * v[0]) < 0.0001) return
 
-      const proximity = Math.max(
-        0,
-        1 -
-          Math.hypot(center[0] - screenCenter[0], center[1] - screenCenter[1]) /
-            focusRadius,
-      )
-      const pad = 1 + centerBoost * proximity
-      const dx = clientX - center[0]
-      const dy = clientY - center[1]
-      // Express the pointer in the poster's own (u, v) axes: |a|,|b| <= 1 is inside.
-      const a = (dx * v[1] - dy * v[0]) / det
-      const b = (u[0] * dy - u[1] * dx) / det
-      if (Math.abs(a) > pad || Math.abs(b) > pad) return
-
-      const score = a * a + b * b
-      if (
-        !best ||
-        score < best.score - 0.05 ||
-        (Math.abs(score - best.score) <= 0.05 && centerZ > best.z)
-      ) {
-        const corner = (sa: number, sb: number): Vec2 => [
-          center[0] + (u[0] * sa + v[0] * sb) * pad,
-          center[1] + (u[1] * sa + v[1] * sb) * pad,
-        ]
-        best = {
-          index,
-          quad: [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)],
-          score,
-          z: centerZ,
-        }
-      }
+      const candidate = createPickCandidate(index, centerZ, center, u, v)
+      if (ellipseIntersectsQuad(candidate.quad, ellipse))
+        candidates.push(candidate)
     })
 
-    if (!best) return null
-    const { index, quad } = best
-    const item = this.items[index % Math.max(1, this.items.length)]
-    return item ? { index, item, quad } : null
+    return { candidates, ellipse }
+  }
+
+  // Resolves a click against a snapshot; same snapshot and point, same poster.
+  pickFromSnapshot(
+    snapshot: PickSnapshot,
+    clientX: number,
+    clientY: number,
+  ): PosterHit<T> | null {
+    const winner = pickWinner(
+      snapshot.candidates,
+      [clientX, clientY],
+      snapshot.ellipse,
+    )
+    if (!winner) return null
+    const item = this.items[winner.index % Math.max(1, this.items.length)]
+    return item ? { index: winner.index, item, quad: winner.quad } : null
   }
 
   private initGeometry() {
@@ -1953,12 +2090,14 @@ export const InfiniteMovieMenu = <T,>({
   isActiveRef.current = isActive
   const pressRef = useRef<PressState | null>(null)
   const tuningRef = useRef<GestureTuning>({
-    centerBoost: CENTER_HIT_BOOST,
+    regionCenterY: HIT_REGION_CENTER_Y,
+    regionRx: HIT_REGION_RX,
+    regionRy: HIT_REGION_RY,
     holdMs: HOLD_TO_DRAG_MS,
     moveTolerancePx: CLICK_MOVE_TOLERANCE_PX,
   })
   const [gestureLog, setGestureLog] = useState<GestureLogEntry[]>([])
-  const [debugQuad, setDebugQuad] = useState<Vec2[] | null>(null)
+  const [debugPick, setDebugPick] = useState<DebugPick | null>(null)
   const [activeItem, setActiveItem] = useState<InfiniteMovieMenuItem<T> | null>(
     null,
   )
@@ -2148,6 +2287,7 @@ export const InfiniteMovieMenu = <T,>({
       if (press.dragging) return
       press.dragging = true
       press.kind = kind
+      press.snapshot = null
       if (press.holdTimer) window.clearTimeout(press.holdTimer)
       press.holdTimer = null
       // Start from the press point so movement before the drag isn't lost.
@@ -2220,6 +2360,7 @@ export const InfiniteMovieMenu = <T,>({
       lastY: event.clientY,
       maxMovedPx: 0,
       pointerId: event.pointerId,
+      snapshot: null,
       startTime: performance.now(),
       x: event.clientX,
       y: event.clientY,
@@ -2235,6 +2376,24 @@ export const InfiniteMovieMenu = <T,>({
     if (engineRef.current?.isSpinning()) {
       startDrag(press, 'catch')
       return
+    }
+    const { regionCenterY, regionRx, regionRy } = tuningRef.current
+    press.snapshot =
+      engineRef.current?.capturePickSnapshot({
+        centerY: regionCenterY,
+        rx: regionRx,
+        ry: regionRy,
+      }) ?? null
+    if (GESTURE_DEBUG) {
+      setDebugPick(
+        press.snapshot
+          ? {
+              ellipse: press.snapshot.ellipse,
+              quads: press.snapshot.candidates.map((c) => c.quad),
+              winner: null,
+            }
+          : null,
+      )
     }
     press.holdTimer = window.setTimeout(
       () => startDrag(press, 'hold'),
@@ -2270,13 +2429,31 @@ export const InfiniteMovieMenu = <T,>({
       return
     }
 
-    const hit =
-      engineRef.current?.pickInstanceAt(
-        event.clientX,
-        event.clientY,
-        tuningRef.current.centerBoost,
-      ) ?? null
-    if (GESTURE_DEBUG) setDebugQuad(hit?.quad ?? null)
+    const engine = engineRef.current
+    const { regionCenterY, regionRx, regionRy } = tuningRef.current
+    const snapshot =
+      press.snapshot ??
+      engine?.capturePickSnapshot({
+        centerY: regionCenterY,
+        rx: regionRx,
+        ry: regionRy,
+      }) ??
+      null
+    const hit = snapshot
+      ? (engine?.pickFromSnapshot(snapshot, event.clientX, event.clientY) ??
+        null)
+      : null
+    if (GESTURE_DEBUG) {
+      setDebugPick(
+        snapshot
+          ? {
+              ellipse: snapshot.ellipse,
+              quads: snapshot.candidates.map((c) => c.quad),
+              winner: hit?.quad ?? null,
+            }
+          : null,
+      )
+    }
     logGesture({
       kind: hit ? 'click' : 'miss',
       ms,
@@ -2290,6 +2467,7 @@ export const InfiniteMovieMenu = <T,>({
     if (pressRef.current?.pointerId !== event.pointerId) return
     const press = releasePress()
     if (press?.dragging) engineRef.current?.cancelPointerDrag(press.pointerId)
+    if (GESTURE_DEBUG) setDebugPick(null)
   }
 
   return (
@@ -2325,7 +2503,7 @@ export const InfiniteMovieMenu = <T,>({
         ? createPortal(
             <GestureDebugPanel
               log={gestureLog}
-              quad={debugQuad}
+              pick={debugPick}
               tuningRef={tuningRef}
             />,
             document.body,
@@ -2335,9 +2513,17 @@ export const InfiniteMovieMenu = <T,>({
   )
 }
 
+type DebugPick = {
+  ellipse: PickEllipse
+  quads: Vec2[][]
+  winner: Vec2[] | null
+}
+
+const toPoints = (quad: Vec2[]) => quad.map(([x, y]) => `${x},${y}`).join(' ')
+
 type GestureDebugPanelProps = {
   log: GestureLogEntry[]
-  quad: Vec2[] | null
+  pick: DebugPick | null
   tuningRef: { current: GestureTuning }
 }
 
@@ -2345,7 +2531,7 @@ type GestureDebugPanelProps = {
 // thresholds be tuned live. Values are not persisted.
 const GestureDebugPanel = ({
   log,
-  quad,
+  pick,
   tuningRef,
 }: GestureDebugPanelProps) => {
   const [tuning, setTuning] = useState(tuningRef.current)
@@ -2365,9 +2551,45 @@ const GestureDebugPanel = ({
 
   return (
     <>
-      {quad ? (
-        <svg className='warp-gesture-debug-quad' aria-hidden='true'>
-          <polygon points={quad.map(([x, y]) => `${x},${y}`).join(' ')} />
+      {pick ? (
+        <svg
+          aria-hidden='true'
+          style={{
+            height: '100%',
+            inset: 0,
+            pointerEvents: 'none',
+            position: 'fixed',
+            width: '100%',
+            zIndex: 9998,
+          }}
+        >
+          <ellipse
+            cx={pick.ellipse.cx}
+            cy={pick.ellipse.cy}
+            rx={pick.ellipse.rx}
+            ry={pick.ellipse.ry}
+            fill='none'
+            stroke='#38bdf8'
+            strokeDasharray='6 4'
+            strokeWidth={1.5}
+          />
+          {pick.quads.map((quad) => (
+            <polygon
+              key={toPoints(quad)}
+              points={toPoints(quad)}
+              fill='none'
+              stroke='rgba(250, 204, 21, 0.7)'
+              strokeWidth={1}
+            />
+          ))}
+          {pick.winner ? (
+            <polygon
+              points={toPoints(pick.winner)}
+              fill='rgba(52, 211, 153, 0.18)'
+              stroke='#34d399'
+              strokeWidth={3}
+            />
+          ) : null}
         </svg>
       ) : null}
       <aside className='warp-gesture-debug' aria-label='Gesture tuning'>
@@ -2397,15 +2619,41 @@ const GestureDebugPanel = ({
           />
         </label>
         <label>
-          Centre boost: {Math.round(tuning.centerBoost * 100)}%
+          Region centre Y: {tuning.regionCenterY.toFixed(2)}
           <input
             type='range'
-            min={0}
-            max={1}
-            step={0.05}
-            value={tuning.centerBoost}
+            min={0.1}
+            max={0.6}
+            step={0.01}
+            value={tuning.regionCenterY}
             onChange={(event) =>
-              update({ centerBoost: Number(event.target.value) })
+              update({ regionCenterY: Number(event.target.value) })
+            }
+          />
+        </label>
+        <label>
+          Region radius X: {tuning.regionRx.toFixed(2)}
+          <input
+            type='range'
+            min={0.1}
+            max={0.6}
+            step={0.01}
+            value={tuning.regionRx}
+            onChange={(event) =>
+              update({ regionRx: Number(event.target.value) })
+            }
+          />
+        </label>
+        <label>
+          Region radius Y: {tuning.regionRy.toFixed(2)}
+          <input
+            type='range'
+            min={0.1}
+            max={0.6}
+            step={0.01}
+            value={tuning.regionRy}
+            onChange={(event) =>
+              update({ regionRy: Number(event.target.value) })
             }
           />
         </label>
