@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import {
   type CSSProperties,
+  Fragment,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -30,6 +31,12 @@ import {
 } from 'react'
 import { useMediaQuery } from '../../../hooks/use-media-query'
 import { cn } from '../../../utils/tw'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '../../ui/tooltip'
 import {
   InfiniteMovieMenu,
   type InfiniteMovieMenuItem,
@@ -1249,15 +1256,19 @@ export const TestGalleryApp = () => {
   const applyRuntimeFilter = useCallback((id: RuntimeFilter) => {
     setSelectedRuntimeFilter(id)
   }, [])
-  const applyGenreFilter = useCallback((genre: string) => {
-    setSelectedGenres((current) =>
-      current.includes(genre) ? current : [...current, genre],
-    )
-  }, [])
-  void applyYearFilter
-  void applyRatingFilter
-  void applyRuntimeFilter
-  void applyGenreFilter
+
+  // Filters applied from the movie card: close the card and show the gallery.
+  const handleApplyCardFilter = useCallback(
+    (filter: MovieCardFilter) => {
+      if (filter.kind === 'year') applyYearFilter(filter.year)
+      else if (filter.kind === 'rating') applyRatingFilter(filter.min)
+      else if (filter.kind === 'runtime') applyRuntimeFilter(filter.id)
+      else setSelectedGenres([filter.genre])
+      setDetailsMovieId(null)
+      setMode('wall')
+    },
+    [applyRatingFilter, applyRuntimeFilter, applyYearFilter],
+  )
 
   const selectContentFilter = useCallback(
     (nextContentFilter: ContentFilter) => {
@@ -1684,10 +1695,10 @@ export const TestGalleryApp = () => {
           onClose={() => setDetailsMovieId(null)}
           onOpenMovie={handleOpenMovie}
           onWatch={handleOpenWatchLinks}
-          onSelectGenre={(genre) => {
-            setSelectedGenres([genre])
+          onApplyFilter={handleApplyCardFilter}
+          onNextSuggestion={() => {
             setDetailsMovieId(null)
-            setMode('wall')
+            handleShuffle()
           }}
         />
       ) : null}
@@ -2998,13 +3009,20 @@ const WatchLinksDialog = ({
   </section>
 )
 
+type MovieCardFilter =
+  | { kind: 'year'; year: number }
+  | { kind: 'rating'; min: number }
+  | { kind: 'runtime'; id: RuntimeFilter }
+  | { kind: 'genre'; genre: string }
+
 type MovieDetailsCardProps = {
   movies: TestMovie[]
   motionPhase: MotionPhase
   movie: TestMovie
   onClose: () => void
   onOpenMovie: (movie: TestMovie) => void
-  onSelectGenre: (genre: string) => void
+  onApplyFilter: (filter: MovieCardFilter) => void
+  onNextSuggestion: () => void
   onWatch: (movie: TestMovie) => void
 }
 
@@ -3014,7 +3032,8 @@ const MovieDetailsCard = ({
   movie,
   onClose,
   onOpenMovie,
-  onSelectGenre,
+  onApplyFilter,
+  onNextSuggestion,
   onWatch,
 }: MovieDetailsCardProps) => {
   // Wide screens get a centred panel with everything visible; small screens
@@ -3077,12 +3096,64 @@ const MovieDetailsCard = ({
   }
 
   const showFullContent = isWide || isExpanded
-  const stats = [
-    movie.year && movie.year !== '----' ? movie.year : null,
-    `★ ${formatRating(movie)}`,
-    formatRuntimeLabel(movie),
-    movie.countries || null,
-  ].filter((stat): stat is string => Boolean(stat))
+  const yearNumber = Number.parseInt(movie.year, 10)
+  const runtimeBucket = getRuntimeBucket(movie.runtimeMinutes)
+  const runtimeLabel = formatRuntimeLabel(movie)
+  const ratingValue = movie.ratingValue
+  const hasYear = Boolean(movie.year) && movie.year !== '----'
+  const stats: ReactNode[] = []
+  if (hasYear) {
+    stats.push(
+      Number.isFinite(yearNumber) ? (
+        <FilterTag
+          key='year'
+          onClick={() => onApplyFilter({ kind: 'year', year: yearNumber })}
+        >
+          {movie.year}
+        </FilterTag>
+      ) : (
+        <span key='year'>{movie.year}</span>
+      ),
+    )
+  }
+  stats.push(
+    ratingValue === null ? (
+      <span key='rating'>★ {formatRating(movie)}</span>
+    ) : (
+      <FilterTag
+        key='rating'
+        onClick={() => onApplyFilter({ kind: 'rating', min: ratingValue })}
+      >
+        ★ {formatRating(movie)}
+      </FilterTag>
+    ),
+  )
+  if (runtimeLabel) {
+    stats.push(
+      runtimeBucket ? (
+        <FilterTag
+          key='runtime'
+          onClick={() => onApplyFilter({ kind: 'runtime', id: runtimeBucket })}
+        >
+          {runtimeLabel}
+        </FilterTag>
+      ) : (
+        <span key='runtime'>{runtimeLabel}</span>
+      ),
+    )
+  }
+  if (movie.countries)
+    stats.push(<span key='countries'>{movie.countries}</span>)
+  const nextSuggestionButton = (
+    <button
+      type='button'
+      className='warp-details-next'
+      onClick={onNextSuggestion}
+    >
+      <Dices aria-hidden='true' size={15} strokeWidth={2.4} />
+      Show next suggestion
+    </button>
+  )
   const detailsStyle = {
     '--details-drag-y': `${dragOffset}px`,
     '--details-backdrop': `url(${JSON.stringify(movie.posterUrl)})`,
@@ -3113,142 +3184,182 @@ const MovieDetailsCard = ({
   }, [movie.genres, movie.id, movies])
 
   return (
-    <section
-      className='warp-details-layer'
-      data-motion={motionPhase}
-      aria-label={`${movie.title} details`}
-    >
-      <button
-        type='button'
-        className='warp-details-backdrop'
-        aria-label='Close details'
-        onClick={onClose}
-      />
-      <dialog
-        open
-        className={cn(
-          'warp-details-card',
-          isExpanded && 'is-expanded',
-          dragOffset !== 0 && 'is-dragging',
-        )}
-        style={detailsStyle}
-        aria-modal='true'
-        data-snap={isExpanded ? 'expanded' : 'compact'}
+    <TooltipProvider delayDuration={300}>
+      <section
+        className='warp-details-layer'
+        data-motion={motionPhase}
+        aria-label={`${movie.title} details`}
       >
-        <span className='warp-details-ambient' aria-hidden='true' />
         <button
           type='button'
-          className='warp-details-close'
+          className='warp-details-backdrop'
           aria-label='Close details'
           onClick={onClose}
+        />
+        <dialog
+          open
+          className={cn(
+            'warp-details-card',
+            isExpanded && 'is-expanded',
+            dragOffset !== 0 && 'is-dragging',
+          )}
+          style={detailsStyle}
+          aria-modal='true'
+          data-snap={isExpanded ? 'expanded' : 'compact'}
         >
-          <X aria-hidden='true' size={17} strokeWidth={3} />
-        </button>
-        {isWide ? null : (
-          <div
-            className='warp-details-grip-zone'
-            onPointerCancel={handleDragEnd}
-            onPointerDown={handleDragStart}
-            onPointerMove={handleDragMove}
-            onPointerUp={handleDragEnd}
-          >
-            <span className='warp-details-handle' />
-          </div>
-        )}
-        <div className='warp-details-poster'>
-          <MoviePoster loading='eager' movie={movie} />
-        </div>
-        <div className='warp-details-copy'>
-          <div className='warp-details-copy-scroll'>
-            {stats.length ? (
-              <ul className='warp-details-stats' aria-label='Movie facts'>
-                {stats.map((stat) => (
-                  <li key={stat}>{stat}</li>
-                ))}
-              </ul>
-            ) : null}
-            <h2>{movie.title}</h2>
-            {movie.tagline ? (
-              <p className='warp-details-tagline'>{movie.tagline}</p>
-            ) : null}
-            <p className='warp-details-overview'>
-              {movie.overview || 'No overview available yet.'}
-            </p>
-            <div className='warp-details-genres'>
-              {movie.genres.map((genre) => (
-                <button
-                  type='button'
-                  key={genre}
-                  onClick={() => onSelectGenre(genre)}
-                >
-                  {genre}
-                </button>
-              ))}
-            </div>
-            <div className='warp-details-actions'>
-              <button
-                type='button'
-                className='warp-details-watch'
-                onClick={() => onWatch(movie)}
-              >
-                <Play aria-hidden='true' size={15} strokeWidth={2.6} />
-                Where to watch
-              </button>
-            </div>
-            {showFullContent ? (
-              <div className='warp-details-expanded-content'>
-                {similarMovies.length ? (
-                  <section
-                    className='warp-details-similar'
-                    aria-label='Similar movies'
-                  >
-                    <header>
-                      <h3>Similar movies</h3>
-                      <span>{movie.genres.slice(0, 2).join(' | ')}</span>
-                    </header>
-                    <div className='warp-details-similar-list'>
-                      {similarMovies.map((similarMovie) => (
-                        <button
-                          type='button'
-                          key={similarMovie.id}
-                          onClick={() => onOpenMovie(similarMovie)}
-                        >
-                          <span className='warp-details-similar-poster'>
-                            <MoviePoster movie={similarMovie} />
-                          </span>
-                          <span className='warp-details-similar-copy'>
-                            <strong>{similarMovie.title}</strong>
-                            <span>{formatCompactMeta(similarMovie)}</span>
-                            <em>
-                              {similarMovie.overview ||
-                                'No overview available yet.'}
-                            </em>
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        </div>
-        {isWide ? null : (
+          <span className='warp-details-ambient' aria-hidden='true' />
           <button
             type='button'
-            className='warp-details-more'
-            aria-expanded={isExpanded}
-            onClick={() => setIsExpanded((expanded) => !expanded)}
+            className='warp-details-close'
+            aria-label='Close details'
+            onClick={onClose}
           >
-            <span>{isExpanded ? 'Less' : 'More'}</span>
-            {isExpanded ? (
-              <ChevronsUp aria-hidden='true' size={17} strokeWidth={2.8} />
-            ) : (
-              <ChevronsDown aria-hidden='true' size={17} strokeWidth={2.8} />
-            )}
+            <X aria-hidden='true' size={17} strokeWidth={3} />
           </button>
-        )}
-      </dialog>
-    </section>
+          {isWide ? null : (
+            <div
+              className='warp-details-grip-zone'
+              onPointerCancel={handleDragEnd}
+              onPointerDown={handleDragStart}
+              onPointerMove={handleDragMove}
+              onPointerUp={handleDragEnd}
+            >
+              <span className='warp-details-handle' />
+            </div>
+          )}
+          {isWide ? (
+            <div className='warp-details-poster-col'>
+              <div className='warp-details-poster'>
+                <MoviePoster loading='eager' movie={movie} />
+              </div>
+              {nextSuggestionButton}
+            </div>
+          ) : (
+            <div className='warp-details-poster'>
+              <MoviePoster loading='eager' movie={movie} />
+            </div>
+          )}
+          <div className='warp-details-copy'>
+            <div className='warp-details-copy-scroll'>
+              {stats.length ? (
+                <div className='warp-details-stats'>
+                  {stats.map((stat, index) => (
+                    <Fragment key={(stat as { key: string }).key}>
+                      {index ? (
+                        <span
+                          className='warp-details-stats-sep'
+                          aria-hidden='true'
+                        >
+                          {' · '}
+                        </span>
+                      ) : null}
+                      {stat}
+                    </Fragment>
+                  ))}
+                </div>
+              ) : null}
+              <h2>{movie.title}</h2>
+              {movie.tagline ? (
+                <p className='warp-details-tagline'>{movie.tagline}</p>
+              ) : null}
+              <p className='warp-details-overview'>
+                {movie.overview || 'No overview available yet.'}
+              </p>
+              <div className='warp-details-genres'>
+                {movie.genres.map((genre) => (
+                  <FilterTag
+                    key={genre}
+                    onClick={() => onApplyFilter({ kind: 'genre', genre })}
+                  >
+                    {genre}
+                  </FilterTag>
+                ))}
+              </div>
+              <div className='warp-details-actions'>
+                <button
+                  type='button'
+                  className='warp-details-watch'
+                  onClick={() => onWatch(movie)}
+                >
+                  <Play aria-hidden='true' size={15} strokeWidth={2.6} />
+                  Where to watch
+                </button>
+                {isWide ? null : nextSuggestionButton}
+              </div>
+              {showFullContent ? (
+                <div className='warp-details-expanded-content'>
+                  {similarMovies.length ? (
+                    <section
+                      className='warp-details-similar'
+                      aria-label='Similar movies'
+                    >
+                      <header>
+                        <h3>Similar movies</h3>
+                        <span>{movie.genres.slice(0, 2).join(' | ')}</span>
+                      </header>
+                      <div className='warp-details-similar-list'>
+                        {similarMovies.map((similarMovie) => (
+                          <button
+                            type='button'
+                            key={similarMovie.id}
+                            onClick={() => onOpenMovie(similarMovie)}
+                          >
+                            <span className='warp-details-similar-poster'>
+                              <MoviePoster movie={similarMovie} />
+                            </span>
+                            <span className='warp-details-similar-copy'>
+                              <strong>{similarMovie.title}</strong>
+                              <span>{formatCompactMeta(similarMovie)}</span>
+                              <em>
+                                {similarMovie.overview ||
+                                  'No overview available yet.'}
+                              </em>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </div>
+          {isWide ? null : (
+            <button
+              type='button'
+              className='warp-details-more'
+              aria-expanded={isExpanded}
+              onClick={() => setIsExpanded((expanded) => !expanded)}
+            >
+              <span>{isExpanded ? 'Less' : 'More'}</span>
+              {isExpanded ? (
+                <ChevronsUp aria-hidden='true' size={17} strokeWidth={2.8} />
+              ) : (
+                <ChevronsDown aria-hidden='true' size={17} strokeWidth={2.8} />
+              )}
+            </button>
+          )}
+        </dialog>
+      </section>
+    </TooltipProvider>
   )
 }
+
+const FilterTag = ({
+  children,
+  onClick,
+}: {
+  children: ReactNode
+  onClick: () => void
+}) => (
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <button type='button' onClick={onClick}>
+        {children}
+      </button>
+    </TooltipTrigger>
+    <TooltipContent className='warp-details-tip' sideOffset={6}>
+      Click to filter
+    </TooltipContent>
+  </Tooltip>
+)

@@ -2304,24 +2304,86 @@
   }
 
   .warp-details-stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
     margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .warp-details-stats li {
-    border: 1px solid rgb(255 255 255 / 0.12);
-    border-radius: 999px;
-    background: rgb(255 255 255 / 0.08);
-    padding: 5px 10px;
     color: rgb(255 255 255 / 0.86);
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 800;
     letter-spacing: 0.01em;
-    line-height: 1.2;
+    line-height: 1.5;
+  }
+
+  .warp-details-stats button {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    cursor: pointer;
+    text-decoration: underline transparent;
+    text-underline-offset: 3px;
+    transition: text-decoration-color 140ms ease;
+  }
+
+  .warp-details-stats button:hover,
+  .warp-details-stats button:focus-visible {
+    outline: none;
+    text-decoration-color: currentColor;
+  }
+
+  .warp-details-stats-sep {
+    color: rgb(255 255 255 / 0.4);
+    white-space: pre-wrap;
+  }
+
+  .warp-details-poster-col {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .warp-details-next {
+    display: inline-flex;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid rgb(255 255 255 / 0.18);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.08);
+    padding: 0 20px;
+    color: rgb(255 255 255 / 0.88);
+    font-size: 14px;
+    font-weight: 850;
+    letter-spacing: -0.02em;
+    transition:
+      background 160ms ease,
+      color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .warp-details-next:hover,
+  .warp-details-next:focus-visible {
+    outline: none;
+    background: rgb(255 255 255 / 0.16);
+    color: #fff;
+  }
+
+  .warp-details-next:active {
+    transform: translateY(1px) scale(0.98);
+  }
+
+  .warp-details-poster-col .warp-details-next {
+    width: 100%;
+  }
+
+  .warp-details-tip {
+    z-index: 120;
+    border: 1px solid rgb(255 255 255 / 0.14);
+    background: rgb(28 28 28 / 0.98);
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
   }
 
   .warp-details-card h2 {
@@ -4384,7 +4446,10 @@
       display: none;
     }
 
-    .warp-details-stats,
+    .warp-details-stats {
+      text-align: center;
+    }
+
     .warp-details-genres,
     .warp-details-actions {
       justify-content: center;
@@ -4416,7 +4481,8 @@
       width: 100%;
     }
 
-    .warp-details-watch {
+    .warp-details-watch,
+    .warp-details-next {
       width: 100%;
       max-width: 320px;
     }

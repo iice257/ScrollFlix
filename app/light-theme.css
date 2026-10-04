@@ -552,10 +552,31 @@
   box-shadow: 0 24px 70px rgb(110 78 34 / 0.252);
 }
 
-.warp-shell[data-theme="light"] .warp-details-stats li {
-  border: 1px solid rgb(33 26 16 / 0.12);
-  background: rgb(33 26 16 / 0.08);
+.warp-shell[data-theme="light"] .warp-details-stats {
   color: rgb(33 26 16 / 0.86);
+}
+
+.warp-shell[data-theme="light"] .warp-details-stats-sep {
+  color: rgb(33 26 16 / 0.4);
+}
+
+.warp-shell[data-theme="light"] .warp-details-next {
+  border: 1px solid rgb(33 26 16 / 0.18);
+  background: rgb(33 26 16 / 0.08);
+  color: rgb(33 26 16 / 0.88);
+}
+
+.warp-shell[data-theme="light"] .warp-details-next:hover,
+.warp-shell[data-theme="light"] .warp-details-next:focus-visible {
+  background: rgb(33 26 16 / 0.16);
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-details-tip {
+  border: 1px solid rgb(33 26 16 / 0.14);
+  background: rgb(224 217 202 / 0.98);
+  color: rgb(33 26 16);
+  box-shadow: 0 8px 24px rgb(110 78 34 / 0.168);
 }
 
 .warp-shell[data-theme="light"] .warp-details-tagline {
@@ -1000,15 +1021,15 @@
   }
   
   .warp-shell[data-theme="light"] .warp-grid-icon {
-    background: linear-gradient(rgb(62 55 44) 0 0) 0 0 / 5px 5px no-repeat,
-          linear-gradient(rgb(62 55 44) 0 0) 7px 0 / 5px 5px no-repeat,
-          linear-gradient(rgb(62 55 44) 0 0) 0 7px / 5px 5px no-repeat,
+    background: linear-gradient(rgb(62 55 44) 0 0) 0 0 / 5px 5px no-repeat,  
+          linear-gradient(rgb(62 55 44) 0 0) 7px 0 / 5px 5px no-repeat,  
+          linear-gradient(rgb(62 55 44) 0 0) 0 7px / 5px 5px no-repeat,  
           linear-gradient(rgb(62 55 44) 0 0) 7px 7px / 5px 5px no-repeat;
   }
   
   .warp-shell[data-theme="light"] .warp-list-icon {
-    background: linear-gradient(rgb(62 55 44) 0 0) 0 1px / 12px 2px no-repeat,
-          linear-gradient(rgb(62 55 44) 0 0) 0 5px / 12px 2px no-repeat,
+    background: linear-gradient(rgb(62 55 44) 0 0) 0 1px / 12px 2px no-repeat,  
+          linear-gradient(rgb(62 55 44) 0 0) 0 5px / 12px 2px no-repeat,  
           linear-gradient(rgb(62 55 44) 0 0) 0 9px / 12px 2px no-repeat;
   }
   
