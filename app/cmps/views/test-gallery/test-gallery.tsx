@@ -93,6 +93,19 @@ const DETAILS_CLOSE_DRAG_PX = 68
 const DETAILS_COMPACT_DRAG_PX = 38
 const EXIT_ANIMATION_MS = 220
 const SPIN_HINT_STORAGE_KEY = 'wtw:spin-hint-seen'
+const THEME_STORAGE_KEY = 'wtw:theme'
+
+type Theme = 'dark' | 'light'
+
+const readTheme = (): Theme => {
+  try {
+    return window.localStorage.getItem(THEME_STORAGE_KEY) === 'light'
+      ? 'light'
+      : 'dark'
+  } catch {
+    return 'dark'
+  }
+}
 
 const readSpinHintSeen = () => {
   try {
@@ -740,6 +753,16 @@ export const TestGalleryApp = () => {
   const [errorMessage, setErrorMessage] = useState('')
   const [timeLabel, setTimeLabel] = useState('')
   const [isGlobeMoving, setIsGlobeMoving] = useState(false)
+  const [theme, setTheme] = useState<Theme>(readTheme)
+
+  const changeTheme = useCallback((nextTheme: Theme) => {
+    setTheme(nextTheme)
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme)
+    } catch {
+      // Storage can be unavailable (private mode, blocked site data).
+    }
+  }, [])
   const [spinRequest, setSpinRequest] = useState<{
     itemId: string
     nonce: number
@@ -1001,6 +1024,7 @@ export const TestGalleryApp = () => {
       data-filter-open={filterPresence.isPresent ? 'true' : 'false'}
       data-gallery-ready={initialGalleryReady ? 'true' : 'false'}
       data-mode={mode}
+      data-theme={theme}
     >
       {/* Stays mounted in other views so returning to the gallery is instant. */}
       <WarpWall
@@ -1310,6 +1334,8 @@ export const TestGalleryApp = () => {
 
       {aboutPresence.isPresent ? (
         <AboutDrawer
+          theme={theme}
+          onThemeChange={changeTheme}
           genreCount={genreSummaries.length}
           globeCount={visibleMovies.length}
           maximized={aboutMaximized}
@@ -2211,6 +2237,8 @@ const GenresView = ({
 )
 
 type AboutDrawerProps = {
+  theme: Theme
+  onThemeChange: (theme: Theme) => void
   genreCount: number
   globeCount: number
   maximized: boolean
@@ -2343,6 +2371,8 @@ const AboutGlobeDiagram = () => (
 )
 
 const AboutDrawer = ({
+  theme,
+  onThemeChange,
   genreCount,
   globeCount,
   maximized,
@@ -2478,6 +2508,27 @@ const AboutDrawer = ({
         </button>
       </header>
       <AboutControls />
+      <div className='warp-about-setting'>
+        <span id='warp-theme-label'>Appearance</span>
+        <div
+          className='warp-theme-switch'
+          role='radiogroup'
+          aria-labelledby='warp-theme-label'
+        >
+          {(['dark', 'light'] as const).map((option) => (
+            <button
+              type='button'
+              key={option}
+              role='radio'
+              aria-checked={theme === option}
+              className={cn(theme === option && 'is-active')}
+              onClick={() => onThemeChange(option)}
+            >
+              {option === 'dark' ? 'Dark' : 'Light'}
+            </button>
+          ))}
+        </div>
+      </div>
       <p className='warp-about-fineprint'>
         Film data from TMDB via Kaggle (ODC-By). Not endorsed by TMDB.
       </p>

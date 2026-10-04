@@ -5,6 +5,7 @@ import { TestGalleryApp } from './cmps/views/test-gallery'
 import { animateDocTitleSuffix } from './utils/anim'
 import { initTelemetry } from './utils/telemetry/init-telemetry'
 import './styles.css'
+import './light-theme.css'
 
 initTelemetry()
 

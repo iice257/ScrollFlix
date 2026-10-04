@@ -23,6 +23,7 @@
 		"test:e2e:debug": "playwright test --debug",
 		"media:posters": "node scripts/generate-poster-thumbnails.mjs",
 		"media:sprite": "node scripts/generate-poster-sprite.mjs",
+		"theme:light": "node scripts/generate-light-theme.mjs",
 		"seo:sitemap": "node scripts/generate-sitemap.js",
 		"seo:validate": "node -e \"const fs=require('fs');console.log('robots.txt:');console.log(fs.readFileSync('public/robots.txt','utf8'));console.log('sitemap.xml:',fs.statSync('public/sitemap.xml').size,'bytes')\""
 	},
