@@ -2163,6 +2163,7 @@ export const InfiniteMovieMenu = <T,>({
   const isActiveRef = useRef(isActive)
   isActiveRef.current = isActive
   const pressRef = useRef<PressState | null>(null)
+  const touchOpenClickGuardRef = useRef<(() => void) | null>(null)
   const onShuffleProPhaseRef = useRef(onShuffleProPhase)
   onShuffleProPhaseRef.current = onShuffleProPhase
   const onShuffleProReleaseRef = useRef(onShuffleProRelease)
@@ -2619,6 +2620,7 @@ export const InfiniteMovieMenu = <T,>({
         engineRef.current?.stopNudge(press.pointerId)
       canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
       canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
+      touchOpenClickGuardRef.current?.()
       onShuffleProPhaseRef.current?.(null)
     },
     [],
@@ -2784,7 +2786,38 @@ export const InfiniteMovieMenu = <T,>({
       movedPx,
       title: hit?.item.title,
     })
-    if (hit && !isDetailsOpen) openHit(hit)
+    if (hit && !isDetailsOpen) {
+      if (event.pointerType === 'touch') {
+        touchOpenClickGuardRef.current?.()
+        const guardClick = (clickEvent: MouseEvent) => {
+          const clickPointerId = (clickEvent as PointerEvent).pointerId
+          if (
+            clickEvent.detail !== 0 &&
+            clickPointerId === event.pointerId &&
+            clickEvent.target instanceof Element &&
+            clickEvent.target.closest('.warp-details-backdrop')
+          ) {
+            cleanupGuard()
+            clickEvent.preventDefault()
+            clickEvent.stopImmediatePropagation()
+          }
+        }
+        const expiryTimer = window.setTimeout(() => {
+          window.removeEventListener('click', guardClick, true)
+          if (touchOpenClickGuardRef.current === cleanupGuard)
+            touchOpenClickGuardRef.current = null
+        }, 800)
+        const cleanupGuard = () => {
+          window.clearTimeout(expiryTimer)
+          window.removeEventListener('click', guardClick, true)
+          if (touchOpenClickGuardRef.current === cleanupGuard)
+            touchOpenClickGuardRef.current = null
+        }
+        touchOpenClickGuardRef.current = cleanupGuard
+        window.addEventListener('click', guardClick, true)
+      }
+      openHit(hit)
+    }
   }
 
   const handlePointerCancel = (event: ReactPointerEvent<HTMLCanvasElement>) => {

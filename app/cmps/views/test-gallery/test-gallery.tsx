@@ -136,6 +136,14 @@ const readSpinHintSeen = () => {
     return false
   }
 }
+
+const readFullscreenHintSeen = () => {
+  try {
+    return window.localStorage.getItem(FULLSCREEN_HINT_STORAGE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
 const CONTENT_FILTERS: Array<{
   disabled?: boolean
   id: ContentFilter
@@ -1035,6 +1043,9 @@ export const TestGalleryApp = () => {
   const isMobileViewport = useMediaQuery('(max-width: 900px)')
   const shellRef = useRef<HTMLElement | null>(null)
   const fullscreenHintTimerRef = useRef<number | null>(null)
+  const fullscreenHintSeenRef = useRef<boolean | null>(null)
+  if (fullscreenHintSeenRef.current === null)
+    fullscreenHintSeenRef.current = readFullscreenHintSeen()
   const [isFullscreenActive, setIsFullscreenActive] = useState(false)
   const [showFullscreenHint, setShowFullscreenHint] = useState(false)
   const [proMaxActive, setProMaxActive] = useState(false)
@@ -1111,9 +1122,15 @@ export const TestGalleryApp = () => {
   )
 
   const promptFullscreenHint = useCallback(() => {
-    if (!isMobileViewport || isFullscreenActive || showFullscreenHint) return
+    if (
+      !isMobileViewport ||
+      isFullscreenActive ||
+      fullscreenHintSeenRef.current
+    ) {
+      return
+    }
+    fullscreenHintSeenRef.current = true
     try {
-      if (window.localStorage.getItem(FULLSCREEN_HINT_STORAGE_KEY)) return
       window.localStorage.setItem(FULLSCREEN_HINT_STORAGE_KEY, '1')
     } catch {
       // Storage can be unavailable (private mode, blocked site data).
@@ -1125,37 +1142,7 @@ export const TestGalleryApp = () => {
       () => setShowFullscreenHint(false),
       5000,
     )
-  }, [isFullscreenActive, isMobileViewport, showFullscreenHint])
-
-  useEffect(() => {
-    const showOnFirstInteraction = (event: Event) => {
-      if (mode !== 'wall' || detailsMovieId) return
-      if (event.type === 'keydown') {
-        const key = (event as KeyboardEvent).key
-        if (
-          !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(
-            key,
-          )
-        )
-          return
-      }
-      const target = event.target
-      if (target instanceof Element && target.closest('.warp-fullscreen-control'))
-        return
-      promptFullscreenHint()
-    }
-
-    document.addEventListener('pointerdown', showOnFirstInteraction, true)
-    document.addEventListener('click', showOnFirstInteraction, true)
-    document.addEventListener('wheel', showOnFirstInteraction, true)
-    window.addEventListener('keydown', showOnFirstInteraction, true)
-    return () => {
-      document.removeEventListener('pointerdown', showOnFirstInteraction, true)
-      document.removeEventListener('click', showOnFirstInteraction, true)
-      document.removeEventListener('wheel', showOnFirstInteraction, true)
-      window.removeEventListener('keydown', showOnFirstInteraction, true)
-    }
-  }, [detailsMovieId, mode, promptFullscreenHint])
+  }, [isFullscreenActive, isMobileViewport])
 
   const toggleFullscreen = useCallback(async () => {
     try {
@@ -1199,6 +1186,20 @@ export const TestGalleryApp = () => {
     markSpinHintSeen()
     promptFullscreenHint()
   }, [markSpinHintSeen, promptFullscreenHint])
+
+  const maybePromptFullscreenHint = useCallback(
+    (target: EventTarget | null) => {
+      if (mode !== 'wall' || detailsMovieId) return
+      if (
+        target instanceof Element &&
+        target.closest('.warp-fullscreen-control')
+      ) {
+        return
+      }
+      promptFullscreenHint()
+    },
+    [detailsMovieId, mode, promptFullscreenHint],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -1720,6 +1721,20 @@ export const TestGalleryApp = () => {
     <main
       ref={shellRef}
       className='phantom-test-shell warp-shell min-h-dvh overflow-hidden bg-black text-white'
+      onPointerDownCapture={(event) =>
+        maybePromptFullscreenHint(event.target)
+      }
+      onClickCapture={(event) => maybePromptFullscreenHint(event.target)}
+      onWheelCapture={(event) => maybePromptFullscreenHint(event.target)}
+      onKeyDownCapture={(event) => {
+        if (
+          ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(
+            event.key,
+          )
+        ) {
+          maybePromptFullscreenHint(event.target)
+        }
+      }}
       data-details-open={detailsPresence.isPresent ? 'true' : 'false'}
       data-filter-open={filterPresence.isPresent ? 'true' : 'false'}
       data-gallery-ready={initialGalleryReady ? 'true' : 'false'}
