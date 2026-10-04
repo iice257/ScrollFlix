@@ -11,9 +11,11 @@ import {
   Info,
   Maximize2,
   Minimize2,
+  Moon,
   Play,
   Search,
   SlidersHorizontal,
+  Sun,
   X,
 } from 'lucide-react'
 import {
@@ -2508,27 +2510,27 @@ const AboutDrawer = ({
         </button>
       </header>
       <AboutControls />
-      <div className='warp-about-setting'>
-        <span id='warp-theme-label'>Appearance</span>
-        <div
-          className='warp-theme-switch'
-          role='radiogroup'
-          aria-labelledby='warp-theme-label'
-        >
+      <fieldset className='warp-about-setting'>
+        <legend>Appearance</legend>
+        <div className='warp-theme-switch'>
           {(['dark', 'light'] as const).map((option) => (
             <button
               type='button'
               key={option}
-              role='radio'
-              aria-checked={theme === option}
+              aria-pressed={theme === option}
               className={cn(theme === option && 'is-active')}
               onClick={() => onThemeChange(option)}
             >
+              {option === 'dark' ? (
+                <Moon aria-hidden='true' />
+              ) : (
+                <Sun aria-hidden='true' />
+              )}
               {option === 'dark' ? 'Dark' : 'Light'}
             </button>
           ))}
         </div>
-      </div>
+      </fieldset>
       <p className='warp-about-fineprint'>
         Film data from TMDB via Kaggle (ODC-By). Not endorsed by TMDB.
       </p>

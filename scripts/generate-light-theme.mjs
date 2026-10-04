@@ -1,4 +1,4 @@
-// Generates app/light-theme.css from app/styles.css.
+﻿// Generates app/light-theme.css from app/styles.css.
 //
 // Every colour-bearing declaration in the gallery's styles is re-emitted under
 // .warp-shell[data-theme="light"] with neutrals mapped onto a warm light ramp:
@@ -19,6 +19,7 @@ const THEME = '[data-theme="light"]'
 const INK = [33, 26, 16]
 const CREAM = [247, 240, 225]
 const SHADOW = [110, 78, 34]
+const PAPER = [255, 252, 245]
 const COLOR_PROPS =
   /^(color|background(-color|-image)?|border(-(top|right|bottom|left))?(-color)?|outline(-color)?|box-shadow|fill|stroke|caret-color|text-decoration-color|--[\w-]+)$/
 
@@ -34,18 +35,25 @@ const parseHex = (hex) => {
   return [0, 2, 4].map((i) => Number.parseInt(full.slice(i, i + 2), 16))
 }
 
-// Map one colour; `shadow` keeps darkness for shadows instead of inverting.
-const mapColor = ([r, g, b], alpha, shadow) => {
+// The dock's pills are already light-on-dark in dark mode, so they keep their
+// lightness and only pick up the warm tint instead of being inverted.
+const KEEP_LIGHTNESS =
+  /warp-(mode-toggle|main-nav|filter-button|filter-actions|filter-count|sort-button|info-button|title-card|shuffle-button|grid-icon|list-icon)/
+
+// Map one colour; `shadow` keeps darkness for shadows instead of inverting,
+// and `keep` tints without inverting.
+const mapColor = ([r, g, b], alpha, shadow, keep) => {
   const max = Math.max(r, g, b)
   const min = Math.min(r, g, b)
   const saturation = max === 0 ? 0 : (max - min) / max
   if (saturation > 0.25) return fmt([r, g, b], alpha) // accents stay
   const lightness = (r + g + b) / 3 / 255
   if (shadow && lightness < 0.5) return fmt(SHADOW, (alpha ?? 1) * 0.42)
+  if (keep) return lightness > 0.98 ? fmt(PAPER, alpha) : fmt(mix(lightness), alpha)
   return fmt(mix(1 - lightness), alpha)
 }
 
-const mapValue = (value, shadow) =>
+const mapValue = (value, shadow, keep) =>
   value
     .replace(
       /rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)\s*(?:[/,]\s*([\d.]+%?))?\s*\)/g,
@@ -56,14 +64,14 @@ const mapValue = (value, shadow) =>
             : a.endsWith('%')
               ? Number.parseFloat(a) / 100
               : Number.parseFloat(a)
-        return mapColor([+r, +g, +b], alpha, shadow)
+        return mapColor([+r, +g, +b], alpha, shadow, keep)
       },
     )
     .replace(/#(?:[0-9a-f]{6}|[0-9a-f]{3})\b/gi, (hex) =>
-      mapColor(parseHex(hex), undefined, shadow),
+      mapColor(parseHex(hex), undefined, shadow, keep),
     )
-    .replace(/\bwhite\b/g, fmt(INK))
-    .replace(/\bblack\b/g, fmt(CREAM))
+    .replace(/\bwhite\b/g, keep ? fmt(PAPER) : fmt(INK))
+    .replace(/\bblack\b/g, keep ? fmt(INK) : fmt(CREAM))
 
 const hasColor = (value) => /rgba?\(|#[0-9a-f]{3,6}\b|\bwhite\b|\bblack\b/i.test(value)
 
@@ -76,7 +84,8 @@ const themeSelector = (selector) => {
   return `.warp-shell${THEME} ${s}`
 }
 
-const css = await readFile(sourcePath, 'utf8')
+// Comments are dropped first so their text never leaks into a selector.
+const css = (await readFile(sourcePath, 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '')
 const out = []
 let i = 0
 const stack = [] // open at-rules we are inside
@@ -116,19 +125,21 @@ const walk = (start, end, atContext) => {
       continue
     }
     const body = css.slice(open + 1, close)
-    const declarations = []
-    for (const match of body.matchAll(/(^|;)\s*([\w-]+)\s*:\s*([^;]+)/g)) {
-      const prop = match[2]
-      const value = match[3].trim()
-      if (!COLOR_PROPS.test(prop) || !hasColor(value)) continue
-      declarations.push(`${prop}: ${mapValue(value, prop === 'box-shadow')};`)
-    }
     const selectors = prelude.split(',').map((part) => part.trim())
     const relevant = selectors.filter((sel) => /warp|phantom/.test(sel))
-    if (declarations.length && relevant.length) {
+    for (const keep of [false, true]) {
+      const group = relevant.filter((sel) => KEEP_LIGHTNESS.test(sel) === keep)
+      const declarations = []
+      for (const match of body.matchAll(/(^|;)\s*([\w-]+)\s*:\s*([^;]+)/g)) {
+        const prop = match[2]
+        const value = match[3].trim()
+        if (!COLOR_PROPS.test(prop) || !hasColor(value)) continue
+        declarations.push(`${prop}: ${mapValue(value, prop === 'box-shadow', keep)};`)
+      }
+      if (!declarations.length || !group.length) continue
       out.push({
         context: atContext,
-        rule: `${relevant.map(themeSelector).join(',\n')} {\n${declarations
+        rule: `${group.map(themeSelector).join(',\n')} {\n${declarations
           .map((d) => `  ${d}`)
           .join('\n')}\n}`,
       })
@@ -144,6 +155,8 @@ const stage = `
 /* Stage: tan beige with a cream centre glow and a faint gold edge. */
 .warp-shell${THEME},
 .phantom-test-shell${THEME} {
+  /* Dock pills: warm tan glass, a shade deeper than the stage. */
+  --warp-pill-bg: rgb(234 222 196 / 0.88);
   color-scheme: light;
 }
 

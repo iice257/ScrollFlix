@@ -3384,6 +3384,71 @@
     }
   }
 
+  .warp-about-setting {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0;
+    border: 0;
+    border-top: 1px solid rgb(255 255 255 / 0.08);
+    padding: 12px 0 0;
+    min-width: 0;
+  }
+
+  .warp-about-setting legend {
+    float: left;
+    padding: 0;
+    color: rgb(255 255 255 / 0.82);
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .warp-theme-switch {
+    display: flex;
+    gap: 2px;
+    border: 1px solid rgb(255 255 255 / 0.12);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.05);
+    padding: 3px;
+  }
+
+  .warp-theme-switch button {
+    display: flex;
+    height: 28px;
+    align-items: center;
+    gap: 6px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    padding: 0 12px;
+    color: rgb(255 255 255 / 0.62);
+    font-size: 12px;
+    font-weight: 800;
+    transition:
+      background 160ms ease,
+      color 160ms ease;
+  }
+
+  .warp-theme-switch button svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .warp-theme-switch button:hover {
+    color: #fff;
+  }
+
+  .warp-theme-switch button:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+  }
+
+  .warp-theme-switch button.is-active {
+    background: #fff;
+    color: #050505;
+  }
+
   .warp-about-fineprint {
     margin: 0;
     color: rgb(255 255 255 / 0.45);

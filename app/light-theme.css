@@ -164,55 +164,55 @@
 .warp-shell[data-theme="light"] .warp-mode-toggle,
 .warp-shell[data-theme="light"] .warp-main-nav,
 .warp-shell[data-theme="light"] .warp-filter-button {
-  color: rgb(238 231 216);
+  color: rgb(42 35 25);
 }
 
 .warp-shell[data-theme="light"] .warp-mode-toggle {
-  border: 1px solid rgb(33 26 16 / 0.2);
+  border: 1px solid rgb(255 252 245 / 0.2);
   box-shadow: 0 14px 44px rgb(110 78 34 / 0.143);
 }
 
 .warp-shell[data-theme="light"] .warp-mode-toggle button {
-  color: rgb(233 226 211);
+  color: rgb(47 40 30);
 }
 
 .warp-shell[data-theme="light"] .warp-mode-toggle button[aria-pressed="true"] {
-  background: rgb(33 26 16);
+  background: rgb(255 252 245);
 }
 
 .warp-shell[data-theme="light"] .warp-grid-icon {
-  background: linear-gradient(rgb(218 211 197) 0 0) 0 0 / 7px 7px no-repeat,
-      linear-gradient(rgb(218 211 197) 0 0) 11px 0 / 7px 7px no-repeat,
-      linear-gradient(rgb(218 211 197) 0 0) 0 11px / 7px 7px no-repeat,
-      linear-gradient(rgb(218 211 197) 0 0) 11px 11px / 7px 7px no-repeat;
+  background: linear-gradient(rgb(62 55 44) 0 0) 0 0 / 7px 7px no-repeat,
+      linear-gradient(rgb(62 55 44) 0 0) 11px 0 / 7px 7px no-repeat,
+      linear-gradient(rgb(62 55 44) 0 0) 0 11px / 7px 7px no-repeat,
+      linear-gradient(rgb(62 55 44) 0 0) 11px 11px / 7px 7px no-repeat;
 }
 
 .warp-shell[data-theme="light"] .warp-list-icon {
-  background: linear-gradient(rgb(218 211 197) 0 0) 0 2px / 18px 2px no-repeat,
-      linear-gradient(rgb(218 211 197) 0 0) 0 8px / 18px 2px no-repeat,
-      linear-gradient(rgb(218 211 197) 0 0) 0 14px / 18px 2px no-repeat;
+  background: linear-gradient(rgb(62 55 44) 0 0) 0 2px / 18px 2px no-repeat,
+      linear-gradient(rgb(62 55 44) 0 0) 0 8px / 18px 2px no-repeat,
+      linear-gradient(rgb(62 55 44) 0 0) 0 14px / 18px 2px no-repeat;
 }
 
 .warp-shell[data-theme="light"] .warp-main-nav button {
-  color: rgb(233 226 211);
+  color: rgb(47 40 30);
 }
 
 .warp-shell[data-theme="light"] .warp-main-nav button.is-active {
-  background: rgb(33 26 16);
+  background: rgb(255 252 245);
 }
 
 .warp-shell[data-theme="light"] .warp-main-nav button span,
 .warp-shell[data-theme="light"] .warp-filter-count {
-  background: rgb(247 240 225 / 0.12);
+  background: rgb(33 26 16 / 0.12);
 }
 
 .warp-shell[data-theme="light"] .warp-filter-button.is-open {
-  background: rgb(33 26 16);
-  color: rgb(247 240 225);
+  background: rgb(255 252 245);
+  color: rgb(33 26 16);
 }
 
 .warp-shell[data-theme="light"] .warp-dock .warp-filter-actions .warp-filter-button.is-open {
-  background: rgb(33 26 16);
+  background: rgb(255 252 245);
 }
 
 .warp-shell[data-theme="light"] .warp-filter-clear {
@@ -225,15 +225,14 @@
   background: rgb(209 52 56);
 }
 
-.warp-shell[data-theme="light"] and its panel. */
-  .warp-sort-button {
-  color: rgb(238 231 216);
+.warp-shell[data-theme="light"] .warp-sort-button {
+  color: rgb(42 35 25);
 }
 
 .warp-shell[data-theme="light"] .warp-sort-button:hover,
 .warp-shell[data-theme="light"] .warp-sort-button:focus-visible,
 .warp-shell[data-theme="light"] .warp-sort-button.is-open {
-  background: rgb(33 26 16);
+  background: rgb(255 252 245);
 }
 
 .warp-shell[data-theme="light"] .warp-sort-badge {
@@ -315,8 +314,7 @@
   color: rgb(247 240 225);
 }
 
-.warp-shell[data-theme="light"] /* A ticked key still waiting for its direction. */
-  .warp-sort-row.is-pending .warp-sort-direction {
+.warp-shell[data-theme="light"] .warp-sort-row.is-pending .warp-sort-direction {
   border-color: rgb(33 26 16 / 0.5);
 }
 
@@ -336,21 +334,19 @@
   background: rgb(209 52 56);
 }
 
-.warp-shell[data-theme="light"] /* About lives behind this button (bottom-right). */
-  .warp-info-button {
-  border: 1px solid rgb(33 26 16 / 0.2);
-  color: rgb(238 231 216);
+.warp-shell[data-theme="light"] .warp-info-button {
+  border: 1px solid rgb(255 252 245 / 0.2);
+  color: rgb(42 35 25);
   box-shadow: 0 14px 44px rgb(110 78 34 / 0.143);
 }
 
 .warp-shell[data-theme="light"] .warp-info-button:hover,
 .warp-shell[data-theme="light"] .warp-info-button:focus-visible,
 .warp-shell[data-theme="light"] .warp-info-button.is-active {
-  background: rgb(33 26 16);
+  background: rgb(255 252 245);
 }
 
-.warp-shell[data-theme="light"] /* Loading screen: Skip reveals the globe with whatever has loaded so far. */
-  .warp-preloader-skip {
+.warp-shell[data-theme="light"] .warp-preloader-skip {
   border: 1px solid rgb(33 26 16 / 0.22);
   background: rgb(33 26 16 / 0.1);
   color: rgb(33 26 16);
@@ -365,8 +361,7 @@
   color: rgb(33 26 16 / 0.5);
 }
 
-.warp-shell[data-theme="light"] /* Watch card: About link at the very bottom. */
-  .warp-watch-about {
+.warp-shell[data-theme="light"] .warp-watch-about {
   border-top: 1px solid rgb(33 26 16 / 0.1);
   color: rgb(33 26 16 / 0.6);
 }
@@ -377,26 +372,26 @@
 }
 
 .warp-shell[data-theme="light"] .warp-title-card {
-  border: 1px solid rgb(33 26 16 / 0.2);
-  color: rgb(238 231 216);
+  border: 1px solid rgb(255 252 245 / 0.2);
+  color: rgb(42 35 25);
   box-shadow: 0 14px 44px rgb(110 78 34 / 0.143);
 }
 
 .warp-shell[data-theme="light"] .warp-title-card:hover,
 .warp-shell[data-theme="light"] .warp-title-card:focus-visible {
-  background: rgb(33 26 16);
+  background: rgb(255 252 245);
 }
 
 .warp-shell[data-theme="light"] .warp-title-card-meta {
-  color: rgb(247 240 225 / 0.58);
+  color: rgb(33 26 16 / 0.58);
 }
 
 .warp-shell[data-theme="light"] .warp-shuffle-button {
-  color: rgb(238 231 216);
+  color: rgb(42 35 25);
 }
 
 .warp-shell[data-theme="light"] .warp-shuffle-button:not(:disabled):hover {
-  background: rgb(33 26 16);
+  background: rgb(255 252 245);
 }
 
 .warp-shell[data-theme="light"] .warp-gesture-debug {
@@ -843,8 +838,7 @@
   color: rgb(247 240 225 / 0.42);
 }
 
-.warp-shell[data-theme="light"] compact: a quick reference that rises from the i button. */
-  .warp-about-drawer {
+.warp-shell[data-theme="light"] .warp-about-drawer {
   border: 1px solid rgb(33 26 16 / 0.14);
   background: rgb(239 232 217 / 0.94);
   color: rgb(33 26 16);
@@ -880,6 +874,36 @@
   color: rgb(33 26 16);
 }
 
+.warp-shell[data-theme="light"] .warp-about-setting {
+  border-top: 1px solid rgb(33 26 16 / 0.08);
+}
+
+.warp-shell[data-theme="light"] .warp-about-setting legend {
+  color: rgb(33 26 16 / 0.82);
+}
+
+.warp-shell[data-theme="light"] .warp-theme-switch {
+  border: 1px solid rgb(33 26 16 / 0.12);
+  background: rgb(33 26 16 / 0.05);
+}
+
+.warp-shell[data-theme="light"] .warp-theme-switch button {
+  color: rgb(33 26 16 / 0.62);
+}
+
+.warp-shell[data-theme="light"] .warp-theme-switch button:hover {
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-theme-switch button:focus-visible {
+  outline: 2px solid rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-theme-switch button.is-active {
+  background: rgb(33 26 16);
+  color: rgb(243 236 221);
+}
+
 .warp-shell[data-theme="light"] .warp-about-fineprint {
   color: rgb(33 26 16 / 0.45);
 }
@@ -893,8 +917,7 @@
   outline: 2px solid rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"] expanded: a full page with the poster wall as its header. */
-  .warp-about-page {
+.warp-shell[data-theme="light"] .warp-about-page {
   background: rgb(241 234 219);
   color: rgb(33 26 16);
 }
@@ -981,21 +1004,21 @@
   }
   
   .warp-shell[data-theme="light"] .warp-mode-toggle {
-    border: 1px solid rgb(33 26 16 / 0.2);
+    border: 1px solid rgb(255 252 245 / 0.2);
     box-shadow: 0 14px 44px rgb(110 78 34 / 0.143);
   }
   
   .warp-shell[data-theme="light"] .warp-grid-icon {
-    background: linear-gradient(rgb(218 211 197) 0 0) 0 0 / 5px 5px no-repeat,
-          linear-gradient(rgb(218 211 197) 0 0) 7px 0 / 5px 5px no-repeat,
-          linear-gradient(rgb(218 211 197) 0 0) 0 7px / 5px 5px no-repeat,
-          linear-gradient(rgb(218 211 197) 0 0) 7px 7px / 5px 5px no-repeat;
+    background: linear-gradient(rgb(62 55 44) 0 0) 0 0 / 5px 5px no-repeat,
+          linear-gradient(rgb(62 55 44) 0 0) 7px 0 / 5px 5px no-repeat,
+          linear-gradient(rgb(62 55 44) 0 0) 0 7px / 5px 5px no-repeat,
+          linear-gradient(rgb(62 55 44) 0 0) 7px 7px / 5px 5px no-repeat;
   }
   
   .warp-shell[data-theme="light"] .warp-list-icon {
-    background: linear-gradient(rgb(218 211 197) 0 0) 0 1px / 12px 2px no-repeat,
-          linear-gradient(rgb(218 211 197) 0 0) 0 5px / 12px 2px no-repeat,
-          linear-gradient(rgb(218 211 197) 0 0) 0 9px / 12px 2px no-repeat;
+    background: linear-gradient(rgb(62 55 44) 0 0) 0 1px / 12px 2px no-repeat,
+          linear-gradient(rgb(62 55 44) 0 0) 0 5px / 12px 2px no-repeat,
+          linear-gradient(rgb(62 55 44) 0 0) 0 9px / 12px 2px no-repeat;
   }
   
   .warp-shell[data-theme="light"] .warp-details-card {
@@ -1021,6 +1044,8 @@
 /* Stage: tan beige with a cream centre glow and a faint gold edge. */
 .warp-shell[data-theme="light"],
 .phantom-test-shell[data-theme="light"] {
+  /* Dock pills: warm tan glass, a shade deeper than the stage. */
+  --warp-pill-bg: rgb(234 222 196 / 0.88);
   color-scheme: light;
 }
 
