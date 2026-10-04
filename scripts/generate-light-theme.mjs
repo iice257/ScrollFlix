@@ -189,6 +189,11 @@ const stage = `
   fill: rgb(247 240 225);
 }
 
+.warp-shell${THEME} .warp-details-backdrop {
+  /* Keep the gallery visible beneath the blur instead of washing it out. */
+  background: rgb(17 31 52 / 0.42);
+}
+
 /* Shuffle Pro deliberately keeps its night-sky treatment in light mode. */
 .warp-shell${THEME}[data-shuffle-pro-phase="transition"] .warp-wall,
 .warp-shell${THEME}[data-shuffle-pro-phase="transition"] .warp-infinite-menu {

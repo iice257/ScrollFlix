@@ -1129,8 +1129,8 @@ export const TestGalleryApp = () => {
 
   useEffect(() => {
     const showOnFirstInteraction = (event: Event) => {
+      if (mode !== 'wall' || detailsMovieId) return
       if (event.type === 'keydown') {
-        if (mode !== 'wall' || detailsMovieId) return
         const key = (event as KeyboardEvent).key
         if (
           !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(
@@ -1140,23 +1140,18 @@ export const TestGalleryApp = () => {
           return
       }
       const target = event.target
-      if (target instanceof Element) {
-        if (target.closest('.warp-fullscreen-control')) return
-        if (
-          (event.type === 'pointerdown' || event.type === 'wheel') &&
-          !target.closest('.warp-wall, .warp-dock, .warp-title-card')
-        ) {
-          return
-        }
-      }
+      if (target instanceof Element && target.closest('.warp-fullscreen-control'))
+        return
       promptFullscreenHint()
     }
 
     document.addEventListener('pointerdown', showOnFirstInteraction, true)
+    document.addEventListener('click', showOnFirstInteraction, true)
     document.addEventListener('wheel', showOnFirstInteraction, true)
     window.addEventListener('keydown', showOnFirstInteraction, true)
     return () => {
       document.removeEventListener('pointerdown', showOnFirstInteraction, true)
+      document.removeEventListener('click', showOnFirstInteraction, true)
       document.removeEventListener('wheel', showOnFirstInteraction, true)
       window.removeEventListener('keydown', showOnFirstInteraction, true)
     }
