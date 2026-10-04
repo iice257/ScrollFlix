@@ -472,8 +472,12 @@ describe('shouldHandleGalleryKey', () => {
     ).toBe(true)
   })
 
+  it('allows shuffle shortcuts in index mode', () => {
+    expect(shouldHandleGalleryKey({ ...base, mode: 'list' })).toBe(true)
+  })
+
   it.each<[string, Partial<GalleryKeyState>]>([
-    ['index mode', { mode: 'list' }],
+    ['index mode open shortcut', { mode: 'list', key: 'open' }],
     ['filters mode', { mode: 'filters' }],
     ['gallery not ready', { galleryReady: false }],
     ['an overlay open', { overlayOpen: true }],

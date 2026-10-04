@@ -36,9 +36,25 @@ type InfiniteMovieMenuProps<T> = {
   onMovingChange?: (moving: boolean) => void
   onOpenItem?: (item: InfiniteMovieMenuItem<T>) => void
   // Spin to this item, then open it (Shuffle). The nonce re-triggers repeats.
-  spinRequest?: { itemId: string; nonce: number } | null
+  spinRequest?: {
+    itemId: string
+    nonce: number
+    shuffleProAutomatic?: boolean
+    shuffleProAutomaticVariant?: 'standard' | 'rare' | 'max'
+  } | null
   onReady?: () => void
   onUserSpin?: () => void
+  onShuffleProPhase?: (
+    phase: 'spinning' | 'transition' | null,
+    variant?: 'standard' | 'rare' | 'max',
+  ) => void
+  onShuffleProRelease?: (
+    transitioned: boolean,
+    variant: 'standard' | 'rare' | 'max',
+  ) => void
+  onNonShuffleInteraction?: () => void
+  onSpinGestureEnd?: (kind: 'quick' | 'hold' | null) => void
+  isShuffleProMax?: boolean
 }
 
 type Vec2 = [number, number]
@@ -73,6 +89,18 @@ const DETAIL_CLOSE_EASE_MS = 460
 // ?gesture-debug in the URL.
 const HOLD_TO_DRAG_MS = 220
 const CLICK_MOVE_TOLERANCE_PX = 8
+const SHUFFLE_PRO_MOVE_TOLERANCE_PX = 8
+const SHUFFLE_PRO_STATIONARY_MS = 5000
+const SHUFFLE_PRO_MOVING_MS = 10000
+const SHUFFLE_PRO_TRANSITION_MS = 5000
+const SHUFFLE_PRO_MAX_SPEED = 0.00042
+const SHUFFLE_PRO_MAX_TRANSITION_MS = 2300
+const SHUFFLE_PRO_MAX_SPEED_CAP = 0.00062
+const SHUFFLE_PRO_BLUR_THRESHOLD = 0.35
+const SHUFFLE_PRO_BLUR_CAP_PX = 1.5
+const SHUFFLE_PRO_MIN_SCALE = 0.7
+const GLOBE_BLUR_VELOCITY_THRESHOLD = 0.015
+const GLOBE_BLUR_VELOCITY_CAP = 0.06
 // Shuffle: snap strength while spinning to a poster, and how close (cosine of
 // the angle to the centre) counts as arrived before the card opens.
 const SPIN_SNAP_STRENGTH = 0.085
@@ -113,6 +141,12 @@ type PressState = {
   startTime: number
   x: number
   y: number
+  shuffleProStarted?: boolean
+  shuffleProTransitioned?: boolean
+  shuffleProVariant?: 'standard' | 'rare' | 'max'
+  shuffleProTimer?: number | null
+  transitionTimer?: number | null
+  autoTarget?: InfiniteMovieMenuItem<unknown>
 }
 const NUDGE_RELEASE_MS = 140
 const WHEEL_NUDGE_SCALE = 0.6
@@ -820,6 +854,9 @@ class ArcballControl {
 
   private pointerPos: Vec2 = [0, 0]
   private previousPointerPos: Vec2 = [0, 0]
+  private previousMoveAt = 0
+  private pointerVelocityPxMs = 0
+  private releaseDecayMs = 170
   private combinedQuat: Quat = identityQuat()
   private smoothedRotationVelocity = 0
   private readonly cleanupHandlers: Array<() => void> = []
@@ -838,6 +875,8 @@ class ArcballControl {
   beginDrag(clientX: number, clientY: number, pointerId?: number) {
     this.pointerPos = [clientX, clientY]
     this.previousPointerPos = [...this.pointerPos]
+    this.previousMoveAt = performance.now()
+    this.pointerVelocityPxMs = 0
     this.isPointerDown = true
     if (pointerId !== undefined) {
       try {
@@ -849,11 +888,28 @@ class ArcballControl {
   }
 
   moveDrag(clientX: number, clientY: number) {
-    if (this.isPointerDown) this.pointerPos = [clientX, clientY]
+    if (!this.isPointerDown) return
+    const now = performance.now()
+    const deltaTime = now - this.previousMoveAt
+    if (deltaTime > 0 && deltaTime < 120) {
+      const distance = Math.hypot(
+        clientX - this.pointerPos[0],
+        clientY - this.pointerPos[1],
+      )
+      const speed = Math.min(1.6, distance / Math.max(8, deltaTime))
+      this.pointerVelocityPxMs = this.pointerVelocityPxMs * 0.35 + speed * 0.65
+    } else if (deltaTime >= 120) {
+      this.pointerVelocityPxMs = 0
+    }
+    this.pointerPos = [clientX, clientY]
+    this.previousMoveAt = now
   }
 
   endDrag(pointerId?: number) {
     this.isPointerDown = false
+    const releaseSpeed = this.pointerVelocityPxMs
+    this.releaseDecayMs = 150 + Math.min(1, releaseSpeed / 1.4) * 240
+    this.pointerVelocityPxMs = 0
     if (pointerId !== undefined) {
       try {
         this.canvas.releasePointerCapture?.(pointerId)
@@ -861,10 +917,12 @@ class ArcballControl {
         // Browsers throw when capture was already released or never acquired.
       }
     }
+    return releaseSpeed
   }
 
   cancelDrag(pointerId?: number) {
     this.pointerRotation = slerpQuat(this.pointerRotation, identityQuat(), 0.35)
+    this.pointerVelocityPxMs = 0
     this.endDrag(pointerId)
   }
 
@@ -909,7 +967,9 @@ class ArcballControl {
         )
       }
     } else {
-      const intensity = 0.1 * timeScale
+      // Keep a little more momentum after a fast release. The decay is capped
+      // so a flick feels lively without letting the globe spin away forever.
+      const intensity = 1 - Math.exp(-deltaTime / this.releaseDecayMs)
       this.pointerRotation = slerpQuat(
         this.pointerRotation,
         identityQuat(),
@@ -1046,6 +1106,7 @@ class InfiniteMovieEngine<T> {
     private readonly onMovementChange: (moving: boolean) => void,
     private readonly onLoadProgress: (percent: number) => void,
     private readonly onFatalError: (message: string) => void,
+    private readonly onRotationVelocity: (velocity: number) => void,
   ) {
     const gl = canvas.getContext('webgl2', {
       alpha: true,
@@ -1193,10 +1254,17 @@ class InfiniteMovieEngine<T> {
   }
 
   endPointerDrag(pointerId?: number) {
-    this.control.endDrag(pointerId)
+    return this.control.endDrag(pointerId)
   }
 
   cancelPointerDrag(pointerId?: number) {
+    this.control.cancelDrag(pointerId)
+  }
+
+  stopNudge(pointerId?: number) {
+    if (this.nudgeTimer) window.clearTimeout(this.nudgeTimer)
+    this.nudgeTimer = null
+    this.nudgePos = null
     this.control.cancelDrag(pointerId)
   }
 
@@ -1792,6 +1860,7 @@ class InfiniteMovieEngine<T> {
   private animate(deltaTime: number) {
     const gl = this.gl
     this.control.update(deltaTime)
+    this.onRotationVelocity(this.control.rotationVelocity)
     const detailStep = 1 - Math.exp(-deltaTime / this.detailEaseMs)
     this.detailProgress +=
       (this.detailTargetProgress - this.detailProgress) * detailStep
@@ -2078,6 +2147,11 @@ export const InfiniteMovieMenu = <T,>({
   onOpenItem,
   onReady,
   onUserSpin,
+  onShuffleProPhase,
+  onShuffleProRelease,
+  onNonShuffleInteraction,
+  onSpinGestureEnd,
+  isShuffleProMax = false,
   spinRequest = null,
 }: InfiniteMovieMenuProps<T>) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -2089,6 +2163,16 @@ export const InfiniteMovieMenu = <T,>({
   const isActiveRef = useRef(isActive)
   isActiveRef.current = isActive
   const pressRef = useRef<PressState | null>(null)
+  const onShuffleProPhaseRef = useRef(onShuffleProPhase)
+  onShuffleProPhaseRef.current = onShuffleProPhase
+  const onShuffleProReleaseRef = useRef(onShuffleProRelease)
+  onShuffleProReleaseRef.current = onShuffleProRelease
+  const onSpinGestureEndRef = useRef(onSpinGestureEnd)
+  onSpinGestureEndRef.current = onSpinGestureEnd
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
+  const prefersReducedMotionRef = useRef(prefersReducedMotion)
+  prefersReducedMotionRef.current = prefersReducedMotion
+  const shuffleProFrameRef = useRef<number | null>(null)
   const tuningRef = useRef<GestureTuning>({
     regionCenterY: HIT_REGION_CENTER_Y,
     regionRx: HIT_REGION_RX,
@@ -2103,6 +2187,14 @@ export const InfiniteMovieMenu = <T,>({
   )
   const [isHoldPrimed, setIsHoldPrimed] = useState(false)
   const [webglError, setWebglError] = useState('')
+
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const update = () => setPrefersReducedMotion(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
 
   useEffect(() => {
     const nextActive =
@@ -2141,6 +2233,26 @@ export const InfiniteMovieMenu = <T,>({
           setWebglError(message)
           onLoadProgress?.(100)
           onReady?.()
+        },
+        (velocity) => {
+          const canvasElement = canvasRef.current
+          if (!canvasElement || pressRef.current?.shuffleProStarted) return
+          if (prefersReducedMotionRef.current) {
+            canvasElement.style.removeProperty('--shuffle-pro-blur')
+            return
+          }
+          const blurProgress = Math.max(
+            0,
+            Math.min(
+              1,
+              (Math.abs(velocity) - GLOBE_BLUR_VELOCITY_THRESHOLD) /
+                (GLOBE_BLUR_VELOCITY_CAP - GLOBE_BLUR_VELOCITY_THRESHOLD),
+            ),
+          )
+          canvasElement.style.setProperty(
+            '--shuffle-pro-blur',
+            `${blurProgress * SHUFFLE_PRO_BLUR_CAP_PX}px`,
+          )
         },
       )
       engineRef.current = engine
@@ -2301,6 +2413,127 @@ export const InfiniteMovieMenu = <T,>({
     [onUserSpin],
   )
 
+  const startShufflePro = useCallback(
+    (
+      press: PressState,
+      requestedVariant: 'standard' | 'rare' | 'max' = 'standard',
+    ) => {
+      if (press.shuffleProStarted) return
+      const variant =
+        requestedVariant === 'max' || isShuffleProMax ? 'max' : requestedVariant
+      press.shuffleProStarted = true
+      press.shuffleProVariant = variant
+      press.dragging = true
+      press.kind = 'hold'
+      if (press.holdTimer) window.clearTimeout(press.holdTimer)
+      press.holdTimer = null
+      // End direct manipulation before autonomous spin nudges begin.
+      // Stop direct rotation without releasing the canvas capture; pointerup
+      // must still arrive here if the user moves off the globe while holding.
+      engineRef.current?.endPointerDrag()
+      setIsHoldPrimed(true)
+      onUserSpin?.()
+      onShuffleProPhaseRef.current?.('spinning', variant)
+      const startedAt = performance.now()
+      let lastAt = startedAt
+      const speedCap =
+        variant === 'max' ? SHUFFLE_PRO_MAX_SPEED_CAP : SHUFFLE_PRO_MAX_SPEED
+      const rampDuration = variant === 'max' ? 1450 : 2800
+      const animate = (time: number) => {
+        const elapsed = Math.min(48, time - lastAt)
+        lastAt = time
+        const progress = Math.min(1, (time - startedAt) / rampDuration)
+        if (!prefersReducedMotion) {
+          const velocity = Math.min(speedCap, progress * speedCap)
+          const px =
+            Math.min(
+              variant === 'max' ? 18 : 12,
+              (velocity / speedCap) * (variant === 'max' ? 18 : 12),
+            ) *
+            (elapsed / (1000 / 60))
+          engineRef.current?.nudge(px, px * 0.42)
+          const speedRatio = velocity / speedCap
+          const blurProgress = Math.max(
+            0,
+            (speedRatio - SHUFFLE_PRO_BLUR_THRESHOLD) /
+              (1 - SHUFFLE_PRO_BLUR_THRESHOLD),
+          )
+          const canvas = canvasRef.current
+          canvas?.style.setProperty(
+            '--shuffle-pro-scale',
+            String(1 - speedRatio * (1 - SHUFFLE_PRO_MIN_SCALE)),
+          )
+          canvas?.style.setProperty(
+            '--shuffle-pro-blur',
+            `${blurProgress * SHUFFLE_PRO_BLUR_CAP_PX}px`,
+          )
+        } else {
+          // Let the reduced-motion stylesheet provide its gentle pulse.
+          canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
+          canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
+        }
+        if (pressRef.current === press && press.shuffleProStarted) {
+          shuffleProFrameRef.current = window.requestAnimationFrame(animate)
+        }
+      }
+      shuffleProFrameRef.current = window.requestAnimationFrame(animate)
+      press.transitionTimer = window.setTimeout(
+        () => {
+          if (pressRef.current !== press || !press.shuffleProStarted) return
+          press.shuffleProTransitioned = true
+          onShuffleProPhaseRef.current?.('transition', variant)
+          if (press.autoTarget) {
+            const item = press.autoTarget as InfiniteMovieMenuItem<T>
+            const engine = engineRef.current
+            if (shuffleProFrameRef.current !== null) {
+              window.cancelAnimationFrame(shuffleProFrameRef.current)
+              shuffleProFrameRef.current = null
+            }
+            engine?.stopNudge()
+            if (engine)
+              engine.spinToItem(item.id, (index) => {
+                activeItemRef.current = item
+                setActiveItem(item)
+                onActiveItemChange(item)
+                engine.setDetailFocus(item.id, true, 'fast', index)
+                onOpenItem?.(item)
+                if (shuffleProFrameRef.current !== null)
+                  window.cancelAnimationFrame(shuffleProFrameRef.current)
+                shuffleProFrameRef.current = null
+                if (pressRef.current === press) pressRef.current = null
+                canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
+                canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
+                onShuffleProPhaseRef.current?.(null, variant)
+              })
+            else {
+              activeItemRef.current = item
+              setActiveItem(item)
+              onActiveItemChange(item)
+              onOpenItem?.(item)
+              if (shuffleProFrameRef.current !== null)
+                window.cancelAnimationFrame(shuffleProFrameRef.current)
+              shuffleProFrameRef.current = null
+              if (pressRef.current === press) pressRef.current = null
+              canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
+              canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
+              onShuffleProPhaseRef.current?.(null, variant)
+            }
+          }
+        },
+        variant === 'max'
+          ? SHUFFLE_PRO_MAX_TRANSITION_MS
+          : SHUFFLE_PRO_TRANSITION_MS,
+      )
+    },
+    [
+      isShuffleProMax,
+      onUserSpin,
+      onActiveItemChange,
+      onOpenItem,
+      prefersReducedMotion,
+    ],
+  )
+
   const openHit = useCallback(
     (hit: PosterHit<T>) => {
       activeItemRef.current = hit.item
@@ -2317,6 +2550,36 @@ export const InfiniteMovieMenu = <T,>({
     if (!spinRequest) return
     const item = items.find((candidate) => candidate.id === spinRequest.itemId)
     if (!item) return
+    if (spinRequest.shuffleProAutomatic) {
+      const press: PressState = {
+        dragging: false,
+        holdTimer: null,
+        kind: 'hold',
+        lastX: 0,
+        lastY: 0,
+        maxMovedPx: 0,
+        pointerId: -1,
+        snapshot: null,
+        startTime: performance.now(),
+        x: 0,
+        y: 0,
+        autoTarget: item as InfiniteMovieMenuItem<unknown>,
+      }
+      pressRef.current = press
+      startShufflePro(press, spinRequest.shuffleProAutomaticVariant ?? 'rare')
+      return () => {
+        if (press.transitionTimer) window.clearTimeout(press.transitionTimer)
+        if (shuffleProFrameRef.current !== null)
+          window.cancelAnimationFrame(shuffleProFrameRef.current)
+        if (pressRef.current === press) pressRef.current = null
+        canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
+        canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
+        onShuffleProPhaseRef.current?.(
+          null,
+          spinRequest.shuffleProAutomaticVariant ?? 'rare',
+        )
+      }
+    }
     const engine = engineRef.current
     if (!engine) {
       // Fallback (no WebGL): nothing to spin, open straight away.
@@ -2336,6 +2599,8 @@ export const InfiniteMovieMenu = <T,>({
   const releasePress = () => {
     const press = pressRef.current
     if (press?.holdTimer) window.clearTimeout(press.holdTimer)
+    if (press?.shuffleProTimer) window.clearTimeout(press.shuffleProTimer)
+    if (press?.transitionTimer) window.clearTimeout(press.transitionTimer)
     pressRef.current = null
     setIsHoldPrimed(false)
     return press
@@ -2345,6 +2610,16 @@ export const InfiniteMovieMenu = <T,>({
     () => () => {
       const timer = pressRef.current?.holdTimer
       if (timer) window.clearTimeout(timer)
+      const press = pressRef.current
+      if (press?.shuffleProTimer) window.clearTimeout(press.shuffleProTimer)
+      if (press?.transitionTimer) window.clearTimeout(press.transitionTimer)
+      if (shuffleProFrameRef.current !== null)
+        window.cancelAnimationFrame(shuffleProFrameRef.current)
+      if (press?.shuffleProStarted)
+        engineRef.current?.stopNudge(press.pointerId)
+      canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
+      canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
+      onShuffleProPhaseRef.current?.(null)
     },
     [],
   )
@@ -2366,6 +2641,10 @@ export const InfiniteMovieMenu = <T,>({
       y: event.clientY,
     }
     pressRef.current = press
+    press.shuffleProTimer = window.setTimeout(
+      () => startShufflePro(press, isShuffleProMax ? 'max' : 'standard'),
+      isShuffleProMax ? 3000 : SHUFFLE_PRO_STATIONARY_MS,
+    )
     try {
       event.currentTarget.setPointerCapture(event.pointerId)
     } catch {
@@ -2409,6 +2688,22 @@ export const InfiniteMovieMenu = <T,>({
     const movedPx = Math.hypot(event.clientX - press.x, event.clientY - press.y)
     press.maxMovedPx = Math.max(press.maxMovedPx, movedPx)
 
+    if (
+      press.maxMovedPx > SHUFFLE_PRO_MOVE_TOLERANCE_PX &&
+      !press.shuffleProStarted
+    ) {
+      if (press.shuffleProTimer) window.clearTimeout(press.shuffleProTimer)
+      const delay = isShuffleProMax ? 3000 : SHUFFLE_PRO_MOVING_MS
+      const remaining = Math.max(
+        0,
+        delay - (performance.now() - press.startTime),
+      )
+      press.shuffleProTimer = window.setTimeout(
+        () => startShufflePro(press, isShuffleProMax ? 'max' : 'standard'),
+        remaining,
+      )
+    }
+    if (press.shuffleProStarted) return
     if (press.dragging) {
       engineRef.current?.movePointerDrag(event.clientX, event.clientY)
       return
@@ -2423,11 +2718,40 @@ export const InfiniteMovieMenu = <T,>({
     const ms = Math.round(performance.now() - press.startTime)
     const movedPx = Math.round(press.maxMovedPx)
 
-    if (press.dragging) {
+    if (press.shuffleProStarted) {
+      if (shuffleProFrameRef.current !== null)
+        window.cancelAnimationFrame(shuffleProFrameRef.current)
+      shuffleProFrameRef.current = null
+      engineRef.current?.stopNudge()
       engineRef.current?.endPointerDrag(press.pointerId)
+      canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
+      canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
+      onShuffleProReleaseRef.current?.(
+        Boolean(press.shuffleProTransitioned),
+        press.shuffleProVariant ?? 'standard',
+      )
+      onShuffleProPhaseRef.current?.(
+        null,
+        press.shuffleProVariant ?? 'standard',
+      )
+      logGesture({ kind: 'hold', ms, movedPx })
+      return
+    }
+
+    if (press.dragging) {
+      if (event.clientX !== press.lastX || event.clientY !== press.lastY) {
+        engineRef.current?.movePointerDrag(event.clientX, event.clientY)
+      }
+      const releaseSpeed =
+        engineRef.current?.endPointerDrag(press.pointerId) ?? 0
+      const isQuickSpin = releaseSpeed >= 0.55
+      onSpinGestureEndRef.current?.(isQuickSpin ? 'quick' : null)
+      if (!isQuickSpin) onNonShuffleInteraction?.()
       logGesture({ kind: press.kind ?? 'drag', ms, movedPx })
       return
     }
+
+    onNonShuffleInteraction?.()
 
     const engine = engineRef.current
     const { regionCenterY, regionRx, regionRy } = tuningRef.current
@@ -2467,6 +2791,17 @@ export const InfiniteMovieMenu = <T,>({
     if (pressRef.current?.pointerId !== event.pointerId) return
     const press = releasePress()
     if (press?.dragging) engineRef.current?.cancelPointerDrag(press.pointerId)
+    if (press?.shuffleProStarted) {
+      if (shuffleProFrameRef.current !== null)
+        window.cancelAnimationFrame(shuffleProFrameRef.current)
+      shuffleProFrameRef.current = null
+      engineRef.current?.stopNudge(press.pointerId)
+      canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
+      canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
+      onShuffleProPhaseRef.current?.(null, press.shuffleProVariant)
+      onSpinGestureEndRef.current?.(null)
+    } else if (press?.dragging) onSpinGestureEndRef.current?.(null)
+    onNonShuffleInteraction?.()
     if (GESTURE_DEBUG) setDebugPick(null)
   }
 
@@ -2486,6 +2821,14 @@ export const InfiniteMovieMenu = <T,>({
           ref={canvasRef}
           className='warp-infinite-menu-canvas'
           aria-label='Infinite movie poster menu'
+          style={{
+            touchAction: 'none',
+            userSelect: 'none',
+            WebkitTouchCallout: 'none',
+            WebkitUserSelect: 'none',
+            filter: 'blur(var(--shuffle-pro-blur, 0px))',
+            transition: 'none',
+          }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerCancel={handlePointerCancel}

@@ -1,5 +1,7 @@
 import {
   ArrowDown,
+  ArrowLeft,
+  ArrowRight,
   ArrowUp,
   ArrowUpDown,
   Check,
@@ -110,9 +112,12 @@ const DETAILS_CLOSE_DRAG_PX = 68
 const DETAILS_COMPACT_DRAG_PX = 38
 const EXIT_ANIMATION_MS = 220
 const SPIN_HINT_STORAGE_KEY = 'wtw:spin-hint-seen'
+const FULLSCREEN_HINT_STORAGE_KEY = 'wtw:fullscreen-hint-seen'
 const THEME_STORAGE_KEY = 'wtw:theme'
 
 type Theme = 'dark' | 'light'
+type ShuffleProVariant = 'standard' | 'rare' | 'max'
+type ShuffleProPhase = 'spinning' | 'transition'
 
 const readTheme = (): Theme => {
   try {
@@ -216,21 +221,25 @@ export type GalleryKeyState = {
   mode: string
   galleryReady: boolean
   overlayOpen: boolean
+  detailsOpen?: boolean
   hasTarget: boolean
   repeat: boolean
   hasModifier: boolean
   activeElementKind: 'body' | 'canvas' | 'interactive'
 }
 
-// Space/Enter shortcuts only act when nothing else owns the key press.
+// Space can reshuffle through a details card; other overlays own the shortcut.
 export const shouldHandleGalleryKey = (state: GalleryKeyState) =>
-  state.mode === 'wall' &&
+  (state.mode === 'wall' ||
+    (state.mode === 'list' && state.key === 'shuffle')) &&
   state.galleryReady &&
   !state.overlayOpen &&
+  (!state.detailsOpen || state.key === 'shuffle') &&
   state.hasTarget &&
   !state.repeat &&
   !state.hasModifier &&
-  state.activeElementKind !== 'interactive'
+  (state.activeElementKind !== 'interactive' ||
+    Boolean(state.detailsOpen && state.key === 'shuffle'))
 
 const getActiveElementKind = (): GalleryKeyState['activeElementKind'] => {
   const element = document.activeElement
@@ -1023,6 +1032,12 @@ const loadMovieDataset = () => {
 }
 
 export const TestGalleryApp = () => {
+  const isMobileViewport = useMediaQuery('(max-width: 900px)')
+  const shellRef = useRef<HTMLElement | null>(null)
+  const fullscreenHintTimerRef = useRef<number | null>(null)
+  const [isFullscreenActive, setIsFullscreenActive] = useState(false)
+  const [showFullscreenHint, setShowFullscreenHint] = useState(false)
+  const [proMaxActive, setProMaxActive] = useState(false)
   const [movies, setMovies] = useState<TestMovie[]>(cachedMovieDataset ?? [])
   const [mode, setMode] = useState<ViewMode>('wall')
   const [sortRules, setSortRules] = useState<SortRule[]>([
@@ -1030,6 +1045,7 @@ export const TestGalleryApp = () => {
   ])
   const [sortOpen, setSortOpen] = useState(false)
   const [listRandomNonce, setListRandomNonce] = useState(0)
+  const reopenDetailsAfterListShuffleRef = useRef(false)
   const [activeMovieId, setActiveMovieId] = useState<string | null>(
     cachedMovieDataset?.[0]?.id ?? null,
   )
@@ -1057,6 +1073,104 @@ export const TestGalleryApp = () => {
   const [timeLabel, setTimeLabel] = useState('')
   const [isGlobeMoving, setIsGlobeMoving] = useState(false)
   const [theme, setTheme] = useState<Theme>(readTheme)
+  const [shuffleProPresentation, setShuffleProPresentation] = useState<{
+    phase: ShuffleProPhase
+    variant: ShuffleProVariant
+  } | null>(null)
+  const [premiumSuggestion, setPremiumSuggestion] = useState<{
+    movieId: string
+    variant: ShuffleProVariant
+  } | null>(null)
+  const shuffleStreakRef = useRef(0)
+  const proComboStreakRef = useRef(0)
+  const quickSpinStreakRef = useRef(0)
+  const resetShuffleStreak = useCallback(() => {
+    shuffleStreakRef.current = 0
+    proComboStreakRef.current = 0
+    quickSpinStreakRef.current = 0
+  }, [])
+
+  useEffect(() => {
+    const syncFullscreen = () => {
+      const active = document.fullscreenElement === shellRef.current
+      setIsFullscreenActive(active)
+      setProMaxActive(active && isMobileViewport)
+    }
+    document.addEventListener('fullscreenchange', syncFullscreen)
+    syncFullscreen()
+    return () =>
+      document.removeEventListener('fullscreenchange', syncFullscreen)
+  }, [isMobileViewport])
+
+  useEffect(
+    () => () => {
+      if (fullscreenHintTimerRef.current !== null)
+        window.clearTimeout(fullscreenHintTimerRef.current)
+    },
+    [],
+  )
+
+  const promptFullscreenHint = useCallback(() => {
+    if (!isMobileViewport || isFullscreenActive || showFullscreenHint) return
+    try {
+      if (window.localStorage.getItem(FULLSCREEN_HINT_STORAGE_KEY)) return
+      window.localStorage.setItem(FULLSCREEN_HINT_STORAGE_KEY, '1')
+    } catch {
+      // Storage can be unavailable (private mode, blocked site data).
+    }
+    setShowFullscreenHint(true)
+    if (fullscreenHintTimerRef.current !== null)
+      window.clearTimeout(fullscreenHintTimerRef.current)
+    fullscreenHintTimerRef.current = window.setTimeout(
+      () => setShowFullscreenHint(false),
+      5000,
+    )
+  }, [isFullscreenActive, isMobileViewport, showFullscreenHint])
+
+  useEffect(() => {
+    const showOnFirstInteraction = (event: Event) => {
+      if (event.type === 'keydown') {
+        if (mode !== 'wall' || detailsMovieId) return
+        const key = (event as KeyboardEvent).key
+        if (
+          !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(
+            key,
+          )
+        )
+          return
+      }
+      const target = event.target
+      if (target instanceof Element) {
+        if (target.closest('.warp-fullscreen-control')) return
+        if (
+          (event.type === 'pointerdown' || event.type === 'wheel') &&
+          !target.closest('.warp-wall, .warp-dock, .warp-title-card')
+        ) {
+          return
+        }
+      }
+      promptFullscreenHint()
+    }
+
+    document.addEventListener('pointerdown', showOnFirstInteraction, true)
+    document.addEventListener('wheel', showOnFirstInteraction, true)
+    window.addEventListener('keydown', showOnFirstInteraction, true)
+    return () => {
+      document.removeEventListener('pointerdown', showOnFirstInteraction, true)
+      document.removeEventListener('wheel', showOnFirstInteraction, true)
+      window.removeEventListener('keydown', showOnFirstInteraction, true)
+    }
+  }, [detailsMovieId, mode, promptFullscreenHint])
+
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen()
+      else await shellRef.current?.requestFullscreen({ navigationUI: 'hide' })
+    } catch {
+      // Fullscreen is unavailable in embedded or permission-restricted contexts.
+    }
+    setShowFullscreenHint(false)
+  }, [])
 
   const changeTheme = useCallback((nextTheme: Theme) => {
     setTheme(nextTheme)
@@ -1069,6 +1183,8 @@ export const TestGalleryApp = () => {
   const [spinRequest, setSpinRequest] = useState<{
     itemId: string
     nonce: number
+    shuffleProAutomatic?: boolean
+    shuffleProAutomaticVariant?: ShuffleProVariant
   } | null>(null)
   const [spinHintSeen, setSpinHintSeen] = useState(readSpinHintSeen)
 
@@ -1083,6 +1199,11 @@ export const TestGalleryApp = () => {
       return true
     })
   }, [])
+
+  const handleUserSpin = useCallback(() => {
+    markSpinHintSeen()
+    promptFullscreenHint()
+  }, [markSpinHintSeen, promptFullscreenHint])
 
   useEffect(() => {
     let cancelled = false
@@ -1329,6 +1450,9 @@ export const TestGalleryApp = () => {
   const handleOpenMovie = useCallback((movie: TestMovie) => {
     setActiveMovieId(movie.id)
     setDetailsMovieId(movie.id)
+    setPremiumSuggestion((current) =>
+      current?.movieId === movie.id ? current : null,
+    )
     setWatchMovieId(null)
     setFilterOpen(false)
     setAboutOpen(false)
@@ -1341,22 +1465,173 @@ export const TestGalleryApp = () => {
     setFilterOpen(false)
   }, [])
 
-  const handleShuffle = useCallback(() => {
-    const candidates = visibleMovies.filter(
-      (movie) => movie.id !== activeMovieId,
-    )
-    const movie = candidates[Math.floor(Math.random() * candidates.length)]
-    if (!movie) return
-    setFilterOpen(false)
-    setAboutOpen(false)
-    setSpinRequest({ itemId: movie.id, nonce: performance.now() })
-  }, [activeMovieId, visibleMovies])
+  const handleShuffle = useCallback(
+    (
+      options: {
+        premiumVariant?: ShuffleProVariant
+        automatic?: boolean
+        countAction?: boolean
+      } = {},
+    ) => {
+      if (mode === 'list') {
+        shuffleStreakRef.current = 0
+        proComboStreakRef.current = 0
+        quickSpinStreakRef.current = 0
+        setSortOpen(false)
+        reopenDetailsAfterListShuffleRef.current = Boolean(detailsMovieId)
+        setListRandomNonce((nonce) => nonce + 1)
+        setPremiumSuggestion(null)
+        return
+      }
+
+      const candidates = visibleMovies.filter(
+        (movie) => movie.id !== activeMovieId,
+      )
+      const movie = candidates[Math.floor(Math.random() * candidates.length)]
+      if (!movie) return
+      let premiumVariant = options.premiumVariant
+      let shuffleProAutomatic = Boolean(options.automatic)
+      const countAction = options.countAction !== false
+      const nextStreak = countAction ? shuffleStreakRef.current + 1 : 0
+      const nextCombo = countAction ? proComboStreakRef.current + 1 : 0
+      quickSpinStreakRef.current = 0
+      if (
+        countAction &&
+        proMaxActive &&
+        !premiumVariant &&
+        (nextStreak >= 5 || nextCombo >= 6)
+      ) {
+        premiumVariant = 'max'
+        shuffleProAutomatic = true
+        shuffleStreakRef.current = 0
+        proComboStreakRef.current = 0
+      } else if (
+        countAction &&
+        !premiumVariant &&
+        nextCombo >= (proMaxActive ? 6 : 10)
+      ) {
+        premiumVariant = proMaxActive ? 'max' : 'rare'
+        shuffleProAutomatic = true
+        shuffleStreakRef.current = 0
+        proComboStreakRef.current = 0
+      } else if (!premiumVariant && nextStreak >= 10 && Math.random() < 0.05) {
+        premiumVariant = 'rare'
+        shuffleProAutomatic = true
+        shuffleStreakRef.current = 0
+      } else {
+        if (countAction) {
+          shuffleStreakRef.current = nextStreak
+          proComboStreakRef.current = nextCombo
+        }
+      }
+      setPremiumSuggestion(
+        premiumVariant ? { movieId: movie.id, variant: premiumVariant } : null,
+      )
+      setDetailsMovieId(null)
+      setFilterOpen(false)
+      setAboutOpen(false)
+      setSpinRequest({
+        itemId: movie.id,
+        nonce: performance.now(),
+        shuffleProAutomatic,
+        shuffleProAutomaticVariant: shuffleProAutomatic
+          ? premiumVariant
+          : undefined,
+      })
+    },
+    [activeMovieId, detailsMovieId, mode, proMaxActive, visibleMovies],
+  )
+
+  const handleSpinGestureEnd = useCallback(
+    (kind: 'quick' | 'hold' | null) => {
+      shuffleStreakRef.current = 0
+      if (!kind) {
+        proComboStreakRef.current = 0
+        quickSpinStreakRef.current = 0
+        return
+      }
+      proComboStreakRef.current += 1
+      if (kind === 'quick') quickSpinStreakRef.current += 1
+      else quickSpinStreakRef.current = 0
+
+      const quickSpinTarget = proMaxActive ? 3 : 5
+      const comboTarget = proMaxActive ? 6 : 10
+      if (
+        quickSpinStreakRef.current >= quickSpinTarget ||
+        proComboStreakRef.current >= comboTarget
+      ) {
+        const variant: ShuffleProVariant = proMaxActive ? 'max' : 'rare'
+        proComboStreakRef.current = 0
+        quickSpinStreakRef.current = 0
+        shuffleStreakRef.current = 0
+        handleShuffle({
+          premiumVariant: variant,
+          automatic: true,
+          countAction: false,
+        })
+      }
+    },
+    [handleShuffle, proMaxActive],
+  )
+
+  const handleShuffleProPhase = useCallback(
+    (phase: ShuffleProPhase | null, variant?: ShuffleProVariant) => {
+      setShuffleProPresentation(phase && variant ? { phase, variant } : null)
+    },
+    [],
+  )
+
+  const handleShuffleProRelease = useCallback(
+    (transitioned: boolean, variant: ShuffleProVariant) => {
+      setShuffleProPresentation(null)
+      handleShuffle(transitioned ? { premiumVariant: variant } : undefined)
+    },
+    [handleShuffle],
+  )
+
+  useEffect(() => {
+    const resetStreakForOtherActions = (event: Event) => {
+      if (event.type === 'pointerdown') {
+        const target = event.target
+        const pointerEvent = event as PointerEvent
+        if (
+          target instanceof Element &&
+          target.closest('[data-shuffle-action]')
+        ) {
+          return
+        }
+        if (
+          target instanceof Element &&
+          target.closest('.warp-infinite-menu-canvas') &&
+          (pointerEvent.pointerType !== 'mouse' || pointerEvent.button === 0)
+        ) {
+          return
+        }
+      }
+      resetShuffleStreak()
+    }
+
+    document.addEventListener('pointerdown', resetStreakForOtherActions, true)
+    document.addEventListener('wheel', resetStreakForOtherActions, true)
+    return () => {
+      document.removeEventListener(
+        'pointerdown',
+        resetStreakForOtherActions,
+        true,
+      )
+      document.removeEventListener('wheel', resetStreakForOtherActions, true)
+    }
+  }, [resetShuffleStreak])
 
   const handlePickRandomMovie = useCallback((movie: TestMovie) => {
     setActiveMovieId(movie.id)
     setFilterOpen(false)
     setAboutOpen(false)
-    setDetailsMovieId(null)
+    setDetailsMovieId(
+      reopenDetailsAfterListShuffleRef.current ? movie.id : null,
+    )
+    setPremiumSuggestion(null)
+    reopenDetailsAfterListShuffleRef.current = false
   }, [])
 
   useEffect(() => {
@@ -1387,26 +1662,46 @@ export const TestGalleryApp = () => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const isSpace = event.code === 'Space' || event.key === ' '
       const isEnter = event.key === 'Enter'
-      if (!isSpace && !isEnter) return
+      const target = event.target
+      if (
+        target instanceof Element &&
+        target.closest('[data-shuffle-action]')
+      ) {
+        return
+      }
+      if (!isSpace && !isEnter) {
+        shuffleStreakRef.current = 0
+        return
+      }
       const action = isSpace ? 'shuffle' : 'open'
       const allowed = shouldHandleGalleryKey({
         key: action,
         mode,
         galleryReady: initialGalleryReady,
         overlayOpen: Boolean(
-          detailsMovieId || watchMovieId || aboutOpen || filterOpen || sortOpen,
+          watchMovieId || aboutOpen || filterOpen || sortOpen,
         ),
+        detailsOpen: Boolean(detailsMovieId),
         hasTarget:
-          action === 'open' ? Boolean(activeMovie) : visibleMovies.length > 0,
+          action === 'open'
+            ? Boolean(activeMovie)
+            : mode === 'list'
+              ? listMovies.length > 0
+              : visibleMovies.length > 0,
         repeat: event.repeat,
         hasModifier:
           event.ctrlKey || event.altKey || event.metaKey || event.shiftKey,
         activeElementKind: getActiveElementKind(),
       })
-      if (!allowed) return
+      if (!allowed) {
+        shuffleStreakRef.current = 0
+        return
+      }
+      if (action !== 'shuffle') shuffleStreakRef.current = 0
       event.preventDefault()
-      if (action === 'shuffle') handleShuffle()
-      else if (activeMovie) handleOpenMovie(activeMovie)
+      if (action === 'shuffle') {
+        handleShuffle()
+      } else if (activeMovie) handleOpenMovie(activeMovie)
     }
 
     window.addEventListener('keydown', handleKeyDown)
@@ -1419,6 +1714,7 @@ export const TestGalleryApp = () => {
     handleOpenMovie,
     handleShuffle,
     initialGalleryReady,
+    listMovies.length,
     mode,
     sortOpen,
     visibleMovies.length,
@@ -1427,13 +1723,50 @@ export const TestGalleryApp = () => {
 
   return (
     <main
+      ref={shellRef}
       className='phantom-test-shell warp-shell min-h-dvh overflow-hidden bg-black text-white'
       data-details-open={detailsPresence.isPresent ? 'true' : 'false'}
       data-filter-open={filterPresence.isPresent ? 'true' : 'false'}
       data-gallery-ready={initialGalleryReady ? 'true' : 'false'}
       data-mode={mode}
       data-theme={theme}
+      data-shuffle-pro-phase={shuffleProPresentation?.phase}
+      data-shuffle-pro-variant={shuffleProPresentation?.variant}
+      data-immersive={isFullscreenActive ? 'true' : 'false'}
     >
+      {isMobileViewport && mode === 'wall' && !detailsMovieId ? (
+        <div className='warp-fullscreen-control'>
+          <button
+            type='button'
+            className='warp-fullscreen-button'
+            aria-label={
+              isFullscreenActive ? 'Exit full screen' : 'Go full screen'
+            }
+            aria-pressed={isFullscreenActive}
+            onClick={() => void toggleFullscreen()}
+          >
+            {isFullscreenActive ? (
+              <Minimize2 aria-hidden='true' size={18} />
+            ) : (
+              <Maximize2 aria-hidden='true' size={18} />
+            )}
+          </button>
+          {showFullscreenHint ? (
+            <span className='warp-fullscreen-tip' role='tooltip'>
+              Go full screen for maximum immersion
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      <output className='warp-shuffle-pro-announcement' aria-live='polite'>
+        {shuffleProPresentation?.phase === 'transition'
+          ? shuffleProPresentation.variant === 'rare'
+            ? 'The stars have chosen your pick.'
+            : shuffleProPresentation.variant === 'max'
+              ? 'Release to reveal your Shuffle Pro Max pick.'
+              : 'Release to reveal your Shuffle Pro pick.'
+          : ''}
+      </output>
       {/* Stays mounted in other views so returning to the gallery is instant. */}
       <WarpWall
         activeMovieId={activeMovie?.id ?? null}
@@ -1446,8 +1779,13 @@ export const TestGalleryApp = () => {
         onOpenMovie={handleOpenMovie}
         onReady={handleGalleryReady}
         onSelectMovie={handleSelectMovie}
-        onUserSpin={markSpinHintSeen}
+        onUserSpin={handleUserSpin}
         spinRequest={spinRequest}
+        onShuffleProPhase={handleShuffleProPhase}
+        onShuffleProRelease={handleShuffleProRelease}
+        onNonShuffleInteraction={resetShuffleStreak}
+        onSpinGestureEnd={handleSpinGestureEnd}
+        isShuffleProMax={proMaxActive}
       />
 
       {mode === 'list' ? (
@@ -1511,13 +1849,61 @@ export const TestGalleryApp = () => {
           mode === 'wall' ? (
             <>
               {initialGalleryReady && !spinHintSeen && !detailsMovieId ? (
-                <div className='warp-spin-hint' role='note'>
-                  <span className='warp-spin-hint-keys' aria-hidden='true'>
-                    <kbd>↑</kbd>
-                    <kbd>↓</kbd>
-                  </span>
+                <div
+                  className='warp-spin-hint max-[900px]:hidden'
+                  role='note'
+                  aria-label='Use the up, down, left, and right arrow keys to scroll. Hit Spacebar to shuffle, Escape to cancel or return, and Enter to select.'
+                >
                   <span className='warp-spin-hint-pointer'>
-                    Scroll or ↑↓ to spin · Space shuffles · Enter opens
+                    Use{' '}
+                    <kbd
+                      aria-label='Up arrow'
+                      className='inline-grid align-middle'
+                    >
+                      <ArrowUp aria-hidden='true' size={12} strokeWidth={2.8} />
+                    </kbd>{' '}
+                    and{' '}
+                    <kbd
+                      aria-label='Down arrow'
+                      className='inline-grid align-middle'
+                    >
+                      <ArrowDown
+                        aria-hidden='true'
+                        size={12}
+                        strokeWidth={2.8}
+                      />
+                    </kbd>
+                    ,{' '}
+                    <kbd
+                      aria-label='Left arrow'
+                      className='inline-grid align-middle'
+                    >
+                      <ArrowLeft
+                        aria-hidden='true'
+                        size={12}
+                        strokeWidth={2.8}
+                      />
+                    </kbd>{' '}
+                    and{' '}
+                    <kbd
+                      aria-label='Right arrow'
+                      className='inline-grid align-middle'
+                    >
+                      <ArrowRight
+                        aria-hidden='true'
+                        size={12}
+                        strokeWidth={2.8}
+                      />
+                    </kbd>{' '}
+                    to scroll. Hit{' '}
+                    <kbd className='is-wide inline-grid align-middle'>
+                      Spacebar
+                    </kbd>{' '}
+                    to shuffle,{' '}
+                    <kbd className='inline-grid align-middle'>Esc</kbd> to
+                    cancel/return and{' '}
+                    <kbd className='inline-grid align-middle'>Enter</kbd> to
+                    select.
                   </span>
                   <span className='warp-spin-hint-touch'>Drag to spin</span>
                   <button
@@ -1583,12 +1969,10 @@ export const TestGalleryApp = () => {
               <button
                 type='button'
                 className='warp-shuffle-button'
+                data-shuffle-action
                 aria-label='Jump to a random movie in the index'
                 disabled={!listMovies.length}
-                onClick={() => {
-                  setSortOpen(false)
-                  setListRandomNonce((nonce) => nonce + 1)
-                }}
+                onClick={() => handleShuffle()}
               >
                 <Dices className='warp-shuffle-icon' aria-hidden='true' />
                 <span className='warp-shuffle-label'>Shuffle</span>
@@ -1602,9 +1986,10 @@ export const TestGalleryApp = () => {
               <button
                 type='button'
                 className='warp-shuffle-button'
+                data-shuffle-action
                 aria-label='Shuffle to a random movie'
                 disabled={!visibleMovies.length}
-                onClick={handleShuffle}
+                onClick={() => handleShuffle()}
               >
                 <Dices className='warp-shuffle-icon' aria-hidden='true' />
                 <span className='warp-shuffle-label'>Shuffle</span>
@@ -1697,9 +2082,9 @@ export const TestGalleryApp = () => {
               className='warp-preloader-skip'
               onClick={() => setInitialGalleryReady(true)}
             >
-              Skip
+              Skip first time load
             </button>
-            <em>Shows the globe now; posters keep sharpening as they load.</em>
+            <em>Images will load in the background</em>
           </span>
         </output>
       ) : null}
@@ -1735,7 +2120,6 @@ export const TestGalleryApp = () => {
           genreCount={genreSummaries.length}
           globeCount={visibleMovies.length}
           maximized={aboutMaximized}
-          movieCount={movies.length}
           motionPhase={aboutPresence.motionPhase}
           onClose={() => setAboutOpen(false)}
           onToggleMaximized={() =>
@@ -1761,14 +2145,19 @@ export const TestGalleryApp = () => {
           movies={movies}
           motionPhase={detailsPresence.motionPhase}
           movie={detailsPresence.value}
-          onClose={() => setDetailsMovieId(null)}
+          premiumVariant={
+            premiumSuggestion?.movieId === detailsPresence.value.id
+              ? premiumSuggestion.variant
+              : null
+          }
+          onClose={() => {
+            setDetailsMovieId(null)
+            setPremiumSuggestion(null)
+          }}
           onOpenMovie={handleOpenMovie}
           onWatch={handleOpenWatchLinks}
           onApplyFilter={handleApplyCardFilter}
-          onNextSuggestion={() => {
-            setDetailsMovieId(null)
-            handleShuffle()
-          }}
+          onNextSuggestion={handleShuffle}
         />
       ) : null}
     </main>
@@ -1787,7 +2176,23 @@ type WarpWallProps = {
   onReady: () => void
   onSelectMovie: (movie: TestMovie) => void
   onUserSpin: () => void
-  spinRequest: { itemId: string; nonce: number } | null
+  spinRequest: {
+    itemId: string
+    nonce: number
+    shuffleProAutomatic?: boolean
+    shuffleProAutomaticVariant?: ShuffleProVariant
+  } | null
+  onShuffleProPhase: (
+    phase: ShuffleProPhase | null,
+    variant?: ShuffleProVariant,
+  ) => void
+  onShuffleProRelease: (
+    transitioned: boolean,
+    variant: ShuffleProVariant,
+  ) => void
+  onNonShuffleInteraction: () => void
+  onSpinGestureEnd: (kind: 'quick' | 'hold' | null) => void
+  isShuffleProMax: boolean
 }
 
 const WarpWall = ({
@@ -1802,6 +2207,11 @@ const WarpWall = ({
   onReady,
   onSelectMovie,
   onUserSpin,
+  onShuffleProPhase,
+  onShuffleProRelease,
+  onNonShuffleInteraction,
+  onSpinGestureEnd,
+  isShuffleProMax,
   spinRequest,
 }: WarpWallProps) => {
   const menuItems = useMemo<InfiniteMovieMenuItem<TestMovie>[]>(
@@ -1854,6 +2264,11 @@ const WarpWall = ({
         onOpenItem={handleOpenItem}
         onReady={onReady}
         onUserSpin={onUserSpin}
+        onShuffleProPhase={onShuffleProPhase}
+        onShuffleProRelease={onShuffleProRelease}
+        onNonShuffleInteraction={onNonShuffleInteraction}
+        onSpinGestureEnd={onSpinGestureEnd}
+        isShuffleProMax={isShuffleProMax}
         scale={0.9}
         spinRequest={spinRequest}
         onActiveItemChange={handleActiveItemChange}
@@ -2720,7 +3135,6 @@ type AboutDrawerProps = {
   globeCount: number
   maximized: boolean
   motionPhase: MotionPhase
-  movieCount: number
   onClose: () => void
   onToggleMaximized: () => void
 }
@@ -2869,7 +3283,6 @@ const AboutDrawer = ({
   globeCount,
   maximized,
   motionPhase,
-  movieCount,
   onClose,
   onToggleMaximized,
 }: AboutDrawerProps) =>
@@ -2980,10 +3393,7 @@ const AboutDrawer = ({
       <header className='warp-about-drawer-heading'>
         <div>
           <h2>ScrollFlix</h2>
-          <p>
-            {movieCount.toLocaleString()} films on a globe you can spin, filter
-            and shuffle.
-          </p>
+          <p>20k+ films on a globe you can spin, filter and shuffle.</p>
         </div>
         <button
           type='button'
@@ -3101,6 +3511,7 @@ type MovieDetailsCardProps = {
   movies: TestMovie[]
   motionPhase: MotionPhase
   movie: TestMovie
+  premiumVariant: ShuffleProVariant | null
   onClose: () => void
   onOpenMovie: (movie: TestMovie) => void
   onApplyFilter: (filter: MovieCardFilter) => void
@@ -3112,6 +3523,7 @@ const MovieDetailsCard = ({
   movies,
   motionPhase,
   movie,
+  premiumVariant,
   onClose,
   onOpenMovie,
   onApplyFilter,
@@ -3230,6 +3642,19 @@ const MovieDetailsCard = ({
     <button
       type='button'
       className='warp-details-next'
+      data-shuffle-action
+      onClick={onNextSuggestion}
+    >
+      <Dices aria-hidden='true' size={15} strokeWidth={2.4} />
+      Re-shuffle
+    </button>
+  )
+  const mobileReshuffleButton = (
+    <button
+      type='button'
+      className='warp-details-next warp-details-next-mobile'
+      data-shuffle-action
+      aria-label='Re-shuffle to another movie'
       onClick={onNextSuggestion}
     >
       <Dices aria-hidden='true' size={15} strokeWidth={2.4} />
@@ -3282,14 +3707,23 @@ const MovieDetailsCard = ({
           open
           className={cn(
             'warp-details-card',
+            premiumVariant && 'is-premium',
             isExpanded && 'is-expanded',
             dragOffset !== 0 && 'is-dragging',
           )}
           style={detailsStyle}
           aria-modal='true'
           data-snap={isExpanded ? 'expanded' : 'compact'}
+          data-premium-variant={premiumVariant ?? undefined}
         >
           <span className='warp-details-ambient' aria-hidden='true' />
+          {premiumVariant ? (
+            <span className='warp-details-premium-badge'>
+              <span aria-hidden='true'>✦</span>
+              {premiumVariant === 'max' ? 'Shuffle Pro Max' : 'Shuffle Pro'}
+              {premiumVariant === 'rare' ? ' · Rare' : ''}
+            </span>
+          ) : null}
           <button
             type='button'
             className='warp-details-close'
@@ -3298,6 +3732,7 @@ const MovieDetailsCard = ({
           >
             <X aria-hidden='true' size={17} strokeWidth={3} />
           </button>
+          {isWide ? null : mobileReshuffleButton}
           {isWide ? null : (
             <div
               className='warp-details-grip-zone'
@@ -3366,7 +3801,6 @@ const MovieDetailsCard = ({
                   <Play aria-hidden='true' size={15} strokeWidth={2.6} />
                   Where to watch
                 </button>
-                {isWide ? null : nextSuggestionButton}
               </div>
               {showFullContent ? (
                 <div className='warp-details-expanded-content'>
