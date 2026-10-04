@@ -3056,8 +3056,7 @@
   }
 
   .warp-genres-actions button,
-  .warp-genres-grid button,
-  .warp-about-actions button {
+  .warp-genres-grid button {
     border: 1px solid rgb(255 255 255 / 0.14);
     border-radius: 999px;
     background: rgb(255 255 255 / 0.08);
@@ -3073,9 +3072,7 @@
   .warp-genres-actions button:not(:disabled):hover,
   .warp-genres-actions button:not(:disabled):focus-visible,
   .warp-genres-grid button:hover,
-  .warp-genres-grid button:focus-visible,
-  .warp-about-actions button:hover,
-  .warp-about-actions button:focus-visible {
+  .warp-genres-grid button:focus-visible {
     outline: none;
     border-color: rgb(255 255 255 / 0.34);
     transform: translateY(-1px);
@@ -3142,98 +3139,6 @@
     color: rgb(0 0 0 / 0.42);
   }
 
-  .warp-about-drawer {
-    position: fixed;
-    left: 50%;
-    bottom: 92px;
-    z-index: 42;
-    width: min(680px, calc(100vw - 36px));
-    max-height: min(460px, calc(100dvh - 168px));
-    overflow: hidden;
-    transform: translateX(-50%);
-    border: 1px solid rgb(255 255 255 / 0.16);
-    border-radius: 30px;
-    background: rgb(10 10 10 / 0.92);
-    box-shadow: 0 38px 150px rgb(0 0 0 / 0.82);
-    backdrop-filter: blur(22px);
-    -webkit-backdrop-filter: blur(22px);
-    animation: warp-drawer-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
-
-  .warp-about-drawer[data-motion="exit"] {
-    animation: warp-drawer-out 190ms ease both;
-  }
-
-  .warp-about-drawer.is-maximized {
-    bottom: 92px;
-    width: min(980px, calc(100vw - 36px));
-    max-height: calc(100dvh - 150px);
-  }
-
-  .warp-about-handle {
-    display: grid;
-    width: 100%;
-    height: 36px;
-    place-items: center;
-    border: 0;
-    background: transparent;
-  }
-
-  .warp-about-handle span {
-    width: 58px;
-    height: 5px;
-    border-radius: 999px;
-    background: rgb(255 255 255 / 0.3);
-  }
-
-  .warp-about-copy {
-    display: grid;
-    gap: 14px;
-    padding: 8px 28px 28px;
-  }
-
-  .warp-about-kicker {
-    margin: 0;
-    color: rgb(255 255 255 / 0.44);
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-  }
-
-  .warp-about-copy h2 {
-    max-width: 10ch;
-    margin: 0;
-    font-size: clamp(42px, 7vw, 82px);
-    font-weight: 900;
-    letter-spacing: -0.08em;
-    line-height: 0.85;
-  }
-
-  .warp-about-copy p:not(.warp-about-kicker) {
-    max-width: 58rem;
-    margin: 0;
-    color: rgb(255 255 255 / 0.62);
-    font-size: 14px;
-    font-weight: 680;
-    letter-spacing: -0.02em;
-    line-height: 1.35;
-  }
-
-  .warp-about-actions {
-    display: flex;
-    gap: 8px;
-    padding-top: 8px;
-  }
-
-  .warp-about-actions button {
-    height: var(--warp-control-height);
-    padding: 0 16px;
-    font-size: 13px;
-  }
-
-  .warp-about-handle:active,
-  .warp-about-actions button:active,
   .warp-genres-actions button:not(:disabled):active,
   .warp-genres-grid button:active {
     transform: translateY(1px) scale(0.98);
@@ -3343,27 +3248,473 @@
     }
   }
 
-  @keyframes warp-drawer-in {
-    from {
-      opacity: 0;
-      transform: translate(-50%, 18px) scale(0.98);
+  /* About, compact: a quick reference that rises from the i button. */
+  .warp-about-drawer {
+    position: fixed;
+    right: 24px;
+    bottom: calc(28px + var(--warp-control-height) + 12px);
+    z-index: 56;
+    display: grid;
+    width: min(340px, calc(100vw - 32px));
+    gap: 16px;
+    border: 1px solid rgb(255 255 255 / 0.14);
+    border-radius: 22px;
+    background: rgb(10 10 10 / 0.94);
+    padding: 18px 18px 16px;
+    color: #fff;
+    box-shadow: 0 30px 90px rgb(0 0 0 / 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    transform-origin: bottom right;
+    animation: warp-about-pop-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .warp-about-drawer[data-motion="exit"] {
+    animation: warp-about-pop-out 180ms ease both;
+  }
+
+  .warp-about-drawer-heading {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .warp-about-drawer-heading h2 {
+    margin: 0 0 4px;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: -0.05em;
+    line-height: 1;
+  }
+
+  .warp-about-drawer-heading p {
+    margin: 0;
+    color: rgb(255 255 255 / 0.62);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .warp-about-drawer-close,
+  .warp-about-page-close {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    place-items: center;
+    border: 1px solid rgb(255 255 255 / 0.16);
+    border-radius: 999px;
+    background: transparent;
+    color: rgb(255 255 255 / 0.8);
+    transition:
+      background 160ms ease,
+      color 160ms ease;
+  }
+
+  .warp-about-drawer-close svg,
+  .warp-about-page-close svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .warp-about-drawer-close:hover,
+  .warp-about-drawer-close:focus-visible,
+  .warp-about-page-close:hover,
+  .warp-about-page-close:focus-visible {
+    outline: none;
+    background: #fff;
+    color: #000;
+  }
+
+  .warp-about-controls {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .warp-about-controls li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-top: 1px solid rgb(255 255 255 / 0.08);
+    padding: 9px 0;
+    color: rgb(255 255 255 / 0.82);
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .warp-about-controls li:first-child {
+    border-top: 0;
+  }
+
+  .warp-about-keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .warp-about-keys kbd {
+    border: 1px solid rgb(255 255 255 / 0.14);
+    border-radius: 7px;
+    background: rgb(255 255 255 / 0.08);
+    padding: 3px 7px;
+    color: #fff;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .warp-about-keys .is-touch {
+    display: none;
+  }
+
+  @media (hover: none) {
+    .warp-about-keys .is-pointer,
+    .warp-about-controls .is-pointer-only {
+      display: none;
     }
-    to {
-      opacity: 1;
-      transform: translate(-50%, 0) scale(1);
+
+    .warp-about-keys .is-touch {
+      display: inline;
     }
   }
 
-  @keyframes warp-drawer-out {
+  .warp-about-fineprint {
+    margin: 0;
+    color: rgb(255 255 255 / 0.45);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.45;
+  }
+
+  .warp-about-more {
+    display: flex;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 0;
+    border-radius: 999px;
+    background: #fff;
+    color: #050505;
+    font-size: 13px;
+    font-weight: 850;
+    transition: transform 160ms ease;
+  }
+
+  .warp-about-more svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .warp-about-more:hover {
+    transform: translateY(-1px);
+  }
+
+  .warp-about-more:active {
+    transform: translateY(1px) scale(0.98);
+  }
+
+  .warp-about-more:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 3px;
+  }
+
+  @keyframes warp-about-pop-in {
     from {
-      opacity: 1;
-      transform: translate(-50%, 0) scale(1);
-    }
-    to {
       opacity: 0;
-      transform: translate(-50%, 14px) scale(0.98);
+      transform: translateY(10px) scale(0.96);
     }
   }
+
+  @keyframes warp-about-pop-out {
+    to {
+      opacity: 0;
+      transform: translateY(8px) scale(0.97);
+    }
+  }
+
+  /* About, expanded: a full page with the poster wall as its header. */
+  .warp-about-page {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: #070707;
+    color: #fff;
+    animation: warp-about-page-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .warp-about-page[data-motion="exit"] {
+    animation: warp-about-page-out 200ms ease both;
+  }
+
+  .warp-about-hero {
+    position: relative;
+    display: grid;
+    min-height: min(46dvh, 420px);
+    align-content: end;
+    overflow: hidden;
+    --about-edge: max(
+      clamp(20px, 6vw, 72px),
+      calc((100vw - 1180px) / 2 + clamp(20px, 6vw, 72px))
+    );
+    padding: 32px var(--about-edge) 36px;
+  }
+
+  .warp-about-mosaic {
+    position: absolute;
+    inset: -40px;
+    background: url("/media/poster-sprite.jpg") 0 0 / 640px auto repeat;
+    image-rendering: pixelated;
+    opacity: 0.55;
+    animation: warp-about-mosaic-drift 90s linear infinite;
+  }
+
+  .warp-about-mosaic::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(to bottom, rgb(7 7 7 / 0.35), rgb(7 7 7 / 0.7) 55%, #070707),
+      linear-gradient(to right, rgb(7 7 7 / 0.85), rgb(7 7 7 / 0.1) 70%);
+  }
+
+  @keyframes warp-about-mosaic-drift {
+    to {
+      background-position: -640px -432px;
+    }
+  }
+
+  .warp-about-hero-copy {
+    position: relative;
+    max-width: 38rem;
+  }
+
+  .warp-about-eyebrow {
+    margin: 0 0 10px;
+    color: rgb(255 255 255 / 0.6);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .warp-about-hero h2 {
+    margin: 0 0 14px;
+    font-size: clamp(48px, 8vw, 104px);
+    font-weight: 900;
+    letter-spacing: -0.06em;
+    line-height: 0.88;
+  }
+
+  .warp-about-hero-copy p:last-child {
+    margin: 0;
+    color: rgb(255 255 255 / 0.78);
+    font-size: clamp(15px, 1.4vw, 18px);
+    font-weight: 600;
+    line-height: 1.5;
+    text-wrap: pretty;
+  }
+
+  .warp-about-page-actions {
+    position: absolute;
+    top: 24px;
+    right: var(--about-edge);
+    display: flex;
+    gap: 8px;
+  }
+
+  .warp-about-page-actions > button:first-child {
+    display: flex;
+    height: 32px;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid rgb(255 255 255 / 0.16);
+    border-radius: 999px;
+    background: rgb(0 0 0 / 0.4);
+    padding: 0 14px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: background 160ms ease;
+  }
+
+  .warp-about-page-actions > button:first-child svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .warp-about-page-actions > button:first-child:hover,
+  .warp-about-page-actions > button:first-child:focus-visible {
+    outline: none;
+    background: rgb(255 255 255 / 0.16);
+  }
+
+  .warp-about-page-close {
+    background: rgb(0 0 0 / 0.4);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .warp-about-sections {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 clamp(28px, 5vw, 72px);
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 8px clamp(20px, 6vw, 72px) 72px;
+  }
+
+  .warp-about-section {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    border-top: 1px solid rgb(255 255 255 / 0.1);
+    padding: 26px 0;
+    animation: warp-about-section-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .warp-about-section:nth-child(2) {
+    animation-delay: 60ms;
+  }
+
+  .warp-about-section:nth-child(3) {
+    animation-delay: 110ms;
+  }
+
+  .warp-about-section:nth-child(n + 4) {
+    animation-delay: 160ms;
+  }
+
+  .warp-about-section.is-wide {
+    grid-column: 1 / -1;
+  }
+
+  .warp-about-section h3 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+  }
+
+  .warp-about-section p {
+    max-width: 62ch;
+    margin: 0;
+    color: rgb(255 255 255 / 0.7);
+    font-size: 14px;
+    font-weight: 550;
+    line-height: 1.6;
+  }
+
+  .warp-about-section .warp-about-fineprint {
+    color: rgb(255 255 255 / 0.45);
+    font-size: 12px;
+  }
+
+  .warp-about-how {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: clamp(20px, 4vw, 56px);
+  }
+
+  .warp-about-diagram {
+    width: 100%;
+    max-width: 260px;
+    justify-self: center;
+    height: auto;
+    color: #fff;
+  }
+
+  .warp-about-diagram-line {
+    fill: none;
+    stroke: rgb(255 255 255 / 0.4);
+    stroke-width: 1.2;
+  }
+
+  .warp-about-diagram-faint {
+    fill: none;
+    stroke: rgb(255 255 255 / 0.12);
+    stroke-width: 1;
+  }
+
+  .warp-about-diagram-poster {
+    fill: rgb(255 255 255 / 0.55);
+  }
+
+  .warp-about-diagram-focus {
+    fill: #fff;
+  }
+
+  .warp-about-diagram-ring {
+    fill: none;
+    stroke: rgb(255 255 255 / 0.55);
+    stroke-dasharray: 3 4;
+    stroke-width: 1.4;
+  }
+
+  .warp-about-diagram-arrow {
+    fill: none;
+    stroke: rgb(255 255 255 / 0.55);
+    stroke-linecap: round;
+    stroke-width: 1.6;
+  }
+
+  .warp-about-diagram-head {
+    fill: rgb(255 255 255 / 0.7);
+  }
+
+  .warp-about-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin: 0;
+  }
+
+  .warp-about-stats dt {
+    color: rgb(255 255 255 / 0.5);
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .warp-about-stats dd {
+    margin: 4px 0 0;
+    font-size: clamp(24px, 3vw, 34px);
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.04em;
+  }
+
+  @keyframes warp-about-page-in {
+    from {
+      opacity: 0;
+      transform: scale(0.985);
+    }
+  }
+
+  @keyframes warp-about-page-out {
+    to {
+      opacity: 0;
+      transform: scale(0.99);
+    }
+  }
+
+  @keyframes warp-about-section-in {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+  }
+
 
   @keyframes warp-preloader-in {
     from {
@@ -3583,6 +3934,25 @@
 
     .warp-main-nav {
       display: none;
+    }
+
+    .warp-about-drawer {
+      right: 12px;
+      bottom: calc(18px + var(--warp-control-height) + 10px);
+      width: auto;
+      left: 12px;
+    }
+
+    .warp-about-sections {
+      grid-template-columns: 1fr;
+    }
+
+    .warp-about-how {
+      grid-template-columns: 1fr;
+    }
+
+    .warp-about-page-actions > button:first-child {
+      padding: 0 12px;
     }
 
     /* The index keeps its Genres button on small screens. */
@@ -3826,28 +4196,6 @@
       grid-template-columns: 1fr;
     }
 
-    .warp-about-drawer {
-      bottom: 148px;
-      width: calc(100vw - 28px);
-      max-height: calc(100dvh - 190px);
-      border-radius: 24px;
-    }
-
-    .warp-about-drawer.is-maximized {
-      bottom: 148px;
-      width: calc(100vw - 28px);
-      max-height: calc(100dvh - 176px);
-    }
-
-    .warp-about-copy {
-      padding: 6px 18px 22px;
-    }
-
-    .warp-about-copy h2 {
-      max-width: none;
-      font-size: clamp(38px, 13vw, 58px);
-    }
-
     .warp-details-layer {
       place-items: end center;
       padding: 54px 10px 10px;
@@ -4032,6 +4380,10 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .warp-about-mosaic,
+    .warp-about-section,
+    .warp-about-page,
+    .warp-about-drawer,
     .warp-mode-toggle button,
     .warp-title-card,
     .warp-spin-hint,
@@ -4048,8 +4400,7 @@
     .warp-poster-placeholder,
     .warp-poster-placeholder::after,
     .warp-watch-backdrop,
-    .warp-watch-card,
-    .warp-about-drawer {
+    .warp-watch-card {
       transition: none;
       animation: none;
     }

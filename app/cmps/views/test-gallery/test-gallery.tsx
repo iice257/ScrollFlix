@@ -9,6 +9,8 @@ import {
   ChevronsUp,
   Dices,
   Info,
+  Maximize2,
+  Minimize2,
   Play,
   Search,
   SlidersHorizontal,
@@ -1308,7 +1310,10 @@ export const TestGalleryApp = () => {
 
       {aboutPresence.isPresent ? (
         <AboutDrawer
+          genreCount={genreSummaries.length}
+          globeCount={visibleMovies.length}
           maximized={aboutMaximized}
+          movieCount={movies.length}
           motionPhase={aboutPresence.motionPhase}
           onClose={() => setAboutOpen(false)}
           onToggleMaximized={() =>
@@ -2206,55 +2211,286 @@ const GenresView = ({
 )
 
 type AboutDrawerProps = {
+  genreCount: number
+  globeCount: number
   maximized: boolean
   motionPhase: MotionPhase
+  movieCount: number
   onClose: () => void
   onToggleMaximized: () => void
 }
 
+// Pointer and touch wording differ; 'pointer' rows are hidden on touch screens.
+const ABOUT_CONTROLS: Array<{
+  keys: string[]
+  touchKeys?: string[]
+  action: string
+  pointerOnly?: boolean
+}> = [
+  { keys: ['Click'], touchKeys: ['Tap'], action: 'Open a poster' },
+  { keys: ['Hold', 'Drag'], action: 'Spin the globe' },
+  {
+    keys: ['Scroll', '↑ ↓ ← →'],
+    action: 'Spin without grabbing',
+    pointerOnly: true,
+  },
+  { keys: ['Shuffle'], action: 'Land on a random film' },
+]
+
+const AboutControls = () => (
+  <ul className='warp-about-controls'>
+    {ABOUT_CONTROLS.map((control) => (
+      <li
+        key={control.action}
+        className={cn(control.pointerOnly && 'is-pointer-only')}
+      >
+        <span className='warp-about-keys'>
+          {control.keys.map((key) => (
+            <kbd key={key} className={cn(control.touchKeys && 'is-pointer')}>
+              {key}
+            </kbd>
+          ))}
+          {control.touchKeys?.map((key) => (
+            <kbd key={key} className='is-touch'>
+              {key}
+            </kbd>
+          ))}
+        </span>
+        <span>{control.action}</span>
+      </li>
+    ))}
+  </ul>
+)
+
+// A small diagram of the globe: tap opens a poster, hold/drag and scroll spin.
+const AboutGlobeDiagram = () => (
+  <svg
+    className='warp-about-diagram'
+    viewBox='24 14 192 192'
+    role='img'
+    aria-label='Diagram of the poster globe: the poster in front is in focus, and the globe spins around it'
+  >
+    <defs>
+      <radialGradient id='warp-about-globe' cx='50%' cy='45%' r='60%'>
+        <stop offset='0%' stopColor='currentColor' stopOpacity='0.16' />
+        <stop offset='100%' stopColor='currentColor' stopOpacity='0.02' />
+      </radialGradient>
+    </defs>
+    <circle cx='120' cy='110' r='86' fill='url(#warp-about-globe)' />
+    <circle cx='120' cy='110' r='86' className='warp-about-diagram-line' />
+    <ellipse
+      cx='120'
+      cy='110'
+      rx='86'
+      ry='30'
+      className='warp-about-diagram-faint'
+    />
+    <ellipse
+      cx='120'
+      cy='110'
+      rx='34'
+      ry='86'
+      className='warp-about-diagram-faint'
+    />
+    {[
+      [78, 70, 0.55],
+      [104, 58, 0.75],
+      [138, 64, 0.7],
+      [70, 108, 0.6],
+      [150, 104, 0.8],
+      [92, 142, 0.55],
+      [132, 146, 0.65],
+    ].map(([x, y, opacity]) => (
+      <rect
+        key={`${x}-${y}`}
+        x={x}
+        y={y}
+        width='16'
+        height='23'
+        rx='4'
+        className='warp-about-diagram-poster'
+        opacity={opacity}
+      />
+    ))}
+    {/* The poster in focus, with a tap ring. */}
+    <rect
+      x='110'
+      y='96'
+      width='22'
+      height='32'
+      rx='5'
+      className='warp-about-diagram-focus'
+    />
+    <circle cx='121' cy='112' r='22' className='warp-about-diagram-ring' />
+    {/* Spin arrow around the globe. */}
+    <path
+      d='M 40 72 A 92 92 0 0 1 178 34'
+      className='warp-about-diagram-arrow'
+      markerEnd='url(#warp-about-arrowhead)'
+    />
+    <marker
+      id='warp-about-arrowhead'
+      viewBox='0 0 10 10'
+      refX='6'
+      refY='5'
+      markerWidth='6'
+      markerHeight='6'
+      orient='auto-start-reverse'
+    >
+      <path d='M 0 0 L 10 5 L 0 10 z' className='warp-about-diagram-head' />
+    </marker>
+  </svg>
+)
+
 const AboutDrawer = ({
+  genreCount,
+  globeCount,
   maximized,
   motionPhase,
+  movieCount,
   onClose,
   onToggleMaximized,
-}: AboutDrawerProps) => (
-  <aside
-    className={cn('warp-about-drawer', maximized && 'is-maximized')}
-    data-motion={motionPhase}
-  >
-    <button
-      type='button'
-      className='warp-about-handle'
-      aria-label={maximized ? 'Minimize about drawer' : 'Maximize about drawer'}
-      onClick={onToggleMaximized}
+}: AboutDrawerProps) =>
+  maximized ? (
+    <section
+      className='warp-about-page'
+      data-motion={motionPhase}
+      aria-label='About ScrollFlix'
     >
-      <span />
-    </button>
-    <div className='warp-about-copy'>
-      <p className='warp-about-kicker'>About the gallery</p>
-      <h2>One wall, many ways in.</h2>
-      <p>
-        This is a browsing surface for finding something to watch by feel:
-        rotate the globe, tap a title for detail, or curate a genre lane before
-        diving back into the gallery.
-      </p>
-      <p>
-        Movie metadata and poster imagery are provided for discovery and
-        prototype evaluation. Ratings, runtimes, years, countries, genres, and
-        summaries can be incomplete or stale, so treat them as guidance rather
-        than an editorial verdict.
-      </p>
-      <div className='warp-about-actions'>
-        <button type='button' onClick={onToggleMaximized}>
-          {maximized ? 'Minimize' : 'Maximize'}
-        </button>
-        <button type='button' onClick={onClose}>
-          Close
-        </button>
+      <header className='warp-about-hero'>
+        <div className='warp-about-mosaic' aria-hidden='true' />
+        <div className='warp-about-hero-copy'>
+          <p className='warp-about-eyebrow'>About</p>
+          <h2>ScrollFlix</h2>
+          <p>
+            A globe of {movieCount.toLocaleString()} film posters for the nights
+            you can&apos;t decide. Spin it, filter it, or let Shuffle pick, then
+            open a film to see what it is and where it&apos;s showing.
+          </p>
+        </div>
+        <div className='warp-about-page-actions'>
+          <button type='button' onClick={onToggleMaximized}>
+            <Minimize2 aria-hidden='true' />
+            Minimize
+          </button>
+          <button
+            type='button'
+            className='warp-about-page-close'
+            aria-label='Close about'
+            onClick={onClose}
+          >
+            <X aria-hidden='true' />
+          </button>
+        </div>
+      </header>
+
+      <div className='warp-about-sections'>
+        <section className='warp-about-section is-wide'>
+          <h3>How it works</h3>
+          <div className='warp-about-how'>
+            <AboutGlobeDiagram />
+            <AboutControls />
+          </div>
+        </section>
+
+        <section className='warp-about-section'>
+          <h3>In the catalogue</h3>
+          <dl className='warp-about-stats'>
+            <div>
+              <dt>Films in the index</dt>
+              <dd>{movieCount.toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Posters on the globe</dt>
+              <dd>{globeCount.toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Genres</dt>
+              <dd>{genreCount}</dd>
+            </div>
+          </dl>
+          <p>
+            The globe shows up to 900 posters at a time and shrinks to stay
+            dense when filters narrow it down. The index always lists every
+            match.
+          </p>
+        </section>
+
+        <section className='warp-about-section'>
+          <h3>Where the data comes from</h3>
+          <p>
+            Titles, years, ratings, genres and summaries come from the Full TMDB
+            Movies Dataset on Kaggle, used under the Open Data Commons
+            Attribution License. Posters are TMDB artwork, prepared and served
+            from this site. Some details are incomplete or out of date, so treat
+            ratings and runtimes as a guide.
+          </p>
+          <p className='warp-about-fineprint'>
+            This product uses the TMDB API but is not endorsed or certified by
+            TMDB.
+          </p>
+        </section>
+
+        <section className='warp-about-section'>
+          <h3>Watch links</h3>
+          <p>
+            Let&apos;s Watch lists the usual places to stream, rent or find a
+            trailer. Availability isn&apos;t checked per film yet, so those
+            options stay disabled until it is, rather than sending you to a dead
+            end.
+          </p>
+        </section>
+
+        <section className='warp-about-section'>
+          <h3>Credits</h3>
+          <p>
+            Built by ICE (Kingsley Aremu). ScrollFlix grew out of a fork of
+            Nothing to Watch, whose Voroforce engine still lives in the
+            repository.
+          </p>
+          <p className='warp-about-fineprint'>
+            Code: MIT. Shaders: CC BY-NC-SA 3.0. Film data: ODC-By 1.0.
+          </p>
+        </section>
       </div>
-    </div>
-  </aside>
-)
+    </section>
+  ) : (
+    <aside
+      className='warp-about-drawer'
+      data-motion={motionPhase}
+      aria-label='About ScrollFlix'
+    >
+      <header className='warp-about-drawer-heading'>
+        <div>
+          <h2>ScrollFlix</h2>
+          <p>
+            {movieCount.toLocaleString()} films on a globe you can spin, filter
+            and shuffle.
+          </p>
+        </div>
+        <button
+          type='button'
+          className='warp-about-drawer-close'
+          aria-label='Close about'
+          onClick={onClose}
+        >
+          <X aria-hidden='true' />
+        </button>
+      </header>
+      <AboutControls />
+      <p className='warp-about-fineprint'>
+        Film data from TMDB via Kaggle (ODC-By). Not endorsed by TMDB.
+      </p>
+      <button
+        type='button'
+        className='warp-about-more'
+        onClick={onToggleMaximized}
+      >
+        More about ScrollFlix
+        <Maximize2 aria-hidden='true' />
+      </button>
+    </aside>
+  )
 
 const WATCH_LINKS = [
   { label: 'Netflix', meta: 'Subscription' },

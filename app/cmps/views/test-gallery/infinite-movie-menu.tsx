@@ -838,6 +838,11 @@ class InfiniteMovieEngine<T> {
   private frames = 0
   private disposed = false
   private paused = false
+  // Idle frames are skipped: when nothing has moved or been uploaded since the
+  // last draw, the previous frame is still correct.
+  private renderDirty = true
+  private lastRenderedOrientation: Quat = [0, 0, 0, 0]
+  private lastRenderedCameraZ = Number.NaN
   private contextLost = false
   private movementActive = false
   private smoothRotationVelocity = 0
@@ -970,8 +975,7 @@ class InfiniteMovieEngine<T> {
     const deltaTime = Math.min(32, time - this.time || TARGET_FRAME_DURATION)
     this.time = time
     this.frames += deltaTime / TARGET_FRAME_DURATION
-    this.animate(deltaTime)
-    this.render()
+    if (this.animate(deltaTime)) this.render()
     this.frameId = window.requestAnimationFrame((nextTime) =>
       this.run(nextTime),
     )
@@ -996,6 +1000,7 @@ class InfiniteMovieEngine<T> {
   }
 
   resize() {
+    this.renderDirty = true
     if (resizeCanvasToDisplaySize(this.canvas)) {
       this.gl.viewport(
         0,
@@ -1116,6 +1121,7 @@ class InfiniteMovieEngine<T> {
 
     this.detailTargetProgress = open ? 1 : 0
     if (!open) this.detailVertexIndex = null
+    this.renderDirty = true
   }
 
   // Rotates the globe to bring the item's poster to the centre, then calls
@@ -1531,6 +1537,7 @@ class InfiniteMovieEngine<T> {
       this.gl.UNSIGNED_BYTE,
       uploadCanvas,
     )
+    this.renderDirty = true
   }
 
   private uploadPosterCell(
@@ -1563,6 +1570,7 @@ class InfiniteMovieEngine<T> {
       this.gl.UNSIGNED_BYTE,
       uploadCanvas,
     )
+    this.renderDirty = true
   }
 
   private reportProgress(percent: number) {
@@ -1643,12 +1651,33 @@ class InfiniteMovieEngine<T> {
     )
   }
 
+  // Returns whether the frame needs drawing.
   private animate(deltaTime: number) {
     const gl = this.gl
     this.control.update(deltaTime)
     const detailStep = 1 - Math.exp(-deltaTime / this.detailEaseMs)
     this.detailProgress +=
       (this.detailTargetProgress - this.detailProgress) * detailStep
+
+    const orientation = this.control.orientation
+    const last = this.lastRenderedOrientation
+    const orientationDot = Math.abs(
+      orientation[0] * last[0] +
+        orientation[1] * last[1] +
+        orientation[2] * last[2] +
+        orientation[3] * last[3],
+    )
+    const isStill =
+      !this.renderDirty &&
+      !this.control.isPointerDown &&
+      orientationDot > 1 - 1e-10 &&
+      Math.abs(this.control.rotationVelocity) < 1e-6 &&
+      Math.abs(this.detailTargetProgress - this.detailProgress) < 1e-5 &&
+      Math.abs(this.cameraPosition[2] - this.lastRenderedCameraZ) < 1e-6
+    if (isStill) return false
+    this.renderDirty = false
+    this.lastRenderedOrientation = [...orientation]
+    this.lastRenderedCameraZ = this.cameraPosition[2]
 
     this.instancePositions.forEach((position, index) => {
       const transformed = transformQuat3(position, this.control.orientation)
@@ -1682,6 +1711,7 @@ class InfiniteMovieEngine<T> {
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.instanceMatricesArray)
     gl.bindBuffer(gl.ARRAY_BUFFER, null)
     this.smoothRotationVelocity = this.control.rotationVelocity
+    return true
   }
 
   private render() {
