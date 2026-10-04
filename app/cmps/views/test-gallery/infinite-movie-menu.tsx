@@ -47,7 +47,18 @@ const SPHERE_RADIUS = 2.58
 const TARGET_FRAME_DURATION = 1000 / 60
 const ICON_TEXTURE_CELL_SIZE = 128
 const ICON_TEXTURE_PADDING = 12
-const ICON_INSTANCE_COUNT = 750
+// Globe density: up to ICON_INSTANCE_COUNT posters. Smaller sets shrink the
+// sphere (radius scales with sqrt(count / ICON_INSTANCE_COUNT), clamped to
+// MIN_RADIUS_RATIO) so poster spacing stays as tight as the full globe. The
+// camera only follows part of the way (sqrt of the radius ratio), so small
+// sets read as a smaller, denser globe rather than a magnified sparse one.
+// Below MIN_INSTANCE_COUNT, items repeat to fill the smallest sphere.
+const ICON_INSTANCE_COUNT = 900
+const REFERENCE_INSTANCE_COUNT = ICON_INSTANCE_COUNT
+const MIN_RADIUS_RATIO = 0.62
+const MIN_INSTANCE_COUNT = Math.round(
+  REFERENCE_INSTANCE_COUNT * MIN_RADIUS_RATIO ** 2,
+)
 const ICON_REST_SCALE = 0.18
 const ICON_DETAIL_SCALE = 0.34
 const DETAIL_FAST_EASE_MS = 210
@@ -115,6 +126,56 @@ const INITIAL_READY_POSTER_COUNT = 72
 const PRIMARY_IMAGE_TIMEOUT_MS = 20000
 
 type DetailMotion = 'fast' | 'slow' | 'close'
+
+// One tiny sprite of every poster: drawn pixelated into each atlas cell so the
+// globe is populated almost instantly while full thumbnails stream in.
+const POSTER_SPRITE_URL = '/media/poster-sprite.jpg'
+const POSTER_SPRITE_MANIFEST_URL = '/media/poster-sprite.json'
+const POSTER_RETRY_DELAYS_MS = [4000, 12000, 30000]
+
+type PosterSprite = {
+  cellHeight: number
+  cellWidth: number
+  columns: number
+  image: HTMLImageElement
+  indexById: Map<string, number>
+}
+
+let posterSpritePromise: Promise<PosterSprite | null> | null = null
+const posterImageCache = new Map<string, Promise<HTMLImageElement>>()
+
+const loadPosterSprite = () => {
+  posterSpritePromise ??= (async () => {
+    try {
+      const response = await fetch(POSTER_SPRITE_MANIFEST_URL)
+      if (!response.ok) throw new Error(`Sprite manifest ${response.status}`)
+      const manifest = (await response.json()) as {
+        cellHeight: number
+        cellWidth: number
+        columns: number
+        ids: string[]
+      }
+      const image = new Image()
+      image.decoding = 'async'
+      image.src = POSTER_SPRITE_URL
+      await image.decode()
+      return {
+        cellHeight: manifest.cellHeight,
+        cellWidth: manifest.cellWidth,
+        columns: manifest.columns,
+        image,
+        indexById: new Map(manifest.ids.map((id, index) => [id, index])),
+      }
+    } catch {
+      posterSpritePromise = null
+      return null
+    }
+  })()
+  return posterSpritePromise
+}
+
+const posterIdFromUrl = (url: string) =>
+  url.match(/\/posters\/([^/?#]+)\.jpg/)?.[1] ?? null
 
 export type PosterHit<T> = {
   index: number
@@ -792,6 +853,10 @@ class InfiniteMovieEngine<T> {
   private atlasSize = 1
   private atlasCellSize = ICON_TEXTURE_CELL_SIZE
   private lastReportedProgress = -1
+  private readonly sphereRadius: number
+  private readonly cameraRestZ: number
+  private readonly cameraRatio: number
+  private readonly cleanupCallbacks: Array<() => void> = []
   private nudgePos: Vec2 | null = null
   private nudgeTimer: number | null = null
 
@@ -828,7 +893,21 @@ class InfiniteMovieEngine<T> {
     if (!gl || !program) throw new Error('WebGL2 could not initialize')
     this.gl = gl
     this.program = program
-    this.cameraPosition = [0, 0, 3.42 * scale]
+    const instanceCount = Math.min(
+      ICON_INSTANCE_COUNT,
+      Math.max(MIN_INSTANCE_COUNT, this.items.length),
+    )
+    const radiusRatio = Math.min(
+      1,
+      Math.max(
+        MIN_RADIUS_RATIO,
+        Math.sqrt(instanceCount / REFERENCE_INSTANCE_COUNT),
+      ),
+    )
+    this.sphereRadius = SPHERE_RADIUS * radiusRatio
+    this.cameraRatio = Math.sqrt(radiusRatio)
+    this.cameraRestZ = 3.42 * scale * this.cameraRatio
+    this.cameraPosition = [0, 0, this.cameraRestZ]
     this.locations = {
       uWorldMatrix: gl.getUniformLocation(program, 'uWorldMatrix'),
       uViewMatrix: gl.getUniformLocation(program, 'uViewMatrix'),
@@ -844,8 +923,8 @@ class InfiniteMovieEngine<T> {
     }
 
     this.instancePositions = createHoneycombSpherePositions(
-      Math.min(ICON_INSTANCE_COUNT, this.items.length),
-      SPHERE_RADIUS,
+      instanceCount,
+      this.sphereRadius,
     )
     this.instanceMatricesArray = new Float32Array(
       this.instancePositions.length * 16,
@@ -920,6 +999,7 @@ class InfiniteMovieEngine<T> {
     this.disposed = true
     window.cancelAnimationFrame(this.frameId)
     if (this.nudgeTimer) window.clearTimeout(this.nudgeTimer)
+    this.cleanupCallbacks.forEach((cleanup) => cleanup())
     this.control.dispose()
     this.canvas.removeEventListener('webglcontextlost', this.handleContextLost)
     if (!this.gl.isContextLost()) {
@@ -1064,7 +1144,7 @@ class InfiniteMovieEngine<T> {
       // World is identity, so the instance translation is the poster centre;
       // posters facing away are culled by the renderer.
       const centerZ = matrix[14]
-      if (centerZ < SPHERE_RADIUS * 0.15) return
+      if (centerZ < this.sphereRadius * 0.15) return
 
       multiplyMat4(mvp, viewProjection, matrix)
       const center = toScreen(0, 0)
@@ -1241,14 +1321,26 @@ class InfiniteMovieEngine<T> {
     const facing = this.items.map(() => -2)
     this.instancePositions.forEach((position, instance) => {
       const item = instance % itemCount
-      facing[item] = Math.max(facing[item], -position[2] / SPHERE_RADIUS)
+      facing[item] = Math.max(facing[item], -position[2] / this.sphereRadius)
     })
     const indices = this.items
       .map((_, index) => index)
       .sort((a, b) => facing[b] - facing[a])
+    const loaded = new Set<number>()
+
+    // Pixelated placeholders for every cell that has no full poster yet.
+    void loadPosterSprite().then((sprite) => {
+      if (!sprite || this.disposed || this.contextLost || !this.texture) return
+      indices.forEach((index) => {
+        if (!loaded.has(index)) {
+          this.uploadPlaceholderCell(index, sprite, uploadCanvas, uploadContext)
+        }
+      })
+    })
+
     // Show the wall once the first batch is in; the rest stream into the atlas.
     const readyTarget = Math.min(indices.length, INITIAL_READY_POSTER_COUNT)
-    let completed = 0
+    let settled = 0
     let ready = false
     const markReady = () => {
       if (ready || this.disposed || this.contextLost) return
@@ -1256,20 +1348,30 @@ class InfiniteMovieEngine<T> {
       this.canvas.dataset.webglState = 'ready'
       this.reportProgress(100)
     }
+    const countSettled = () => {
+      settled += 1
+      if (ready) return
+      if (settled >= readyTarget) {
+        window.requestAnimationFrame(markReady)
+        return
+      }
+      this.reportProgress(8 + (settled / Math.max(1, readyTarget)) * 91)
+    }
+    const onLoaded = (index: number, image: HTMLImageElement) => {
+      loaded.add(index)
+      this.uploadPosterCell(index, image, uploadCanvas, uploadContext)
+    }
 
-    await this.loadPosterIndices(
+    // A failed poster keeps its placeholder and counts as settled, so one bad
+    // request can never stall or kill the globe; it is retried below.
+    const failed = await this.loadPosterIndices(
       indices,
       INITIAL_TEXTURE_LOAD_CONCURRENCY,
       (index, image) => {
-        this.uploadPosterCell(index, image, uploadCanvas, uploadContext)
-        completed += 1
-        if (ready) return
-        if (completed >= readyTarget) {
-          window.requestAnimationFrame(markReady)
-          return
-        }
-        this.reportProgress(8 + (completed / Math.max(1, readyTarget)) * 91)
+        onLoaded(index, image)
+        countSettled()
       },
+      countSettled,
     )
 
     if (this.disposed || this.contextLost) return
@@ -1277,13 +1379,49 @@ class InfiniteMovieEngine<T> {
       window.requestAnimationFrame(() => resolve()),
     )
     markReady()
+    this.retryFailedPosters(failed, onLoaded)
+  }
+
+  private retryFailedPosters(
+    initialFailed: number[],
+    onLoaded: (index: number, image: HTMLImageElement) => void,
+  ) {
+    let failed = initialFailed
+    let attempt = 0
+    let timer = 0
+    const retry = async () => {
+      window.clearTimeout(timer)
+      if (!failed.length || this.disposed || this.contextLost) return
+      const pending = failed
+      failed = []
+      failed = await this.loadPosterIndices(pending, 6, onLoaded)
+      attempt += 1
+      schedule()
+    }
+    const schedule = () => {
+      if (!failed.length || this.disposed) {
+        window.removeEventListener('online', retry)
+        return
+      }
+      const delay = POSTER_RETRY_DELAYS_MS[attempt]
+      if (delay !== undefined) timer = window.setTimeout(retry, delay)
+    }
+    // Coming back online retries straight away, whatever the attempt count.
+    window.addEventListener('online', retry)
+    this.cleanupCallbacks.push(() => {
+      window.clearTimeout(timer)
+      window.removeEventListener('online', retry)
+    })
+    schedule()
   }
 
   private async loadPosterIndices(
     indices: number[],
     concurrency: number,
     onLoaded: (index: number, image: HTMLImageElement) => void,
+    onFailed?: (index: number) => void,
   ) {
+    const failed: number[] = []
     let cursor = 0
     const worker = async () => {
       while (!this.disposed && !this.contextLost) {
@@ -1292,9 +1430,14 @@ class InfiniteMovieEngine<T> {
         if (index === undefined) return
         const item = this.items[index]
         if (!item) continue
-        const image = await this.loadImage(item.image, item.fallbackImage)
-        if (this.disposed || this.contextLost || !this.texture) return
-        onLoaded(index, image)
+        try {
+          const image = await this.loadImage(item.image, item.fallbackImage)
+          if (this.disposed || this.contextLost || !this.texture) return
+          onLoaded(index, image)
+        } catch {
+          failed.push(index)
+          onFailed?.(index)
+        }
       }
     }
 
@@ -1303,6 +1446,42 @@ class InfiniteMovieEngine<T> {
         { length: Math.min(concurrency, Math.max(1, indices.length)) },
         () => worker(),
       ),
+    )
+    return failed
+  }
+
+  private uploadPlaceholderCell(
+    index: number,
+    sprite: PosterSprite,
+    uploadCanvas: HTMLCanvasElement,
+    uploadContext: CanvasRenderingContext2D,
+  ) {
+    const item = this.items[index]
+    const id = item ? posterIdFromUrl(item.image) : null
+    const spriteIndex = id ? sprite.indexById.get(id) : undefined
+    if (spriteIndex === undefined || !this.texture) return
+    uploadContext.imageSmoothingEnabled = false
+    uploadContext.drawImage(
+      sprite.image,
+      (spriteIndex % sprite.columns) * sprite.cellWidth,
+      Math.floor(spriteIndex / sprite.columns) * sprite.cellHeight,
+      sprite.cellWidth,
+      sprite.cellHeight,
+      0,
+      0,
+      this.atlasCellSize,
+      this.atlasCellSize,
+    )
+    uploadContext.imageSmoothingEnabled = true
+    this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture)
+    this.gl.texSubImage2D(
+      this.gl.TEXTURE_2D,
+      0,
+      (index % this.atlasSize) * this.atlasCellSize,
+      Math.floor(index / this.atlasSize) * this.atlasCellSize,
+      this.gl.RGBA,
+      this.gl.UNSIGNED_BYTE,
+      uploadCanvas,
     )
   }
 
@@ -1347,6 +1526,15 @@ class InfiniteMovieEngine<T> {
   }
 
   private loadImage(src: string, fallbackSrc?: string) {
+    const cached = posterImageCache.get(src)
+    if (cached) return cached
+    const pending = this.fetchImage(src, fallbackSrc)
+    posterImageCache.set(src, pending)
+    pending.catch(() => posterImageCache.delete(src))
+    return pending
+  }
+
+  private fetchImage(src: string, fallbackSrc?: string) {
     return new Promise<HTMLImageElement>((resolve, reject) => {
       const image = new Image()
       let triedFallback = false
@@ -1417,7 +1605,7 @@ class InfiniteMovieEngine<T> {
     this.instancePositions.forEach((position, index) => {
       const transformed = transformQuat3(position, this.control.orientation)
       const depthScale =
-        (Math.abs(transformed[2]) / SPHERE_RADIUS) * 0.52 + (1 - 0.52)
+        (Math.abs(transformed[2]) / this.sphereRadius) * 0.52 + (1 - 0.52)
       const isDetailTarget = this.detailVertexIndex === index
       const detailLift = isDetailTarget
         ? this.detailProgress * (ICON_DETAIL_SCALE - ICON_REST_SCALE)
@@ -1433,7 +1621,7 @@ class InfiniteMovieEngine<T> {
         [0, 1, 0],
       )
       const scaleMatrix = scalingMat4([finalScale, finalScale, finalScale])
-      const backTranslate = translationMat4([0, 0, -SPHERE_RADIUS])
+      const backTranslate = translationMat4([0, 0, -this.sphereRadius])
 
       multiplyMat4(matrix, matrix, translateToSphere)
       multiplyMat4(matrix, matrix, faceCenter)
@@ -1494,8 +1682,11 @@ class InfiniteMovieEngine<T> {
   private onControlUpdate(deltaTime: number) {
     const timeScale = deltaTime / TARGET_FRAME_DURATION + 0.0001
     let damping = 5 / timeScale
-    const restCameraZ = 3.42 * this.scale
-    const detailCameraZ = Math.max(SPHERE_RADIUS + 0.18, 2.86 * this.scale)
+    const restCameraZ = this.cameraRestZ
+    const detailCameraZ = Math.max(
+      this.sphereRadius + 0.18,
+      2.86 * this.scale * this.cameraRatio,
+    )
     let cameraTargetZ =
       restCameraZ + (detailCameraZ - restCameraZ) * this.detailProgress
     const isMoving =
@@ -1522,7 +1713,8 @@ class InfiniteMovieEngine<T> {
         ),
       )
     } else if (!this.nudgePos) {
-      cameraTargetZ += this.control.rotationVelocity * 58 + 0.72
+      cameraTargetZ +=
+        (this.control.rotationVelocity * 58 + 0.72) * this.cameraRatio
       damping = 7 / timeScale
     }
 
@@ -1583,7 +1775,7 @@ class InfiniteMovieEngine<T> {
     const gl = this.gl
     const canvas = gl.canvas as HTMLCanvasElement
     const aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight)
-    const height = SPHERE_RADIUS * 0.7
+    const height = SPHERE_RADIUS * 0.7 * this.cameraRatio
     const distance = this.cameraPosition[2]
     const fov =
       aspect > 1

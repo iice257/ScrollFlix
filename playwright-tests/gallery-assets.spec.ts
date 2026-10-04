@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('reveals a complete 750-poster local gallery', async ({ page }) => {
+test('reveals the full local poster gallery', async ({ page }) => {
   test.setTimeout(240_000)
   const remoteArtworkRequests: string[] = []
   page.on('request', (request) => {
@@ -19,7 +19,7 @@ test('reveals a complete 750-poster local gallery', async ({ page }) => {
   test.skip(!hasWebgl2, 'WebGL2 is unavailable in this browser')
 
   const canvas = page.getByLabel('Infinite movie poster menu')
-  await expect(canvas).toHaveAttribute('data-item-count', '750', {
+  await expect(canvas).toHaveAttribute('data-item-count', '900', {
     timeout: 30_000,
   })
   await expect(canvas).toHaveAttribute('data-texture-progress', '100', {
