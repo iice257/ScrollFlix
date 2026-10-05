@@ -3084,6 +3084,9 @@
     font-weight: 850;
     letter-spacing: -0.055em;
     text-align: left;
+    /* Each row paints and lays out on its own, which keeps scrolling a long
+       list from re-recording everything around it. */
+    contain: layout paint style;
     transition:
       border-color 180ms ease,
       color 180ms ease,
@@ -3091,11 +3094,13 @@
       transform 180ms ease;
   }
 
+  /* No overflow clip here: a rounded clip on every row costs a compositing
+     layer each, which is what made the index heavy to scroll on phones. The
+     image and its frame carry the radius instead. */
   .warp-list-row-poster {
     display: block;
     width: 46px;
     height: 46px;
-    overflow: hidden;
     border: 1px solid rgb(255 255 255 / 0.14);
     border-radius: 999px;
     background: rgb(255 255 255 / 0.08);
@@ -3105,7 +3110,18 @@
   .warp-list-row-poster img {
     width: 100%;
     height: 100%;
+    border-radius: 50%;
     object-fit: cover;
+  }
+
+  .warp-list-row-poster .warp-poster-frame {
+    overflow: visible;
+    isolation: auto;
+  }
+
+  .warp-list-row-poster .warp-poster-frame img {
+    transform: none;
+    transition: opacity 160ms ease;
   }
 
   .warp-list-row-poster .warp-poster-placeholder {

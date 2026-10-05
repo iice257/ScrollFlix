@@ -26,7 +26,9 @@ import {
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
   memo,
+  startTransition,
   useCallback,
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -71,9 +73,31 @@ type TestMovie = {
   // Catalogue films (beyond the local set) use TMDB-hosted posters: a larger
   // one for the details card, and an average colour while they load.
   posterDetailUrl?: string
+  // A 92px poster for the index, where it is drawn at about 42px.
+  posterListUrl?: string
   placeholderColor?: string
   // Position in the catalogue's lazily loaded overview/tagline chunks.
   textIndex?: number
+  // Lower-case title without accents: what sorting and searching compare, so
+  // neither pays for locale-aware string work per comparison.
+  titleKey?: string
+}
+
+export const toTitleKey = (title: string) =>
+  title
+    .normalize('NFD')
+    .replace(/\p{M}+/gu, '')
+    .toLowerCase()
+
+const getTitleKey = (movie: TestMovie) =>
+  movie.titleKey ?? toTitleKey(movie.title)
+
+// Orders by code unit, which on lower-cased, accent-free titles matches the
+// alphabet and costs a fraction of localeCompare.
+const compareTitleKeys = (movieA: TestMovie, movieB: TestMovie) => {
+  const keyA = getTitleKey(movieA)
+  const keyB = getTitleKey(movieB)
+  return keyA < keyB ? -1 : keyA > keyB ? 1 : 0
 }
 
 type ViewMode = 'wall' | 'list' | 'filters'
@@ -436,7 +460,7 @@ const hasLatinLeadingTitle = (movie: TestMovie) =>
 type MoviePosterProps = {
   movie: TestMovie
   loading?: 'eager' | 'lazy'
-  size?: 'thumb' | 'detail'
+  size?: 'thumb' | 'list' | 'detail'
 }
 
 const MoviePoster = ({
@@ -460,7 +484,9 @@ const MoviePoster = ({
         src={
           size === 'detail'
             ? (movie.posterDetailUrl ?? movie.posterUrl)
-            : movie.posterUrl
+            : size === 'list'
+              ? (movie.posterListUrl ?? movie.posterUrl)
+              : movie.posterUrl
         }
         alt=''
         // TMDB only sends CORS headers when asked and does not vary on it, so
@@ -525,12 +551,10 @@ export const filterMoviesByTitleSearch = (
   movies: TestMovie[],
   searchQuery: string,
 ) => {
-  const query = searchQuery.trim().toLocaleLowerCase()
+  const query = toTitleKey(searchQuery.trim())
   if (!query) return movies
 
-  return movies.filter((movie) =>
-    movie.title.toLocaleLowerCase().includes(query),
-  )
+  return movies.filter((movie) => getTitleKey(movie).includes(query))
 }
 
 const movieHasAnyGenre = (movie: TestMovie, genres: string[]) => {
@@ -707,7 +731,7 @@ const compareMoviesByRule = (
   direction: SortDirection,
 ) => {
   const sign = direction === 'desc' ? -1 : 1
-  if (key === 'alpha') return sign * movieA.title.localeCompare(movieB.title)
+  if (key === 'alpha') return sign * compareTitleKeys(movieA, movieB)
   const valueA = getSortValue(movieA, key)
   const valueB = getSortValue(movieB, key)
   if (valueA === null || valueB === null) {
@@ -742,7 +766,7 @@ export const sortMoviesByRules = (movies: TestMovie[], rules: SortRule[]) => {
       )
       if (order) return order
     }
-    return movieA.title.localeCompare(movieB.title)
+    return compareTitleKeys(movieA, movieB)
   })
 }
 
@@ -1047,6 +1071,7 @@ export const mapMovie = (
     id: rawId ? `${index}-${rawId}` : String(index),
     rank: index + 1,
     title,
+    titleKey: toTitleKey(title),
     tagline: getText(raw, 'tagline'),
     overview: getText(raw, 'overview'),
     genres: splitList(getText(raw, 'genres')),
@@ -1136,6 +1161,7 @@ type CatalogManifest = CatalogTables & {
 // else gets the whole catalogue. Decided once, so rotating a phone or
 // resizing a window never changes what is loaded.
 export const MOBILE_FILM_TARGET = 5000
+const DEFAULT_CATALOG_CHUNK_SIZE = 2000
 
 export type DeviceSignals = {
   coarsePointer: boolean
@@ -1167,19 +1193,18 @@ const detectLightweightDevice = () => {
 
 // How many catalogue chunks a device needs, given the films it already has.
 export const getCatalogChunkCount = (
-  manifest: Pick<CatalogManifest, 'chunks' | 'chunkSize'>,
+  manifest: Pick<CatalogManifest, 'chunks'> &
+    Partial<Pick<CatalogManifest, 'chunkSize'>>,
   localCount: number,
   lightweight: boolean,
-) =>
-  lightweight
-    ? Math.min(
-        manifest.chunks.length,
-        Math.max(
-          1,
-          Math.ceil((MOBILE_FILM_TARGET - localCount) / manifest.chunkSize),
-        ),
-      )
-    : manifest.chunks.length
+) => {
+  if (!lightweight) return manifest.chunks.length
+  const chunkSize = manifest.chunkSize || DEFAULT_CATALOG_CHUNK_SIZE
+  return Math.min(
+    manifest.chunks.length,
+    Math.max(1, Math.ceil((MOBILE_FILM_TARGET - localCount) / chunkSize)),
+  )
+}
 
 export const mapCatalogRow = (
   [
@@ -1203,6 +1228,7 @@ export const mapCatalogRow = (
     id: `c${tmdbId}`,
     rank,
     title,
+    titleKey: toTitleKey(title),
     tagline: '',
     overview: '',
     genres: genres
@@ -1219,6 +1245,7 @@ export const mapCatalogRow = (
     countries: tables.countries[country] ?? '',
     posterUrl: `${TMDB_IMAGE_URL}/w154/${poster}.jpg`,
     posterDetailUrl: `${TMDB_IMAGE_URL}/w342/${poster}.jpg`,
+    posterListUrl: `${TMDB_IMAGE_URL}/w92/${poster}.jpg`,
     placeholderColor: `#${colour}`,
     textIndex,
   }
@@ -1668,16 +1695,18 @@ export const TestGalleryApp = () => {
     }
   }, [activeMovieId, mode, visibleMovies])
 
-  const searchableListMovies = useMemo(
-    () => filterMoviesByTitleSearch(filteredMovies, listSearchQuery),
-    [filteredMovies, listSearchQuery],
+  // Sorting comes first: filtering keeps the order, so a keystroke in the
+  // search box never re-sorts the whole catalogue, and the list follows the
+  // typing a beat behind it instead of holding the input up.
+  const sortedFilteredMovies = useMemo(
+    () => sortMoviesByRules(filteredMovies, sortRules),
+    [filteredMovies, sortRules],
   )
-
+  const deferredSearchQuery = useDeferredValue(listSearchQuery)
   const listMovies = useMemo(
-    () => sortMoviesByRules(searchableListMovies, sortRules),
-    [searchableListMovies, sortRules],
+    () => filterMoviesByTitleSearch(sortedFilteredMovies, deferredSearchQuery),
+    [sortedFilteredMovies, deferredSearchQuery],
   )
-
   useEffect(() => {
     if (mode !== 'list' || !listMovies.length) return
     if (!listMovies.some((movie) => movie.id === activeMovieId)) {
@@ -2168,7 +2197,7 @@ export const TestGalleryApp = () => {
           movies={listMovies}
           randomRequest={listRandomNonce}
           searchQuery={listSearchQuery}
-          searchResultCount={searchableListMovies.length}
+          searchResultCount={listMovies.length}
           onOpenMovie={handleOpenMovie}
           onPickRandomMovie={handlePickRandomMovie}
           onSearchQueryChange={setListSearchQuery}
@@ -2680,62 +2709,115 @@ const chunkRows = <T,>(rows: T[]) => {
   return chunks
 }
 
-type ListRowChunkProps<T> = {
-  count: number
+type ListRowChunkProps = {
+  // The film that is active or pulsing, only passed to the chunk holding it,
+  // so a hover re-renders one chunk instead of every row on screen.
+  activeMovieId: string | null
   eager: boolean
   forceVisible: boolean
-  rows: T[]
-  // Rows are only built once the chunk renders, so hovering or re-sorting
-  // never creates elements for the thousands of rows still off screen.
-  renderRow: (row: T) => ReactNode
+  isCollapsed: boolean
+  randomPulseId: string | null
+  rows: TestMovie[]
+  onHoverMovie: (movie: TestMovie) => void
+  onOpenMovie: (movie: TestMovie) => void
+  onSelectMovie: (movie: TestMovie) => void
 }
 
-const ListRowChunk = <T,>({
-  count,
-  eager,
-  forceVisible,
-  rows,
-  renderRow,
-}: ListRowChunkProps<T>) => {
-  const placeholderRef = useRef<HTMLDivElement | null>(null)
-  const [isVisible, setIsVisible] = useState(eager || forceVisible)
-  const shouldRender = isVisible || eager || forceVisible
+// How far past the viewport a chunk keeps its rows. Beyond it the rows are
+// dropped and the chunk keeps its measured height, so the DOM (and every
+// hover, sort and search that touches it) stays a few hundred rows however
+// far the index has been scrolled.
+const LIST_CHUNK_MARGIN = '1600px 0px'
 
-  useEffect(() => {
-    if (shouldRender) return
-    const placeholder = placeholderRef.current
-    if (!placeholder || typeof IntersectionObserver === 'undefined') {
-      setIsVisible(true)
-      return
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return
-        observer.disconnect()
-        setIsVisible(true)
-      },
-      { root: placeholder.closest('.warp-list'), rootMargin: '1200px 0px' },
+const ListRowChunk = memo(
+  ({
+    activeMovieId,
+    eager,
+    forceVisible,
+    isCollapsed,
+    randomPulseId,
+    rows,
+    onHoverMovie,
+    onOpenMovie,
+    onSelectMovie,
+  }: ListRowChunkProps) => {
+    const chunkRef = useRef<HTMLDivElement | null>(null)
+    const measuredHeight = useRef<number | null>(null)
+    const [isNear, setIsNear] = useState(false)
+    const shouldRender = eager || forceVisible || isNear
+
+    // Kept in a ref so the observer callback sees whether rows are mounted.
+    const renderedRef = useRef(shouldRender)
+    renderedRef.current = shouldRender
+
+    useEffect(() => {
+      const chunk = chunkRef.current
+      if (!chunk || eager) return
+      if (typeof IntersectionObserver === 'undefined') {
+        setIsNear(true)
+        return
+      }
+      const observer = new IntersectionObserver(
+        (entries) => {
+          const isIntersecting = entries[entries.length - 1].isIntersecting
+          if (isIntersecting) {
+            // Mounting a chunk is interruptible, so a fast flick never blocks.
+            startTransition(() => setIsNear(true))
+            return
+          }
+          if (renderedRef.current) measuredHeight.current = chunk.offsetHeight
+          setIsNear(false)
+        },
+        { root: chunk.closest('.warp-list'), rootMargin: LIST_CHUNK_MARGIN },
+      )
+      observer.observe(chunk)
+      return () => observer.disconnect()
+    }, [eager])
+
+    return (
+      <div
+        ref={chunkRef}
+        className={cn(
+          'warp-list-chunk',
+          !shouldRender && 'warp-list-chunk-placeholder',
+        )}
+        aria-hidden={shouldRender ? undefined : true}
+        style={
+          shouldRender
+            ? undefined
+            : ({
+                '--chunk-row-count': rows.length,
+                ...(measuredHeight.current
+                  ? { height: measuredHeight.current }
+                  : null),
+              } as CSSProperties)
+        }
+      >
+        {shouldRender
+          ? rows.map((movie) => (
+              <ListRow
+                key={movie.id}
+                isActive={activeMovieId === movie.id}
+                isCollapsed={isCollapsed}
+                isRandomPulse={randomPulseId === movie.id}
+                movie={movie}
+                onHoverMovie={onHoverMovie}
+                onOpenMovie={onOpenMovie}
+                onSelectMovie={onSelectMovie}
+              />
+            ))
+          : null}
+      </div>
     )
-    observer.observe(placeholder)
-    return () => observer.disconnect()
-  }, [shouldRender])
-
-  if (shouldRender) return rows.map(renderRow)
-  return (
-    <div
-      ref={placeholderRef}
-      className='warp-list-chunk-placeholder'
-      aria-hidden='true'
-      style={{ '--chunk-row-count': count } as CSSProperties}
-    />
-  )
-}
+  },
+)
 
 type ListRowProps = {
   isActive: boolean
   isCollapsed: boolean
   isRandomPulse: boolean
   movie: TestMovie
+  onHoverMovie: (movie: TestMovie) => void
   onOpenMovie: (movie: TestMovie) => void
   onSelectMovie: (movie: TestMovie) => void
 }
@@ -2747,6 +2829,7 @@ const ListRow = memo(
     isCollapsed,
     isRandomPulse,
     movie,
+    onHoverMovie,
     onOpenMovie,
     onSelectMovie,
   }: ListRowProps) => (
@@ -2761,10 +2844,10 @@ const ListRow = memo(
       tabIndex={isCollapsed ? -1 : undefined}
       onClick={() => onOpenMovie(movie)}
       onFocus={() => onSelectMovie(movie)}
-      onMouseEnter={() => onSelectMovie(movie)}
+      onMouseEnter={() => onHoverMovie(movie)}
     >
       <span className='warp-list-row-poster' aria-hidden='true'>
-        <MoviePoster movie={movie} />
+        <MoviePoster movie={movie} size='list' />
       </span>
       <span className='warp-list-row-main'>
         <span className='warp-list-row-title'>{movie.title}</span>
@@ -2801,6 +2884,26 @@ const WarpList = ({
     () => new Set(),
   )
   const pulseTimerRef = useRef<number | null>(null)
+
+  // Rows pass under a resting cursor while the list scrolls, and each one
+  // would otherwise become the active film and re-render the app. Hover only
+  // counts once the list has settled, and renders as an interruptible update.
+  const isScrollingRef = useRef(false)
+  const scrollTimerRef = useRef<number | null>(null)
+  const handleScroll = () => {
+    isScrollingRef.current = true
+    if (scrollTimerRef.current) window.clearTimeout(scrollTimerRef.current)
+    scrollTimerRef.current = window.setTimeout(() => {
+      isScrollingRef.current = false
+    }, 160)
+  }
+  const handleHoverMovie = useCallback(
+    (movie: TestMovie) => {
+      if (isScrollingRef.current) return
+      startTransition(() => onSelectMovie(movie))
+    },
+    [onSelectMovie],
+  )
   const searchInputRef = useRef<HTMLInputElement | null>(null)
 
   const groupedMovies = useMemo(
@@ -2815,6 +2918,34 @@ const WarpList = ({
     () => (grouping === 'popularity' ? getPopularityGroups(movies) : undefined),
     [grouping, movies],
   )
+
+  // Chunked once per list, so a chunk's rows stay the same array between
+  // renders and its memo holds.
+  const groupedChunks = useMemo(
+    () =>
+      groupedMovies.map(([group, groupMovies]) => ({
+        group,
+        count: groupMovies.length,
+        chunks: chunkRows(groupMovies),
+      })),
+    [groupedMovies],
+  )
+  const chunkKeyByMovieId = useMemo(() => {
+    const keys = new Map<string, string>()
+    for (const { group, chunks } of groupedChunks) {
+      chunks.forEach((chunk, chunkIndex) => {
+        const key = `${group}:${chunkIndex}`
+        for (const movie of chunk) keys.set(movie.id, key)
+      })
+    }
+    return keys
+  }, [groupedChunks])
+  const activeChunkKey = activeMovieId
+    ? chunkKeyByMovieId.get(activeMovieId)
+    : undefined
+  const pulseChunkKey = randomPulseId
+    ? chunkKeyByMovieId.get(randomPulseId)
+    : undefined
 
   // The first screenful renders straight away; the rest as it scrolls near.
   const eagerChunkKeys = useMemo(() => {
@@ -2846,6 +2977,7 @@ const WarpList = ({
   useEffect(
     () => () => {
       if (pulseTimerRef.current) window.clearTimeout(pulseTimerRef.current)
+      if (scrollTimerRef.current) window.clearTimeout(scrollTimerRef.current)
     },
     [],
   )
@@ -2940,7 +3072,11 @@ const WarpList = ({
   }, [randomRequest])
 
   return (
-    <section className='warp-list' aria-label='Movie list view'>
+    <section
+      className='warp-list'
+      aria-label='Movie list view'
+      onScroll={handleScroll}
+    >
       <header className='warp-list-heading'>
         <div className='warp-list-title'>
           <h1>Movie Index</h1>
@@ -3026,7 +3162,7 @@ const WarpList = ({
         </div>
       ) : (
         <div className='warp-list-groups'>
-          {groupedMovies.map(([group, groupMovies]) => {
+          {groupedChunks.map(({ group, count, chunks }) => {
             const isCollapsed = collapsedGroups.has(group)
             return (
               <section
@@ -3048,8 +3184,7 @@ const WarpList = ({
                           : group}
                     </h2>
                     <small>
-                      {groupMovies.length}{' '}
-                      {groupMovies.length === 1 ? 'title' : 'titles'}
+                      {count} {count === 1 ? 'title' : 'titles'}
                     </small>
                   </span>
                   {isCollapsed ? (
@@ -3069,32 +3204,29 @@ const WarpList = ({
                 <div
                   className='warp-list-rows'
                   aria-hidden={isCollapsed || undefined}
-                  style={
-                    { '--group-row-count': groupMovies.length } as CSSProperties
-                  }
+                  style={{ '--group-row-count': count } as CSSProperties}
                 >
-                  {chunkRows(groupMovies).map((chunk, chunkIndex) => (
-                    <ListRowChunk
-                      key={chunk[0]?.id ?? chunkIndex}
-                      count={chunk.length}
-                      eager={eagerChunkKeys.has(`${group}:${chunkIndex}`)}
-                      forceVisible={chunk.some(
-                        (movie) => movie.id === randomPulseId,
-                      )}
-                      rows={chunk}
-                      renderRow={(movie) => (
-                        <ListRow
-                          key={movie.id}
-                          isActive={activeMovieId === movie.id}
-                          isCollapsed={isCollapsed}
-                          isRandomPulse={randomPulseId === movie.id}
-                          movie={movie}
-                          onOpenMovie={onOpenMovie}
-                          onSelectMovie={onSelectMovie}
-                        />
-                      )}
-                    />
-                  ))}
+                  {chunks.map((chunk, chunkIndex) => {
+                    const chunkKey = `${group}:${chunkIndex}`
+                    return (
+                      <ListRowChunk
+                        key={chunk[0]?.id ?? chunkIndex}
+                        activeMovieId={
+                          activeChunkKey === chunkKey ? activeMovieId : null
+                        }
+                        eager={eagerChunkKeys.has(chunkKey)}
+                        forceVisible={pulseChunkKey === chunkKey}
+                        isCollapsed={isCollapsed}
+                        randomPulseId={
+                          pulseChunkKey === chunkKey ? randomPulseId : null
+                        }
+                        rows={chunk}
+                        onHoverMovie={handleHoverMovie}
+                        onOpenMovie={onOpenMovie}
+                        onSelectMovie={onSelectMovie}
+                      />
+                    )
+                  })}
                 </div>
               </section>
             )

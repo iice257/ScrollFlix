@@ -570,6 +570,12 @@ describe('catalogue size by device', () => {
     expect(getCatalogChunkCount(manifest, 1056, false)).toBe(5)
   })
 
+  it('still limits a phone when the manifest has no chunk size', () => {
+    expect(getCatalogChunkCount({ chunks: manifest.chunks }, 1056, true)).toBe(
+      2,
+    )
+  })
+
   it('never asks for more chunks than exist', () => {
     expect(
       getCatalogChunkCount({ ...manifest, chunks: ['a'] }, 1056, true),

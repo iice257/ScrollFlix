@@ -12,6 +12,8 @@ import { cn } from '../../../utils/tw'
 import {
   type HoneycombVec3 as Vec3,
   createHoneycombSpherePositions,
+  hasHoneycombLayout,
+  prewarmHoneycombLayout,
 } from './honeycomb-layout'
 
 export type InfiniteMovieMenuItem<T> = {
@@ -170,6 +172,33 @@ const isTypingTarget = (target: EventTarget | null) =>
     ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
 const FALLBACK_ITEM_COUNT = 128
 const INITIAL_TEXTURE_LOAD_CONCURRENCY = 24
+// Longest stretch of texture uploads before handing the thread back.
+const UPLOAD_SLICE_MS = 8
+
+// A timer rather than scheduler.yield, so the browser can paint and handle
+// input between slices instead of running every continuation first.
+const yieldToMain = () =>
+  new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+// How many posters the globe lays out, and how large it is, for a film count.
+const getGlobeShape = (itemCount: number) => {
+  const instanceCount = Math.min(
+    ICON_INSTANCE_COUNT,
+    Math.max(MIN_INSTANCE_COUNT, itemCount),
+  )
+  const radiusRatio = Math.min(
+    1,
+    Math.max(
+      MIN_RADIUS_RATIO,
+      Math.sqrt(instanceCount / REFERENCE_INSTANCE_COUNT),
+    ),
+  )
+  return {
+    instanceCount,
+    radiusRatio,
+    sphereRadius: SPHERE_RADIUS * radiusRatio,
+  }
+}
+
 const INITIAL_READY_POSTER_COUNT = 72
 const PRIMARY_IMAGE_TIMEOUT_MS = 20000
 
@@ -815,6 +844,32 @@ const createProgram = (
   return null
 }
 
+// The canvas keeps its context when the engine is rebuilt for a new set of
+// films, so the compiled program is kept with it: recompiling blocks the
+// thread for tens of milliseconds, every time the filters change.
+const programCache = new WeakMap<WebGL2RenderingContext, WebGLProgram>()
+
+const getProgram = (
+  gl: WebGL2RenderingContext,
+  vertexSource: string,
+  fragmentSource: string,
+) => {
+  const cached = programCache.get(gl)
+  if (cached) return cached
+  const program = createProgram(gl, vertexSource, fragmentSource)
+  if (program) {
+    programCache.set(gl, program)
+    // A lost context takes its programs with it. (isProgram would check, but
+    // it is a round trip to the GPU process and stalls behind texture uploads.)
+    gl.canvas.addEventListener(
+      'webglcontextlost',
+      () => programCache.delete(gl),
+      { once: true },
+    )
+  }
+  return program
+}
+
 const createBuffer = (
   gl: WebGL2RenderingContext,
   dataOrSize: BufferSource | number,
@@ -1119,23 +1174,15 @@ class InfiniteMovieEngine<T> {
       premultipliedAlpha: false,
     })
     const program = gl
-      ? createProgram(gl, vertexShaderSource, fragmentShaderSource)
+      ? getProgram(gl, vertexShaderSource, fragmentShaderSource)
       : null
     if (!gl || !program) throw new Error('WebGL2 could not initialize')
     this.gl = gl
     this.program = program
-    const instanceCount = Math.min(
-      ICON_INSTANCE_COUNT,
-      Math.max(MIN_INSTANCE_COUNT, this.items.length),
+    const { instanceCount, radiusRatio, sphereRadius } = getGlobeShape(
+      this.items.length,
     )
-    const radiusRatio = Math.min(
-      1,
-      Math.max(
-        MIN_RADIUS_RATIO,
-        Math.sqrt(instanceCount / REFERENCE_INSTANCE_COUNT),
-      ),
-    )
-    this.sphereRadius = SPHERE_RADIUS * radiusRatio
+    this.sphereRadius = sphereRadius
     this.cameraRatio = Math.sqrt(radiusRatio)
     this.cameraRestZ = 3.42 * scale * this.cameraRatio
     this.cameraPosition = [0, 0, this.cameraRestZ]
@@ -1237,7 +1284,7 @@ class InfiniteMovieEngine<T> {
       if (this.texture) this.gl.deleteTexture(this.texture)
       this.geometryBuffers.forEach((buffer) => this.gl.deleteBuffer(buffer))
       if (this.vao) this.gl.deleteVertexArray(this.vao)
-      this.gl.deleteProgram(this.program)
+      // The program stays cached with the context for the next engine.
     }
     this.texture = null
     this.vao = null
@@ -1684,6 +1731,7 @@ class InfiniteMovieEngine<T> {
   ) {
     const failed: number[] = []
     let cursor = 0
+    let sliceStart = performance.now()
     const worker = async () => {
       while (!this.disposed && !this.contextLost) {
         const index = indices[cursor]
@@ -1695,6 +1743,12 @@ class InfiniteMovieEngine<T> {
           const image = await this.loadImage(item.image, item.fallbackImage)
           if (this.disposed || this.contextLost || !this.texture) return
           onLoaded(index, image)
+          // Posters already in the cache resolve in the same task, so a
+          // filter change would upload hundreds of textures without a break.
+          if (performance.now() - sliceStart > UPLOAD_SLICE_MS) {
+            await yieldToMain()
+            sliceStart = performance.now()
+          }
         } catch {
           failed.push(index)
           onFailed?.(index)
@@ -2210,6 +2264,27 @@ export const InfiniteMovieMenu = <T,>({
   const [isHoldPrimed, setIsHoldPrimed] = useState(false)
   const [webglError, setWebglError] = useState('')
 
+  // A new set of films needs a new globe layout. Solving it takes tens of
+  // milliseconds (hundreds on a phone), so it is done in slices first while
+  // the current globe keeps running, and the engine only switches once the
+  // layout is ready.
+  const [engineItems, setEngineItems] = useState(items)
+  useEffect(() => {
+    if (items === engineItems) return
+    const { instanceCount, sphereRadius } = getGlobeShape(items.length)
+    if (hasHoneycombLayout(instanceCount, sphereRadius)) {
+      setEngineItems(items)
+      return
+    }
+    let cancelled = false
+    prewarmHoneycombLayout(instanceCount, sphereRadius).then(() => {
+      if (!cancelled) setEngineItems(items)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [items, engineItems])
+
   useEffect(() => {
     const query = window.matchMedia('(prefers-reduced-motion: reduce)')
     const update = () => setPrefersReducedMotion(query.matches)
@@ -2230,7 +2305,7 @@ export const InfiniteMovieMenu = <T,>({
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || !items.length) return
+    if (!canvas || !engineItems.length) return
 
     let engine: InfiniteMovieEngine<T> | null = null
     const onResize = () => engine?.resize()
@@ -2239,7 +2314,7 @@ export const InfiniteMovieMenu = <T,>({
       onLoadProgress?.(0)
       engine = new InfiniteMovieEngine(
         canvas,
-        items,
+        engineItems,
         scale,
         (item) => {
           activeItemRef.current = item
@@ -2295,7 +2370,7 @@ export const InfiniteMovieMenu = <T,>({
       engineRef.current = null
       engine?.dispose()
     }
-  }, [items, scale, onActiveItemChange, onLoadProgress, onReady])
+  }, [engineItems, scale, onActiveItemChange, onLoadProgress, onReady])
 
   useEffect(() => {
     engineRef.current?.setDetailFocus(
