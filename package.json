@@ -80,6 +80,6 @@
 		"vite-bundle-analyzer": "^1.1.0",
 		"vite-plugin-glsl": "^1.5.1",
 		"vitest": "^3.2.4",
-		"wrangler": "^4.26.0"
+		"wrangler": "^4.147.0"
 	}
 }
