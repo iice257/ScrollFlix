@@ -2225,7 +2225,7 @@ export const TestGalleryApp = () => {
           if (activeMovie) handleOpenWatchLinks(activeMovie)
         }}
         onOpenFilters={() => {
-          setMode('filters')
+          startTransition(() => setMode('filters'))
           setAboutOpen(false)
           setFilterOpen(false)
           setSortOpen(false)
@@ -2242,7 +2242,11 @@ export const TestGalleryApp = () => {
           setAboutOpen(false)
           setFilterOpen(false)
           setSortOpen(false)
-          setMode(nextMode)
+          // The index and filters pages build thousands of nodes, so they
+          // render as an interruptible update; the wall is cheap and stays
+          // immediate.
+          if (nextMode === 'wall') setMode(nextMode)
+          else startTransition(() => setMode(nextMode))
         }}
         dockTop={
           mode === 'wall' ? (
@@ -2698,8 +2702,8 @@ type WarpListProps = {
 // The index can hold tens of thousands of films, so rows render in chunks as
 // they near the viewport. A chunk not yet rendered keeps its estimated height
 // (--warp-list-row-estimate) so the scrollbar and group heights stay right.
-const LIST_CHUNK_SIZE = 40
-const LIST_EAGER_ROWS = 80
+const LIST_CHUNK_SIZE = 20
+const LIST_EAGER_ROWS = 40
 
 const chunkRows = <T,>(rows: T[]) => {
   const chunks: T[][] = []
@@ -2728,6 +2732,53 @@ type ListRowChunkProps = {
 // hover, sort and search that touches it) stays a few hundred rows however
 // far the index has been scrolled.
 const LIST_CHUNK_MARGIN = '1600px 0px'
+// Phones paint rows more slowly, so they keep fewer of them around.
+const LIST_CHUNK_MARGIN_NARROW = '1000px 0px'
+
+type ChunkWatcher = {
+  callbacks: Map<Element, (isIntersecting: boolean) => void>
+  observer: IntersectionObserver
+}
+const chunkWatchers = new WeakMap<Element, Map<string, ChunkWatcher>>()
+
+// One observer per list and margin, however many chunks it holds: hundreds of
+// observers made opening the index measurably slower on phones.
+const watchChunk = (
+  chunk: HTMLElement,
+  root: Element,
+  margin: string,
+  onChange: (isIntersecting: boolean) => void,
+) => {
+  let byMargin = chunkWatchers.get(root)
+  if (!byMargin) {
+    byMargin = new Map()
+    chunkWatchers.set(root, byMargin)
+  }
+  let watcher = byMargin.get(margin)
+  if (!watcher) {
+    const callbacks = new Map<Element, (isIntersecting: boolean) => void>()
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Only the latest entry per chunk matters.
+        const latest = new Map<Element, boolean>()
+        for (const entry of entries)
+          latest.set(entry.target, entry.isIntersecting)
+        for (const [target, isIntersecting] of latest)
+          callbacks.get(target)?.(isIntersecting)
+      },
+      { root, rootMargin: margin },
+    )
+    watcher = { callbacks, observer }
+    byMargin.set(margin, watcher)
+  }
+  const { callbacks, observer } = watcher
+  callbacks.set(chunk, onChange)
+  observer.observe(chunk)
+  return () => {
+    callbacks.delete(chunk)
+    observer.unobserve(chunk)
+  }
+}
 
 const ListRowChunk = memo(
   ({
@@ -2757,9 +2808,18 @@ const ListRowChunk = memo(
         setIsNear(true)
         return
       }
-      const observer = new IntersectionObserver(
-        (entries) => {
-          const isIntersecting = entries[entries.length - 1].isIntersecting
+      const root = chunk.closest('.warp-list')
+      if (!root) {
+        setIsNear(true)
+        return
+      }
+      return watchChunk(
+        chunk,
+        root,
+        window.matchMedia('(max-width: 900px)').matches
+          ? LIST_CHUNK_MARGIN_NARROW
+          : LIST_CHUNK_MARGIN,
+        (isIntersecting) => {
           if (isIntersecting) {
             // Mounting a chunk is interruptible, so a fast flick never blocks.
             startTransition(() => setIsNear(true))
@@ -2768,10 +2828,7 @@ const ListRowChunk = memo(
           if (renderedRef.current) measuredHeight.current = chunk.offsetHeight
           setIsNear(false)
         },
-        { root: chunk.closest('.warp-list'), rootMargin: LIST_CHUNK_MARGIN },
       )
-      observer.observe(chunk)
-      return () => observer.disconnect()
     }, [eager])
 
     return (

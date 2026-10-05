@@ -3057,6 +3057,12 @@
       transform 220ms ease;
   }
 
+  /* Rows used to be direct grid items of .warp-list-rows and stretched to the
+     full width; inside the chunk wrapper they ask for it. */
+  .warp-list-chunk > .warp-list-row {
+    width: 100%;
+  }
+
   .warp-list-chunk-placeholder {
     height: calc(var(--chunk-row-count, 1) * var(--warp-list-row-estimate, 69px));
   }
