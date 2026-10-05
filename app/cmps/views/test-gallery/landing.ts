@@ -1,0 +1,24 @@
+// TMDB ids that must never be the landing movie ("Marmaduke").
+const EXCLUDED_LANDING_TMDB_IDS: readonly string[] = ['38579']
+
+type WithId = { id: string }
+
+// Movie ids are `${index}-${tmdbId}`; a bare index has no TMDB id.
+const tmdbIdOf = (id: string) => id.slice(id.indexOf('-') + 1)
+
+// A random movie from the globe's visible set, for the first centred movie of
+// a page load. `random` is injected so this stays deterministic under test.
+export const pickLandingMovie = <T extends WithId>(
+  visible: readonly T[],
+  random: () => number,
+  excludedTmdbIds: readonly string[] = EXCLUDED_LANDING_TMDB_IDS,
+): T | null => {
+  const eligible = visible.filter(
+    (movie) =>
+      !(movie.id.includes('-') && excludedTmdbIds.includes(tmdbIdOf(movie.id))),
+  )
+  const pool = eligible.length ? eligible : visible
+  if (!pool.length) return null
+  const index = Math.min(pool.length - 1, Math.floor(random() * pool.length))
+  return pool[index]
+}

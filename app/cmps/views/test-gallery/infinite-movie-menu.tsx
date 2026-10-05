@@ -36,25 +36,13 @@ type InfiniteMovieMenuProps<T> = {
   onMovingChange?: (moving: boolean) => void
   onOpenItem?: (item: InfiniteMovieMenuItem<T>) => void
   // Spin to this item, then open it (Shuffle). The nonce re-triggers repeats.
-  spinRequest?: {
-    itemId: string
-    nonce: number
-    shuffleProAutomatic?: boolean
-    shuffleProAutomaticVariant?: 'standard' | 'rare' | 'max'
-  } | null
+  spinRequest?: { itemId: string; nonce: number } | null
   onReady?: () => void
   onUserSpin?: () => void
-  onShuffleProPhase?: (
-    phase: 'spinning' | 'transition' | null,
-    variant?: 'standard' | 'rare' | 'max',
-  ) => void
-  onShuffleProRelease?: (
-    transitioned: boolean,
-    variant: 'standard' | 'rare' | 'max',
-  ) => void
-  onNonShuffleInteraction?: () => void
-  onSpinGestureEnd?: (kind: 'quick' | 'hold' | null) => void
-  isShuffleProMax?: boolean
+  // Camera zoom (>1 pulls the globe closer); applied in 3D, never via CSS.
+  zoom?: number
+  // The movie to face before the first frame (consumed once, on first build).
+  initialFaceId?: string | null
 }
 
 type Vec2 = [number, number]
@@ -87,20 +75,13 @@ const DETAIL_CLOSE_EASE_MS = 460
 // moving further turns into a drag. Clicks resolve inside a large central
 // ellipse (HIT_REGION_*, as ratios of the canvas). Tune live with
 // ?gesture-debug in the URL.
+// Directional motion blur: angular speed (rad/s) where it starts and reaches
+// full strength, and the longest smear as a fraction of a poster's height.
+const MOTION_BLUR_THRESHOLD = 2.2
+const MOTION_BLUR_CAP = 6.5
+const MOTION_BLUR_MAX_SMEAR = 0.012
 const HOLD_TO_DRAG_MS = 220
 const CLICK_MOVE_TOLERANCE_PX = 8
-const SHUFFLE_PRO_MOVE_TOLERANCE_PX = 8
-const SHUFFLE_PRO_STATIONARY_MS = 5000
-const SHUFFLE_PRO_MOVING_MS = 10000
-const SHUFFLE_PRO_TRANSITION_MS = 5000
-const SHUFFLE_PRO_MAX_SPEED = 0.00042
-const SHUFFLE_PRO_MAX_TRANSITION_MS = 2300
-const SHUFFLE_PRO_MAX_SPEED_CAP = 0.00062
-const SHUFFLE_PRO_BLUR_THRESHOLD = 0.35
-const SHUFFLE_PRO_BLUR_CAP_PX = 1.5
-const SHUFFLE_PRO_MIN_SCALE = 0.7
-const GLOBE_BLUR_VELOCITY_THRESHOLD = 0.015
-const GLOBE_BLUR_VELOCITY_CAP = 0.06
 // Shuffle: snap strength while spinning to a poster, and how close (cosine of
 // the angle to the centre) counts as arrived before the card opens.
 const SPIN_SNAP_STRENGTH = 0.085
@@ -141,13 +122,58 @@ type PressState = {
   startTime: number
   x: number
   y: number
-  shuffleProStarted?: boolean
-  shuffleProTransitioned?: boolean
-  shuffleProVariant?: 'standard' | 'rare' | 'max'
-  shuffleProTimer?: number | null
-  transitionTimer?: number | null
-  autoTarget?: InfiniteMovieMenuItem<unknown>
 }
+// Release inertia. The time constant starts at the original per-frame decay
+// (0.1 per 60fps frame) and stretches with fresh release speed: at most 1.5x
+// for a pointer flick, 1.2x for wheel and arrow nudges.
+export const BASE_RELEASE_TAU_MS = -TARGET_FRAME_DURATION / Math.log(0.9)
+const RELEASE_REFERENCE_SPEED_PX_MS = 1.4
+const RELEASE_STALE_MS = 80
+const RELEASE_BOOST: Record<'pointer' | 'nudge', number> = {
+  pointer: 0.5,
+  nudge: 0.2,
+}
+
+export const releaseTimeConstant = ({
+  speedPxMs,
+  source,
+  msSinceLastMove,
+}: {
+  speedPxMs: number
+  source: 'pointer' | 'nudge'
+  msSinceLastMove: number
+}) => {
+  const fresh = msSinceLastMove > RELEASE_STALE_MS ? 0 : speedPxMs
+  const t = Math.max(0, Math.min(1, fresh / RELEASE_REFERENCE_SPEED_PX_MS))
+  return BASE_RELEASE_TAU_MS * (1 + RELEASE_BOOST[source] * t)
+}
+
+// After a touch opens a poster, browsers still fire a compatibility click on
+// whatever now sits under the finger (the details backdrop), which would close
+// the card straight away. Swallow that one click; returns a disposer.
+const guardTouchOpenClick = (pointerId: number) => {
+  let expiryTimer = 0
+  const cleanup = () => {
+    window.clearTimeout(expiryTimer)
+    window.removeEventListener('click', onClick, true)
+  }
+  function onClick(event: MouseEvent) {
+    if (
+      event.detail !== 0 &&
+      (event as PointerEvent).pointerId === pointerId &&
+      event.target instanceof Element &&
+      event.target.closest('.warp-details-backdrop')
+    ) {
+      cleanup()
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+  }
+  expiryTimer = window.setTimeout(cleanup, 800)
+  window.addEventListener('click', onClick, true)
+  return cleanup
+}
+
 const NUDGE_RELEASE_MS = 140
 const WHEEL_NUDGE_SCALE = 0.6
 const WHEEL_NUDGE_MAX_PX = 90
@@ -168,7 +194,11 @@ const isTypingTarget = (target: EventTarget | null) =>
     ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
 const FALLBACK_ITEM_COUNT = 128
 const INITIAL_TEXTURE_LOAD_CONCURRENCY = 24
-const INITIAL_READY_POSTER_COUNT = 72
+// The globe is revealed once every poster has settled (loaded, or failed after
+// its quick retries and fallen back to the placeholder), or after the safety
+// net so a stalled request can never hold the page hostage.
+const POSTER_SETTLE_RETRY_DELAYS_MS = [800, 2400]
+const GLOBE_READY_SAFETY_NET_MS = 25000
 const PRIMARY_IMAGE_TIMEOUT_MS = 20000
 
 type DetailMotion = 'fast' | 'slow' | 'close'
@@ -379,12 +409,15 @@ uniform mat4 uWorldMatrix;
 uniform mat4 uViewMatrix;
 uniform mat4 uProjectionMatrix;
 uniform vec4 uRotationAxisVelocity;
+uniform float uMotionBlur;
+uniform float uMotionBlurMax;
 
 in vec3 aModelPosition;
 in vec2 aModelUvs;
 in mat4 aInstanceMatrix;
 
 out vec2 vUvs;
+out vec2 vSmear;
 out float vAlpha;
 flat out int vInstanceId;
 
@@ -395,6 +428,24 @@ void main() {
   float radius = length(centerPos.xyz);
 
   vec3 rotationAxis = uRotationAxisVelocity.xyz;
+
+  // Directional motion blur: the poster centre's velocity (axis x position),
+  // projected onto the poster plane and turned into a UV-space smear.
+  vSmear = vec2(0.0);
+  if (uMotionBlur > 0.0) {
+    mat4 posterMatrix = uWorldMatrix * aInstanceMatrix;
+    vec3 ex = posterMatrix[0].xyz;
+    vec3 ey = posterMatrix[1].xyz;
+    vec3 motion = cross(rotationAxis, centerPos);
+    vec2 inPlane = vec2(dot(motion, ex), dot(motion, ey));
+    float planeLength = length(inPlane);
+    if (planeLength > 0.00001) {
+      float speedFrac = clamp(length(motion) / max(radius, 0.0001), 0.0, 1.0);
+      vec2 dir = inPlane / planeLength;
+      vSmear = uMotionBlur * uMotionBlurMax * speedFrac * vec2(dir.x * ${(0.5 / 0.34).toFixed(4)}, -dir.y);
+    }
+  }
+
   float rotationVelocity = min(0.095, uRotationAxisVelocity.w * 9.0);
   vec3 stretchDir = normalize(cross(centerPos, rotationAxis));
   vec3 relativeVertexPos = normalize(worldPosition.xyz - centerPos);
@@ -424,6 +475,7 @@ uniform float uAtlasPadding;
 out vec4 outColor;
 
 in vec2 vUvs;
+in vec2 vSmear;
 in float vAlpha;
 flat in int vInstanceId;
 
@@ -441,10 +493,23 @@ void main() {
   vec2 cellOffset = vec2(float(cellX), float(cellY)) * cellSize;
   vec2 cellPadding = cellSize * uAtlasPadding;
 
-  vec2 st = vUvs;
-  st = st * (cellSize - cellPadding * 2.0) + cellOffset + cellPadding;
+  vec2 tileSpan = cellSize - cellPadding * 2.0;
+  vec2 tileOrigin = cellOffset + cellPadding;
 
-  vec4 color = texture(uTex, st);
+  vec4 color;
+  if (dot(vSmear, vSmear) > 0.0) {
+    // Six taps along the smear, clamped to this poster's own tile so
+    // neighbouring posters never bleed in.
+    color = vec4(0.0);
+    for (int i = 0; i < 6; i++) {
+      float t = (float(i) + 0.5) / 6.0 - 0.5;
+      vec2 tapUv = clamp(vUvs + vSmear * t, 0.0, 1.0);
+      color += texture(uTex, tapUv * tileSpan + tileOrigin);
+    }
+    color /= 6.0;
+  } else {
+    color = texture(uTex, vUvs * tileSpan + tileOrigin);
+  }
   float mask = roundedRectMask(vUvs);
   outColor = color;
   outColor.rgb *= mix(0.58, 1.12, vAlpha);
@@ -854,9 +919,9 @@ class ArcballControl {
 
   private pointerPos: Vec2 = [0, 0]
   private previousPointerPos: Vec2 = [0, 0]
-  private previousMoveAt = 0
-  private pointerVelocityPxMs = 0
-  private releaseDecayMs = 170
+  private lastMoveAt = 0
+  private moveSpeedPxMs = 0
+  private releaseTauMs = BASE_RELEASE_TAU_MS
   private combinedQuat: Quat = identityQuat()
   private smoothedRotationVelocity = 0
   private readonly cleanupHandlers: Array<() => void> = []
@@ -875,8 +940,8 @@ class ArcballControl {
   beginDrag(clientX: number, clientY: number, pointerId?: number) {
     this.pointerPos = [clientX, clientY]
     this.previousPointerPos = [...this.pointerPos]
-    this.previousMoveAt = performance.now()
-    this.pointerVelocityPxMs = 0
+    this.lastMoveAt = performance.now()
+    this.moveSpeedPxMs = 0
     this.isPointerDown = true
     if (pointerId !== undefined) {
       try {
@@ -890,26 +955,30 @@ class ArcballControl {
   moveDrag(clientX: number, clientY: number) {
     if (!this.isPointerDown) return
     const now = performance.now()
-    const deltaTime = now - this.previousMoveAt
-    if (deltaTime > 0 && deltaTime < 120) {
+    const elapsed = now - this.lastMoveAt
+    if (elapsed > 0) {
       const distance = Math.hypot(
         clientX - this.pointerPos[0],
         clientY - this.pointerPos[1],
       )
-      const speed = Math.min(1.6, distance / Math.max(8, deltaTime))
-      this.pointerVelocityPxMs = this.pointerVelocityPxMs * 0.35 + speed * 0.65
-    } else if (deltaTime >= 120) {
-      this.pointerVelocityPxMs = 0
+      const speed = Math.min(1.6, distance / Math.max(8, elapsed))
+      this.moveSpeedPxMs = this.moveSpeedPxMs * 0.35 + speed * 0.65
     }
     this.pointerPos = [clientX, clientY]
-    this.previousMoveAt = now
+    this.lastMoveAt = now
   }
 
-  endDrag(pointerId?: number) {
+  endDrag(pointerId?: number, source: 'pointer' | 'nudge' = 'pointer') {
+    if (this.isPointerDown) {
+      this.releaseTauMs = releaseTimeConstant({
+        speedPxMs: this.moveSpeedPxMs,
+        source,
+        // A nudge's release is virtual (a debounce), not a stale pointer.
+        msSinceLastMove:
+          source === 'nudge' ? 0 : performance.now() - this.lastMoveAt,
+      })
+    }
     this.isPointerDown = false
-    const releaseSpeed = this.pointerVelocityPxMs
-    this.releaseDecayMs = 150 + Math.min(1, releaseSpeed / 1.4) * 240
-    this.pointerVelocityPxMs = 0
     if (pointerId !== undefined) {
       try {
         this.canvas.releasePointerCapture?.(pointerId)
@@ -917,12 +986,10 @@ class ArcballControl {
         // Browsers throw when capture was already released or never acquired.
       }
     }
-    return releaseSpeed
   }
 
   cancelDrag(pointerId?: number) {
     this.pointerRotation = slerpQuat(this.pointerRotation, identityQuat(), 0.35)
-    this.pointerVelocityPxMs = 0
     this.endDrag(pointerId)
   }
 
@@ -967,9 +1034,7 @@ class ArcballControl {
         )
       }
     } else {
-      // Keep a little more momentum after a fast release. The decay is capped
-      // so a flick feels lively without letting the globe spin away forever.
-      const intensity = 1 - Math.exp(-deltaTime / this.releaseDecayMs)
+      const intensity = 1 - Math.exp(-deltaTime / this.releaseTauMs)
       this.pointerRotation = slerpQuat(
         this.pointerRotation,
         identityQuat(),
@@ -1013,6 +1078,20 @@ class ArcballControl {
       (rotationVelocity - this.smoothedRotationVelocity) * 0.5 * timeScale
     this.rotationVelocity = this.smoothedRotationVelocity / timeScale
     this.updateCallback(deltaTime)
+  }
+
+  // Orients the globe so `direction` (a model-space point) faces the viewer.
+  faceDirection(direction: Vec3) {
+    const target = this.snapDirection
+    const d = dot3(direction, target)
+    this.orientation =
+      d < -0.9999
+        ? axisAngleQuat([0, 1, 0], Math.PI)
+        : this.quatFromVectors(direction, target)
+    this.pointerRotation = identityQuat()
+    this.combinedQuat = identityQuat()
+    this.smoothedRotationVelocity = 0
+    this.rotationVelocity = 0
   }
 
   private quatFromVectors(a: Vec3, b: Vec3, angleFactor = 1) {
@@ -1077,7 +1156,8 @@ class InfiniteMovieEngine<T> {
   private atlasCellSize = ICON_TEXTURE_CELL_SIZE
   private lastReportedProgress = -1
   private readonly sphereRadius: number
-  private readonly cameraRestZ: number
+  private cameraRestZ: number
+  private zoom: number
   private readonly cameraRatio: number
   private readonly cleanupCallbacks: Array<() => void> = []
   private nudgePos: Vec2 | null = null
@@ -1106,8 +1186,9 @@ class InfiniteMovieEngine<T> {
     private readonly onMovementChange: (moving: boolean) => void,
     private readonly onLoadProgress: (percent: number) => void,
     private readonly onFatalError: (message: string) => void,
-    private readonly onRotationVelocity: (velocity: number) => void,
+    zoom = 1,
   ) {
+    this.zoom = zoom
     const gl = canvas.getContext('webgl2', {
       alpha: true,
       antialias: true,
@@ -1134,7 +1215,7 @@ class InfiniteMovieEngine<T> {
     )
     this.sphereRadius = SPHERE_RADIUS * radiusRatio
     this.cameraRatio = Math.sqrt(radiusRatio)
-    this.cameraRestZ = 3.42 * scale * this.cameraRatio
+    this.cameraRestZ = (3.42 * scale * this.cameraRatio) / this.zoom
     this.cameraPosition = [0, 0, this.cameraRestZ]
     this.locations = {
       uWorldMatrix: gl.getUniformLocation(program, 'uWorldMatrix'),
@@ -1144,6 +1225,8 @@ class InfiniteMovieEngine<T> {
         program,
         'uRotationAxisVelocity',
       ),
+      uMotionBlur: gl.getUniformLocation(program, 'uMotionBlur'),
+      uMotionBlurMax: gl.getUniformLocation(program, 'uMotionBlurMax'),
       uTex: gl.getUniformLocation(program, 'uTex'),
       uItemCount: gl.getUniformLocation(program, 'uItemCount'),
       uAtlasSize: gl.getUniformLocation(program, 'uAtlasSize'),
@@ -1209,6 +1292,15 @@ class InfiniteMovieEngine<T> {
     })
   }
 
+  // Pulls the camera in or out (zoom > 1 is closer). Applied in 3D so posters
+  // stay crisp and the hold-primed CSS scale keeps working on top of it.
+  setZoom(zoom: number) {
+    if (zoom === this.zoom) return
+    this.zoom = zoom
+    this.cameraRestZ = (3.42 * this.scale * this.cameraRatio) / zoom
+    this.renderDirty = true
+  }
+
   resize() {
     this.renderDirty = true
     if (resizeCanvasToDisplaySize(this.canvas)) {
@@ -1254,17 +1346,10 @@ class InfiniteMovieEngine<T> {
   }
 
   endPointerDrag(pointerId?: number) {
-    return this.control.endDrag(pointerId)
+    this.control.endDrag(pointerId)
   }
 
   cancelPointerDrag(pointerId?: number) {
-    this.control.cancelDrag(pointerId)
-  }
-
-  stopNudge(pointerId?: number) {
-    if (this.nudgeTimer) window.clearTimeout(this.nudgeTimer)
-    this.nudgeTimer = null
-    this.nudgePos = null
     this.control.cancelDrag(pointerId)
   }
 
@@ -1301,7 +1386,7 @@ class InfiniteMovieEngine<T> {
     this.nudgeTimer = null
     if (!this.nudgePos) return
     this.nudgePos = null
-    this.control.endDrag()
+    this.control.endDrag(undefined, 'nudge')
   }
 
   setDetailFocus(
@@ -1359,6 +1444,17 @@ class InfiniteMovieEngine<T> {
 
   isSpinning() {
     return Math.abs(this.smoothRotationVelocity) > 0.01
+  }
+
+  // Sets the orientation so the item's poster is centred, with no animation.
+  // Used before the first frame so the globe opens already facing it.
+  faceItem(itemId: string) {
+    const index = this.findBestInstanceIndexForItem(itemId)
+    const position = this.instancePositions[index]
+    if (!position) return
+    this.control.faceDirection(normalize3(position))
+    this.nearestVertexIndex = index
+    this.renderDirty = true
   }
 
   // Projects every front-facing poster with the same matrices the shader uses
@@ -1597,32 +1693,36 @@ class InfiniteMovieEngine<T> {
       paintBatch()
     })
 
-    // Show the wall once the first batch is in; the rest stream into the atlas.
-    const readyTarget = Math.min(indices.length, INITIAL_READY_POSTER_COUNT)
+    // Show the wall once every poster has settled; progress is settled / total.
+    const total = Math.max(1, indices.length)
     let settled = 0
     let ready = false
     const markReady = () => {
       if (ready || this.disposed || this.contextLost) return
       ready = true
+      window.clearTimeout(safetyNet)
       this.canvas.dataset.webglState = 'ready'
       this.reportProgress(100)
     }
+    const safetyNet = window.setTimeout(markReady, GLOBE_READY_SAFETY_NET_MS)
+    this.cleanupCallbacks.push(() => window.clearTimeout(safetyNet))
     const countSettled = () => {
       settled += 1
       if (ready) return
-      if (settled >= readyTarget) {
+      if (settled >= total) {
         window.requestAnimationFrame(markReady)
         return
       }
-      this.reportProgress(8 + (settled / Math.max(1, readyTarget)) * 91)
+      this.reportProgress(8 + (settled / total) * 91)
     }
     const onLoaded = (index: number, image: HTMLImageElement) => {
       loaded.add(index)
       this.uploadPosterCell(index, image, uploadCanvas, uploadContext)
     }
 
-    // A failed poster keeps its placeholder and counts as settled, so one bad
-    // request can never stall or kill the globe; it is retried below.
+    // A poster that fails is retried quickly (800ms, then 2.4s) before it
+    // settles on its placeholder, so one bad request can never stall or kill
+    // the globe; slower background retries continue below.
     const failed = await this.loadPosterIndices(
       indices,
       INITIAL_TEXTURE_LOAD_CONCURRENCY,
@@ -1631,6 +1731,7 @@ class InfiniteMovieEngine<T> {
         countSettled()
       },
       countSettled,
+      POSTER_SETTLE_RETRY_DELAYS_MS,
     )
 
     if (this.disposed || this.contextLost) return
@@ -1679,6 +1780,7 @@ class InfiniteMovieEngine<T> {
     concurrency: number,
     onLoaded: (index: number, image: HTMLImageElement) => void,
     onFailed?: (index: number) => void,
+    retryDelaysMs: number[] = [],
   ) {
     const failed: number[] = []
     let cursor = 0
@@ -1689,11 +1791,23 @@ class InfiniteMovieEngine<T> {
         if (index === undefined) return
         const item = this.items[index]
         if (!item) continue
-        try {
-          const image = await this.loadImage(item.image, item.fallbackImage)
-          if (this.disposed || this.contextLost || !this.texture) return
+        let image: HTMLImageElement | null = null
+        for (let attempt = 0; ; attempt += 1) {
+          try {
+            image = await this.loadImage(item.image, item.fallbackImage)
+            break
+          } catch {
+            const delay = retryDelaysMs[attempt]
+            if (delay === undefined || this.disposed || this.contextLost) break
+            await new Promise<void>((resolve) =>
+              window.setTimeout(resolve, delay),
+            )
+          }
+        }
+        if (this.disposed || this.contextLost || !this.texture) return
+        if (image) {
           onLoaded(index, image)
-        } catch {
+        } else {
           failed.push(index)
           onFailed?.(index)
         }
@@ -1860,7 +1974,6 @@ class InfiniteMovieEngine<T> {
   private animate(deltaTime: number) {
     const gl = this.gl
     this.control.update(deltaTime)
-    this.onRotationVelocity(this.control.rotationVelocity)
     const detailStep = 1 - Math.exp(-deltaTime / this.detailEaseMs)
     this.detailProgress +=
       (this.detailTargetProgress - this.detailProgress) * detailStep
@@ -1920,6 +2033,29 @@ class InfiniteMovieEngine<T> {
     return true
   }
 
+  // Angular speed of the globe in rad/s (control velocity is turns per frame).
+  angularSpeed() {
+    return (
+      Math.abs(this.smoothRotationVelocity) *
+      2 *
+      Math.PI *
+      (1000 / TARGET_FRAME_DURATION)
+    )
+  }
+
+  // 0 below the threshold (so ordinary drags never smear), ramping to 1 on a
+  // hard flick. Zero costs nothing: the shader branches on the uniform.
+  private motionBlurAmount() {
+    const speed = this.angularSpeed()
+    if (speed <= MOTION_BLUR_THRESHOLD) return 0
+    const t = Math.min(
+      1,
+      (speed - MOTION_BLUR_THRESHOLD) /
+        (MOTION_BLUR_CAP - MOTION_BLUR_THRESHOLD),
+    )
+    return t * t * (3 - 2 * t)
+  }
+
   private render() {
     const gl = this.gl
     gl.useProgram(this.program)
@@ -1944,6 +2080,8 @@ class InfiniteMovieEngine<T> {
       this.control.rotationAxis[2],
       this.smoothRotationVelocity * 1.1,
     )
+    gl.uniform1f(this.locations.uMotionBlur, this.motionBlurAmount())
+    gl.uniform1f(this.locations.uMotionBlurMax, MOTION_BLUR_MAX_SMEAR)
     gl.uniform1i(this.locations.uItemCount, Math.max(1, this.items.length))
     gl.uniform1i(this.locations.uAtlasSize, this.atlasSize)
     gl.uniform1f(
@@ -1969,7 +2107,7 @@ class InfiniteMovieEngine<T> {
     const restCameraZ = this.cameraRestZ
     const detailCameraZ = Math.max(
       this.sphereRadius + 0.18,
-      2.86 * this.scale * this.cameraRatio,
+      (2.86 * this.scale * this.cameraRatio) / this.zoom,
     )
     let cameraTargetZ =
       restCameraZ + (detailCameraZ - restCameraZ) * this.detailProgress
@@ -2147,11 +2285,8 @@ export const InfiniteMovieMenu = <T,>({
   onOpenItem,
   onReady,
   onUserSpin,
-  onShuffleProPhase,
-  onShuffleProRelease,
-  onNonShuffleInteraction,
-  onSpinGestureEnd,
-  isShuffleProMax = false,
+  zoom = 1,
+  initialFaceId = null,
   spinRequest = null,
 }: InfiniteMovieMenuProps<T>) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -2163,17 +2298,15 @@ export const InfiniteMovieMenu = <T,>({
   const isActiveRef = useRef(isActive)
   isActiveRef.current = isActive
   const pressRef = useRef<PressState | null>(null)
-  const touchOpenClickGuardRef = useRef<(() => void) | null>(null)
-  const onShuffleProPhaseRef = useRef(onShuffleProPhase)
-  onShuffleProPhaseRef.current = onShuffleProPhase
-  const onShuffleProReleaseRef = useRef(onShuffleProRelease)
-  onShuffleProReleaseRef.current = onShuffleProRelease
-  const onSpinGestureEndRef = useRef(onSpinGestureEnd)
-  onSpinGestureEndRef.current = onSpinGestureEnd
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
-  const prefersReducedMotionRef = useRef(prefersReducedMotion)
-  prefersReducedMotionRef.current = prefersReducedMotion
-  const shuffleProFrameRef = useRef<number | null>(null)
+  const touchOpenGuardRef = useRef<(() => void) | null>(null)
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
+  // Consumed once, by the first engine build that has items to face.
+  const initialFaceRef = useRef<string | null>(null)
+  const initialFaceUsedRef = useRef(false)
+  if (initialFaceId && !initialFaceUsedRef.current) {
+    initialFaceRef.current = initialFaceId
+  }
   const tuningRef = useRef<GestureTuning>({
     regionCenterY: HIT_REGION_CENTER_Y,
     regionRx: HIT_REGION_RX,
@@ -2188,14 +2321,6 @@ export const InfiniteMovieMenu = <T,>({
   )
   const [isHoldPrimed, setIsHoldPrimed] = useState(false)
   const [webglError, setWebglError] = useState('')
-
-  useEffect(() => {
-    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const update = () => setPrefersReducedMotion(query.matches)
-    update()
-    query.addEventListener('change', update)
-    return () => query.removeEventListener('change', update)
-  }, [])
 
   useEffect(() => {
     const nextActive =
@@ -2235,28 +2360,14 @@ export const InfiniteMovieMenu = <T,>({
           onLoadProgress?.(100)
           onReady?.()
         },
-        (velocity) => {
-          const canvasElement = canvasRef.current
-          if (!canvasElement || pressRef.current?.shuffleProStarted) return
-          if (prefersReducedMotionRef.current) {
-            canvasElement.style.removeProperty('--shuffle-pro-blur')
-            return
-          }
-          const blurProgress = Math.max(
-            0,
-            Math.min(
-              1,
-              (Math.abs(velocity) - GLOBE_BLUR_VELOCITY_THRESHOLD) /
-                (GLOBE_BLUR_VELOCITY_CAP - GLOBE_BLUR_VELOCITY_THRESHOLD),
-            ),
-          )
-          canvasElement.style.setProperty(
-            '--shuffle-pro-blur',
-            `${blurProgress * SHUFFLE_PRO_BLUR_CAP_PX}px`,
-          )
-        },
+        zoomRef.current,
       )
       engineRef.current = engine
+      if (initialFaceRef.current) {
+        engine.faceItem(initialFaceRef.current)
+        initialFaceRef.current = null
+        initialFaceUsedRef.current = true
+      }
       engine.run()
       if (!isActiveRef.current) engine.pause()
       window.addEventListener('resize', onResize)
@@ -2275,6 +2386,10 @@ export const InfiniteMovieMenu = <T,>({
       engine?.dispose()
     }
   }, [items, scale, onActiveItemChange, onLoadProgress, onReady])
+
+  useEffect(() => {
+    engineRef.current?.setZoom(zoom)
+  }, [zoom])
 
   useEffect(() => {
     engineRef.current?.setDetailFocus(
@@ -2414,127 +2529,6 @@ export const InfiniteMovieMenu = <T,>({
     [onUserSpin],
   )
 
-  const startShufflePro = useCallback(
-    (
-      press: PressState,
-      requestedVariant: 'standard' | 'rare' | 'max' = 'standard',
-    ) => {
-      if (press.shuffleProStarted) return
-      const variant =
-        requestedVariant === 'max' || isShuffleProMax ? 'max' : requestedVariant
-      press.shuffleProStarted = true
-      press.shuffleProVariant = variant
-      press.dragging = true
-      press.kind = 'hold'
-      if (press.holdTimer) window.clearTimeout(press.holdTimer)
-      press.holdTimer = null
-      // End direct manipulation before autonomous spin nudges begin.
-      // Stop direct rotation without releasing the canvas capture; pointerup
-      // must still arrive here if the user moves off the globe while holding.
-      engineRef.current?.endPointerDrag()
-      setIsHoldPrimed(true)
-      onUserSpin?.()
-      onShuffleProPhaseRef.current?.('spinning', variant)
-      const startedAt = performance.now()
-      let lastAt = startedAt
-      const speedCap =
-        variant === 'max' ? SHUFFLE_PRO_MAX_SPEED_CAP : SHUFFLE_PRO_MAX_SPEED
-      const rampDuration = variant === 'max' ? 1450 : 2800
-      const animate = (time: number) => {
-        const elapsed = Math.min(48, time - lastAt)
-        lastAt = time
-        const progress = Math.min(1, (time - startedAt) / rampDuration)
-        if (!prefersReducedMotion) {
-          const velocity = Math.min(speedCap, progress * speedCap)
-          const px =
-            Math.min(
-              variant === 'max' ? 18 : 12,
-              (velocity / speedCap) * (variant === 'max' ? 18 : 12),
-            ) *
-            (elapsed / (1000 / 60))
-          engineRef.current?.nudge(px, px * 0.42)
-          const speedRatio = velocity / speedCap
-          const blurProgress = Math.max(
-            0,
-            (speedRatio - SHUFFLE_PRO_BLUR_THRESHOLD) /
-              (1 - SHUFFLE_PRO_BLUR_THRESHOLD),
-          )
-          const canvas = canvasRef.current
-          canvas?.style.setProperty(
-            '--shuffle-pro-scale',
-            String(1 - speedRatio * (1 - SHUFFLE_PRO_MIN_SCALE)),
-          )
-          canvas?.style.setProperty(
-            '--shuffle-pro-blur',
-            `${blurProgress * SHUFFLE_PRO_BLUR_CAP_PX}px`,
-          )
-        } else {
-          // Let the reduced-motion stylesheet provide its gentle pulse.
-          canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
-          canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
-        }
-        if (pressRef.current === press && press.shuffleProStarted) {
-          shuffleProFrameRef.current = window.requestAnimationFrame(animate)
-        }
-      }
-      shuffleProFrameRef.current = window.requestAnimationFrame(animate)
-      press.transitionTimer = window.setTimeout(
-        () => {
-          if (pressRef.current !== press || !press.shuffleProStarted) return
-          press.shuffleProTransitioned = true
-          onShuffleProPhaseRef.current?.('transition', variant)
-          if (press.autoTarget) {
-            const item = press.autoTarget as InfiniteMovieMenuItem<T>
-            const engine = engineRef.current
-            if (shuffleProFrameRef.current !== null) {
-              window.cancelAnimationFrame(shuffleProFrameRef.current)
-              shuffleProFrameRef.current = null
-            }
-            engine?.stopNudge()
-            if (engine)
-              engine.spinToItem(item.id, (index) => {
-                activeItemRef.current = item
-                setActiveItem(item)
-                onActiveItemChange(item)
-                engine.setDetailFocus(item.id, true, 'fast', index)
-                onOpenItem?.(item)
-                if (shuffleProFrameRef.current !== null)
-                  window.cancelAnimationFrame(shuffleProFrameRef.current)
-                shuffleProFrameRef.current = null
-                if (pressRef.current === press) pressRef.current = null
-                canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
-                canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
-                onShuffleProPhaseRef.current?.(null, variant)
-              })
-            else {
-              activeItemRef.current = item
-              setActiveItem(item)
-              onActiveItemChange(item)
-              onOpenItem?.(item)
-              if (shuffleProFrameRef.current !== null)
-                window.cancelAnimationFrame(shuffleProFrameRef.current)
-              shuffleProFrameRef.current = null
-              if (pressRef.current === press) pressRef.current = null
-              canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
-              canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
-              onShuffleProPhaseRef.current?.(null, variant)
-            }
-          }
-        },
-        variant === 'max'
-          ? SHUFFLE_PRO_MAX_TRANSITION_MS
-          : SHUFFLE_PRO_TRANSITION_MS,
-      )
-    },
-    [
-      isShuffleProMax,
-      onUserSpin,
-      onActiveItemChange,
-      onOpenItem,
-      prefersReducedMotion,
-    ],
-  )
-
   const openHit = useCallback(
     (hit: PosterHit<T>) => {
       activeItemRef.current = hit.item
@@ -2551,36 +2545,6 @@ export const InfiniteMovieMenu = <T,>({
     if (!spinRequest) return
     const item = items.find((candidate) => candidate.id === spinRequest.itemId)
     if (!item) return
-    if (spinRequest.shuffleProAutomatic) {
-      const press: PressState = {
-        dragging: false,
-        holdTimer: null,
-        kind: 'hold',
-        lastX: 0,
-        lastY: 0,
-        maxMovedPx: 0,
-        pointerId: -1,
-        snapshot: null,
-        startTime: performance.now(),
-        x: 0,
-        y: 0,
-        autoTarget: item as InfiniteMovieMenuItem<unknown>,
-      }
-      pressRef.current = press
-      startShufflePro(press, spinRequest.shuffleProAutomaticVariant ?? 'rare')
-      return () => {
-        if (press.transitionTimer) window.clearTimeout(press.transitionTimer)
-        if (shuffleProFrameRef.current !== null)
-          window.cancelAnimationFrame(shuffleProFrameRef.current)
-        if (pressRef.current === press) pressRef.current = null
-        canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
-        canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
-        onShuffleProPhaseRef.current?.(
-          null,
-          spinRequest.shuffleProAutomaticVariant ?? 'rare',
-        )
-      }
-    }
     const engine = engineRef.current
     if (!engine) {
       // Fallback (no WebGL): nothing to spin, open straight away.
@@ -2600,8 +2564,6 @@ export const InfiniteMovieMenu = <T,>({
   const releasePress = () => {
     const press = pressRef.current
     if (press?.holdTimer) window.clearTimeout(press.holdTimer)
-    if (press?.shuffleProTimer) window.clearTimeout(press.shuffleProTimer)
-    if (press?.transitionTimer) window.clearTimeout(press.transitionTimer)
     pressRef.current = null
     setIsHoldPrimed(false)
     return press
@@ -2611,17 +2573,7 @@ export const InfiniteMovieMenu = <T,>({
     () => () => {
       const timer = pressRef.current?.holdTimer
       if (timer) window.clearTimeout(timer)
-      const press = pressRef.current
-      if (press?.shuffleProTimer) window.clearTimeout(press.shuffleProTimer)
-      if (press?.transitionTimer) window.clearTimeout(press.transitionTimer)
-      if (shuffleProFrameRef.current !== null)
-        window.cancelAnimationFrame(shuffleProFrameRef.current)
-      if (press?.shuffleProStarted)
-        engineRef.current?.stopNudge(press.pointerId)
-      canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
-      canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
-      touchOpenClickGuardRef.current?.()
-      onShuffleProPhaseRef.current?.(null)
+      touchOpenGuardRef.current?.()
     },
     [],
   )
@@ -2643,10 +2595,6 @@ export const InfiniteMovieMenu = <T,>({
       y: event.clientY,
     }
     pressRef.current = press
-    press.shuffleProTimer = window.setTimeout(
-      () => startShufflePro(press, isShuffleProMax ? 'max' : 'standard'),
-      isShuffleProMax ? 3000 : SHUFFLE_PRO_STATIONARY_MS,
-    )
     try {
       event.currentTarget.setPointerCapture(event.pointerId)
     } catch {
@@ -2690,22 +2638,6 @@ export const InfiniteMovieMenu = <T,>({
     const movedPx = Math.hypot(event.clientX - press.x, event.clientY - press.y)
     press.maxMovedPx = Math.max(press.maxMovedPx, movedPx)
 
-    if (
-      press.maxMovedPx > SHUFFLE_PRO_MOVE_TOLERANCE_PX &&
-      !press.shuffleProStarted
-    ) {
-      if (press.shuffleProTimer) window.clearTimeout(press.shuffleProTimer)
-      const delay = isShuffleProMax ? 3000 : SHUFFLE_PRO_MOVING_MS
-      const remaining = Math.max(
-        0,
-        delay - (performance.now() - press.startTime),
-      )
-      press.shuffleProTimer = window.setTimeout(
-        () => startShufflePro(press, isShuffleProMax ? 'max' : 'standard'),
-        remaining,
-      )
-    }
-    if (press.shuffleProStarted) return
     if (press.dragging) {
       engineRef.current?.movePointerDrag(event.clientX, event.clientY)
       return
@@ -2720,40 +2652,11 @@ export const InfiniteMovieMenu = <T,>({
     const ms = Math.round(performance.now() - press.startTime)
     const movedPx = Math.round(press.maxMovedPx)
 
-    if (press.shuffleProStarted) {
-      if (shuffleProFrameRef.current !== null)
-        window.cancelAnimationFrame(shuffleProFrameRef.current)
-      shuffleProFrameRef.current = null
-      engineRef.current?.stopNudge()
-      engineRef.current?.endPointerDrag(press.pointerId)
-      canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
-      canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
-      onShuffleProReleaseRef.current?.(
-        Boolean(press.shuffleProTransitioned),
-        press.shuffleProVariant ?? 'standard',
-      )
-      onShuffleProPhaseRef.current?.(
-        null,
-        press.shuffleProVariant ?? 'standard',
-      )
-      logGesture({ kind: 'hold', ms, movedPx })
-      return
-    }
-
     if (press.dragging) {
-      if (event.clientX !== press.lastX || event.clientY !== press.lastY) {
-        engineRef.current?.movePointerDrag(event.clientX, event.clientY)
-      }
-      const releaseSpeed =
-        engineRef.current?.endPointerDrag(press.pointerId) ?? 0
-      const isQuickSpin = releaseSpeed >= 0.55
-      onSpinGestureEndRef.current?.(isQuickSpin ? 'quick' : null)
-      if (!isQuickSpin) onNonShuffleInteraction?.()
+      engineRef.current?.endPointerDrag(press.pointerId)
       logGesture({ kind: press.kind ?? 'drag', ms, movedPx })
       return
     }
-
-    onNonShuffleInteraction?.()
 
     const engine = engineRef.current
     const { regionCenterY, regionRx, regionRy } = tuningRef.current
@@ -2788,33 +2691,8 @@ export const InfiniteMovieMenu = <T,>({
     })
     if (hit && !isDetailsOpen) {
       if (event.pointerType === 'touch') {
-        touchOpenClickGuardRef.current?.()
-        const guardClick = (clickEvent: MouseEvent) => {
-          const clickPointerId = (clickEvent as PointerEvent).pointerId
-          if (
-            clickEvent.detail !== 0 &&
-            clickPointerId === event.pointerId &&
-            clickEvent.target instanceof Element &&
-            clickEvent.target.closest('.warp-details-backdrop')
-          ) {
-            cleanupGuard()
-            clickEvent.preventDefault()
-            clickEvent.stopImmediatePropagation()
-          }
-        }
-        const expiryTimer = window.setTimeout(() => {
-          window.removeEventListener('click', guardClick, true)
-          if (touchOpenClickGuardRef.current === cleanupGuard)
-            touchOpenClickGuardRef.current = null
-        }, 800)
-        const cleanupGuard = () => {
-          window.clearTimeout(expiryTimer)
-          window.removeEventListener('click', guardClick, true)
-          if (touchOpenClickGuardRef.current === cleanupGuard)
-            touchOpenClickGuardRef.current = null
-        }
-        touchOpenClickGuardRef.current = cleanupGuard
-        window.addEventListener('click', guardClick, true)
+        touchOpenGuardRef.current?.()
+        touchOpenGuardRef.current = guardTouchOpenClick(event.pointerId)
       }
       openHit(hit)
     }
@@ -2824,17 +2702,6 @@ export const InfiniteMovieMenu = <T,>({
     if (pressRef.current?.pointerId !== event.pointerId) return
     const press = releasePress()
     if (press?.dragging) engineRef.current?.cancelPointerDrag(press.pointerId)
-    if (press?.shuffleProStarted) {
-      if (shuffleProFrameRef.current !== null)
-        window.cancelAnimationFrame(shuffleProFrameRef.current)
-      shuffleProFrameRef.current = null
-      engineRef.current?.stopNudge(press.pointerId)
-      canvasRef.current?.style.removeProperty('--shuffle-pro-scale')
-      canvasRef.current?.style.removeProperty('--shuffle-pro-blur')
-      onShuffleProPhaseRef.current?.(null, press.shuffleProVariant)
-      onSpinGestureEndRef.current?.(null)
-    } else if (press?.dragging) onSpinGestureEndRef.current?.(null)
-    onNonShuffleInteraction?.()
     if (GESTURE_DEBUG) setDebugPick(null)
   }
 
@@ -2854,14 +2721,6 @@ export const InfiniteMovieMenu = <T,>({
           ref={canvasRef}
           className='warp-infinite-menu-canvas'
           aria-label='Infinite movie poster menu'
-          style={{
-            touchAction: 'none',
-            userSelect: 'none',
-            WebkitTouchCallout: 'none',
-            WebkitUserSelect: 'none',
-            filter: 'blur(var(--shuffle-pro-blur, 0px))',
-            transition: 'none',
-          }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerCancel={handlePointerCancel}
