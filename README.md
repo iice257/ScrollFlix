@@ -18,16 +18,14 @@ ScrollFlix is my personal answer to that problem. It is a playful, visual way to
 
 ## What It Does
 
-ScrollFlix presents movies inside an interactive WebGL visualization. Film posters are arranged in a force-driven visual space, letting you pan, zoom, inspect, and select movies in a more exploratory way than a normal catalog.
+ScrollFlix presents movies as a wall of posters on an interactive WebGL globe. You drag, scroll or use the arrow keys to spin it, and open any poster for details, in a more exploratory way than a normal catalog.
 
 You can use it to:
 
 - Browse films visually when you are undecided.
 - Open a movie preview and inspect basic details.
-- Move between discovery, preview, and selection states.
-- Save movies as favorites for later.
-- Add custom outbound links for the movie services or search tools you personally use.
-- Tune visual and performance settings for your device.
+- Shuffle to a random film, or browse the same films as an index with several sorts.
+- Narrow the wall by genre, year, rating, runtime and mood.
 - Switch between light and dark interface themes.
 
 ## Product Focus
@@ -52,21 +50,13 @@ The main experience is an interactive movie canvas powered by WebGL. It is built
 
 Selecting a film opens a focused view with movie details and related actions. The app is meant to help you quickly decide whether a title is worth following up on.
 
-### Favorites
+### Index And Filters
 
-Movies can be saved into a local favorites list so interesting titles do not disappear after browsing.
+The same films are available as an index with six sorts (A-Z, year, rating, runtime, popularity and vote count) and a filters page. Ratings are weighted by vote count so a handful of votes cannot outrank a well-known film.
 
-### Custom Links
+### Theme
 
-You can create your own outbound movie links. For example, you can add a custom search URL for a streaming guide, review site, or search engine, then reuse it from any film view.
-
-### Device-Aware Settings
-
-The app includes presets and cell limits to balance visual quality with performance. It can adjust the experience for different device classes, including smaller or less powerful devices.
-
-### Personal Settings
-
-Theme, intro state, visual preset, device class, cell limit, and user configuration are persisted locally so the app remembers your preferences across sessions.
+The light and dark themes are switched from the About drawer, and the choice is remembered locally.
 
 ## Who It Is For
 
@@ -80,7 +70,7 @@ ScrollFlix is for people who:
 
 ## Current Status
 
-This is an active personal project. The core app experience is present, with a React interface, local settings, favorites, custom links, and a custom WebGL visualization engine.
+This is an active personal project. The core app experience is present, with a React interface and a custom WebGL globe.
 
 The public landing page is not live yet.
 
@@ -92,42 +82,33 @@ The public landing page is not live yet.
 - Vite
 - Tailwind CSS
 - Radix UI primitives
-- Zustand for app state
-- OGL and custom GLSL shaders for rendering
-- Custom Voroforce visualization and simulation engine
+- A hand-written WebGL2 engine with inline GLSL shaders for the globe
 - Vitest for unit tests
 - Playwright for end-to-end tests
 - Biome for linting and formatting
 
 ## How It Works
 
-The app has two main layers:
+The app has two main parts, both under `app/cmps/views/test-gallery/`:
 
-- The React app, located in `app/`, handles interface state, settings, modals, film views, favorites, and user interaction.
-- The Voroforce engine, located in `voroforce/`, handles the interactive simulation, rendering, controls, media loading, and WebGL scene.
+- `test-gallery.tsx` is the page shell. It handles the gallery, index and filters views, movie details, shuffle, and keyboard shortcuts.
+- `infinite-movie-menu.tsx` is the WebGL engine. It lays posters out on a sphere, uploads them into a texture atlas as they load, handles drag, wheel and keyboard rotation with inertia, and picks the poster under a click.
 
-Film data and poster media are served from the `public/` directory. The React layer connects to the visualization engine through the store and the `app/vf/` integration layer.
+Film data and poster media are served from the `public/` directory.
 
 ## Project Structure
 
 ```text
 app/
-  cmps/                 React components, views, layout, and UI primitives
-  store/                Zustand store slices and selectors
-  utils/                App utilities, settings, storage, telemetry, helpers
-  vf/                   Voroforce app integration, presets, config, uniforms
+  cmps/
+    ui/                 Shared UI primitives
+    views/test-gallery/ The page shell and the WebGL globe engine
+  utils/                Animation helpers and opt-in telemetry
   main.tsx              Browser entry point
-  app.tsx               Main React app shell
-
-voroforce/
-  controls/             Pointer, keyboard, gesture, and focus controls
-  display/              WebGL renderer, scene, shaders, and texture handling
-  simulation/           Force simulation and worker-backed simulation steps
-  common/               Shared engine data structures and helpers
 
 public/
   json/                 Film metadata
-  media/                Poster and texture assets
+  media/                Poster thumbnails and the placeholder sprite
   assets/               Static visual assets
 
 playwright-tests/       End-to-end tests

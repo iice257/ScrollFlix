@@ -17,7 +17,6 @@ export default defineConfig({
       '**/cypress/**',
       '**/.{idea,git,cache,output,temp}/**',
       '**/playwright-tests/**', // Exclude Playwright tests
-      '**/app/vf/**', // Dormant legacy integration is outside the canonical app boundary
       '**/test-results/**',
       '**/playwright-report/**',
     ],

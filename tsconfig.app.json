@@ -39,13 +39,10 @@
     "app/cmps/ui",
     "app/cmps/common/error-boundary.tsx",
     "app/cmps/common/error-boundary.test.tsx",
-    "app/domain",
-    "app/performance",
     "app/hooks",
     "app/test",
     "app/utils/anim.ts",
     "app/utils/easing.ts",
-    "app/utils/preferences.ts",
     "app/utils/telemetry/init-telemetry.ts",
     "app/utils/telemetry/micro-sentry-telemetry.ts",
     "app/utils/tw.ts"
