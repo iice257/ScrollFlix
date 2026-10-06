@@ -24,36 +24,32 @@ This file provides guidance to AI coding agents (Claude Code, Codex, and others)
 
 ## Architecture Overview
 
-This is a React application that visualizes film data using WebGL and a custom Voronoi force simulation called "Voroforce". The app renders thousands of film posters in an interactive force-directed diagram.
+This is a React application that shows films as a wall of posters wrapped around a 3D globe. You spin it, open a poster for details, and browse the same films as an index or through filters. The globe is a hand-written WebGL2 engine; there is no third-party rendering library.
 
 ### Key Components
 
 **Frontend Stack:**
 - React 19 with TypeScript and Vite
-- Tailwind CSS with Radix UI components
-- Zustand for state management
-- React Hook Form with Valibot for validation
+- Tailwind CSS with Radix UI primitives (`app/cmps/ui/`)
 
 **WebGL Engine:**
-- Custom Voroforce library (`voroforce/`) - vanilla JS force simulation engine
-- OGL (lightweight WebGL library) for 3D rendering
-- GLSL shaders for visual effects
-- Multi-threaded simulation support
+- `InfiniteMovieEngine` in `app/cmps/views/test-gallery/infinite-movie-menu.tsx` - instanced poster quads, a single texture atlas, arcball rotation with inertia, and deterministic poster picking
+- `app/cmps/views/test-gallery/honeycomb-layout.ts` - relaxed, evenly spaced poster positions on the sphere
+- Inline GLSL shaders for the poster stretch, rounded corners and back-face dimming
 
 **App Structure:**
 - `app/main.tsx` - Entry point, renders the gallery app (`TestGalleryApp` from `app/cmps/views/test-gallery/`)
-- `app/store/` - Zustand store split into UI, Voroforce, and film-data slices, plus selectors
-- `app/vf/` - Voroforce integration layer connecting the WebGL engine to React
-- `app/cmps/` - React components (UI, layout, views)
-- `voroforce/` - Standalone WebGL simulation engine
+- `app/cmps/views/test-gallery/test-gallery.tsx` - the page shell: gallery, index and filters views, movie details, and the dock
+- `app/styles.css` - all styling; `app/light-theme.css` is generated from it by `npm run theme:light`, so never edit it by hand
+- `app/cmps/ui/` - shared UI primitives
+- `app/utils/telemetry/` - opt-in error telemetry
 
 ### Data Flow
 
-1. Film data is loaded from JSON files in `public/json/`
-2. Images are served from `public/media/` with multiple resolution variants
-3. Voroforce engine processes data into force-directed simulation
-4. React components interact with Voroforce through the store
-5. User interactions trigger mode changes (intro, select, preview)
+1. Film data is loaded from JSON in `public/json/`
+2. Poster thumbnails are served from `public/media/posters/`, with a tiny `public/media/poster-sprite.jpg` used as an instant placeholder
+3. The globe lays the posters out once, uploads them into a texture atlas as they load, and draws only when something moved
+4. User interactions open the details card, switch views, or apply filters in the page shell
 
 ### Code Style
 

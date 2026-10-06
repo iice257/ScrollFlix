@@ -26,8 +26,7 @@ npm run test:e2e          # Run Playwright E2E tests
 ## Test Structure
 
 ### Unit Tests
-- **Settings tests** (`app/utils/settings.test.ts`) - Settings persistence and migration
-- **Store tests** (`app/store.test.ts`) - Zustand store state management
+- **Gallery tests** (`app/cmps/views/test-gallery/*.test.ts`) - Sorting, filtering, ratings, picking geometry and layout
 - **Component tests** (`app/cmps/**/*.test.tsx`) - React component behavior
 
 ### Snapshot Tests
@@ -46,7 +45,7 @@ The test setup includes mocks for:
 ## Coverage
 
 Coverage reports exclude:
-- WebGL engine (`voroforce/`)
+- WebGL engine (`app/cmps/views/test-gallery/infinite-movie-menu.tsx`)
 - Test files and configuration
 - Node modules
 - Type definitions
@@ -74,13 +73,5 @@ it('should render with props', () => {
 it('should match snapshot', () => {
   const { container } = render(<Component value={42} />)
   expect(container.firstChild).toMatchSnapshot()
-})
-```
-
-### Store Test
-```typescript
-it('should update state', () => {
-  store.getState().setValue(123)
-  expect(store.getState().value).toBe(123)
 })
 ```
