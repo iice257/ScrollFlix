@@ -35,3 +35,5 @@ public/tmp.webm
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+# Stray Tailwind scan caches written to a mangled temp path at the repo root
+/Users0AppData*
