@@ -29,6 +29,11 @@ Attribution-NonCommercial-ShareAlike 3.0 Unported License
 This exception applies to all shader code used for rendering and visual effects 
 within the Voroforce engine and related WebGL components.
 
+Note: the Voroforce engine was removed from this repository in pull request #5
+(merge commit 16b4d9d, 2026-10-06). The exception above is kept unchanged. It
+continues to apply to every earlier revision that contains that code, and to
+any related WebGL components that remain.
+
 EXCEPTION FOR FILM DATA:
 All film data files (including but not limited to JSON files in public/json/ and
 image files in public/media/) are licensed under the Open Data Commons 

@@ -1,3 +1,5 @@
+> **Status (2026-10-07):** the Voroforce engine and the old app shell were removed in [#5](https://github.com/iice257/ScrollFlix/pull/5) (merge commit `16b4d9d`). This document predates that change and is kept as a historical planning note. References to Voroforce, `app/vf` and the old app describe code that is no longer on `main`; see the git history before that commit.
+
 [ ] 1. Establish architecture documentation for app, vf integration, and voroforce engine boundaries; include a system diagram and data flow from public/json to UI.  
 [ ] 2. Define a typed public interface for Voroforce (app/vf): create a minimal facade that React uses, isolating engine internals behind explicit methods/events.  
 [ ] 3. Extract and document a schema for display uniforms and mode/theme transitions (app/vf/config/display) to reduce implicit coupling and magic numbers.  
