@@ -41,9 +41,18 @@ import {
 } from '../../ui/tooltip'
 import {
   InfiniteMovieMenu,
+  type InfiniteMovieMenuControl,
   type InfiniteMovieMenuItem,
 } from './infinite-movie-menu'
 import { pickLandingMovie } from './landing'
+import { unlockAudio } from './shuffle-pro/shuffle-pro-audio'
+import type { ShuffleProController } from './shuffle-pro/shuffle-pro-controller'
+import { isBigSpin } from './shuffle-pro/shuffle-pro-logic'
+import { ShuffleSkipButton } from './shuffle-pro/shuffle-skip-button'
+import {
+  pickOtherMovie,
+  useShuffleProController,
+} from './shuffle-pro/use-shuffle-pro'
 
 type RawMovie = Record<string, unknown>
 
@@ -1334,6 +1343,35 @@ export const TestGalleryApp = () => {
     [detailsMovieId, movies],
   )
 
+  // Shuffle Pro: the controller owns holds, runs, the sky and their timers.
+  const {
+    controller: shuffleProController,
+    snapshot: shuffleProSnapshot,
+    reducedMotionOverride,
+  } = useShuffleProController({
+    theme,
+    immersive: false,
+    visibleMovies,
+    currentId: activeMovieId,
+    prepare: () => {
+      setDetailsMovieId(null)
+      setWatchMovieId(null)
+      setFilterOpen(false)
+      setAboutOpen(false)
+      setSortOpen(false)
+    },
+  })
+  const menuControlRef = useRef<InfiniteMovieMenuControl | null>(null)
+  const [shuffleSpinning, setShuffleSpinning] = useState(false)
+  const isSpinActive = shuffleProSnapshot.canSkip || shuffleSpinning
+  const isSpinActiveRef = useRef(isSpinActive)
+  isSpinActiveRef.current = isSpinActive
+  // The premium frame stays on the card until it has finished closing.
+  const [premiumFrame, setPremiumFrame] = useState<{
+    movieId: string
+    tier: NonNullable<typeof shuffleProSnapshot.tier>
+  } | null>(null)
+
   const watchMovie = useMemo(
     () => movies.find((movie) => movie.id === watchMovieId) ?? null,
     [movies, watchMovieId],
@@ -1441,13 +1479,31 @@ export const TestGalleryApp = () => {
     onToggleYear: toggleYear,
   }
 
-  const handleOpenMovie = useCallback((movie: TestMovie) => {
+  const openMovie = useCallback((movie: TestMovie) => {
     setActiveMovieId(movie.id)
     setDetailsMovieId(movie.id)
     setWatchMovieId(null)
     setFilterOpen(false)
     setAboutOpen(false)
   }, [])
+
+  // Opening a poster yourself breaks the Shuffle Pro streak.
+  const handleOpenMovie = useCallback(
+    (movie: TestMovie) => {
+      shuffleProController.noteAction({ type: 'break' })
+      openMovie(movie)
+    },
+    [openMovie, shuffleProController],
+  )
+
+  // A shuffle landing on its poster opens the card without breaking anything.
+  const handleOpenFromGlobe = useCallback(
+    (movie: TestMovie, source: 'tap' | 'shuffle') => {
+      if (source === 'shuffle') openMovie(movie)
+      else handleOpenMovie(movie)
+    },
+    [handleOpenMovie, openMovie],
+  )
 
   const handleOpenWatchLinks = useCallback((movie: TestMovie) => {
     setActiveMovieId(movie.id)
@@ -1457,22 +1513,106 @@ export const TestGalleryApp = () => {
   }, [])
 
   const handleShuffle = useCallback(() => {
+    unlockAudio()
     if (mode === 'list') {
       setSortOpen(false)
       reopenDetailsAfterListShuffleRef.current = Boolean(detailsMovieId)
       setListRandomNonce((nonce) => nonce + 1)
       return
     }
-    const candidates = visibleMovies.filter(
-      (movie) => movie.id !== activeMovieId,
-    )
-    const movie = candidates[Math.floor(Math.random() * candidates.length)]
-    if (!movie) return
+    const movieId = pickOtherMovie(visibleMovies, activeMovieId, Math.random)
+    if (!movieId) return
+    // Streak rules decide whether this shuffle becomes a Shuffle Pro run.
+    const trigger = shuffleProController.noteAction({ type: 'shuffle' })
     setDetailsMovieId(null)
     setFilterOpen(false)
     setAboutOpen(false)
-    setSpinRequest({ itemId: movie.id, nonce: performance.now() })
-  }, [activeMovieId, detailsMovieId, mode, visibleMovies])
+    if (trigger) {
+      shuffleProController.startAutomatic(trigger, movieId)
+      return
+    }
+    setSpinRequest({ itemId: movieId, nonce: performance.now() })
+  }, [activeMovieId, detailsMovieId, mode, shuffleProController, visibleMovies])
+
+  // Skip finishes whatever spin is running: a Shuffle Pro run or a normal one.
+  const handleSkip = useCallback(() => {
+    if (shuffleProController.getSnapshot().canSkip) shuffleProController.skip()
+    else menuControlRef.current?.skipSpin()
+  }, [shuffleProController])
+
+  // A drag that turned the globe a quarter turn or more counts toward the
+  // streak; five in a row start a Frost run on their own.
+  const handleGestureSettled = useCallback(
+    (totalRad: number) => {
+      const trigger = shuffleProController.noteAction(
+        isBigSpin(totalRad) ? { type: 'bigSpin' } : { type: 'neutral' },
+      )
+      if (!trigger) return
+      const movieId = pickOtherMovie(visibleMovies, activeMovieId, Math.random)
+      if (movieId) shuffleProController.startAutomatic(trigger, movieId)
+    },
+    [activeMovieId, shuffleProController, visibleMovies],
+  )
+
+  // Anything that isn't a shuffle ends the streak: filters, sort, search,
+  // switching views, and opening Watch links or About.
+  const streakBreakSignature = JSON.stringify([
+    selectedGenres,
+    selectedMoodFilters,
+    selectedRuntimeFilter,
+    selectedYear,
+    ratingMin,
+    contentFilter,
+    sortRules,
+    listSearchQuery,
+    mode,
+    Boolean(watchMovieId),
+    aboutOpen,
+  ])
+  const streakBreakReady = useRef(false)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the signature carries the inputs
+  useEffect(() => {
+    if (!streakBreakReady.current) {
+      streakBreakReady.current = true
+      return
+    }
+    shuffleProController.noteAction({ type: 'break' })
+  }, [streakBreakSignature])
+
+  // The premium card closing (or being replaced) fades the sky out.
+  const lastDetailsId = useRef<string | null>(null)
+  useEffect(() => {
+    const previous = lastDetailsId.current
+    lastDetailsId.current = detailsMovieId
+    const presented = shuffleProController.getSnapshot().presented
+    if (
+      presented &&
+      previous === presented.movieId &&
+      detailsMovieId !== presented.movieId
+    ) {
+      shuffleProController.cardClosed()
+    }
+  }, [detailsMovieId, shuffleProController])
+
+  useEffect(() => {
+    if (shuffleProSnapshot.presented)
+      setPremiumFrame(shuffleProSnapshot.presented)
+  }, [shuffleProSnapshot.presented])
+  useEffect(() => {
+    if (!detailsPresence.isPresent) setPremiumFrame(null)
+  }, [detailsPresence.isPresent])
+
+  // Esc during a run slows the globe to rest, fades the sky and opens no card.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !shuffleProController.canAbort()) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      shuffleProController.abort()
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [shuffleProController])
 
   const handlePickRandomMovie = useCallback((movie: TestMovie) => {
     setActiveMovieId(movie.id)
@@ -1535,8 +1675,11 @@ export const TestGalleryApp = () => {
       })
       if (!allowed) return
       event.preventDefault()
-      if (action === 'shuffle') handleShuffle()
-      else if (activeMovie) handleOpenMovie(activeMovie)
+      if (action === 'shuffle') {
+        // While a spin is running, Space finishes it instead of shuffling.
+        if (isSpinActiveRef.current) handleSkip()
+        else handleShuffle()
+      } else if (activeMovie) handleOpenMovie(activeMovie)
     }
 
     window.addEventListener('keydown', handleKeyDown)
@@ -1548,6 +1691,7 @@ export const TestGalleryApp = () => {
     filterOpen,
     handleOpenMovie,
     handleShuffle,
+    handleSkip,
     initialGalleryReady,
     listMovies.length,
     mode,
@@ -1572,6 +1716,8 @@ export const TestGalleryApp = () => {
           maybePromptFullscreenHint(event.target)
         }
       }}
+      data-shuffle-pro={shuffleProSnapshot.phase === 'idle' ? undefined : 'on'}
+      data-shuffle-tier={shuffleProSnapshot.tier ?? undefined}
       data-details-open={detailsPresence.isPresent ? 'true' : 'false'}
       data-filter-open={filterPresence.isPresent ? 'true' : 'false'}
       data-gallery-ready={initialGalleryReady ? 'true' : 'false'}
@@ -1603,6 +1749,9 @@ export const TestGalleryApp = () => {
           ) : null}
         </div>
       ) : null}
+      <output className='sr-only' aria-live='polite'>
+        {shuffleProSnapshot.announcement}
+      </output>
       {/* Stays mounted in other views so returning to the gallery is instant. */}
       <WarpWall
         activeMovieId={activeMovie?.id ?? null}
@@ -1612,13 +1761,17 @@ export const TestGalleryApp = () => {
         movies={visibleMovies}
         onLoadProgress={handleGalleryLoadProgress}
         onMovingChange={setIsGlobeMoving}
-        onOpenMovie={handleOpenMovie}
+        onOpenMovie={handleOpenFromGlobe}
         onReady={handleGalleryReady}
         onSelectMovie={handleSelectMovie}
         onUserSpin={handleUserSpin}
         spinRequest={spinRequest}
         zoom={isMobileViewport ? MOBILE_GLOBE_ZOOM : 1}
         initialFaceId={landingId}
+        shufflePro={shuffleProController}
+        controlRef={menuControlRef}
+        onSpinActiveChange={setShuffleSpinning}
+        onGestureSettled={handleGestureSettled}
       />
 
       {mode === 'list' ? (
@@ -1790,16 +1943,12 @@ export const TestGalleryApp = () => {
         dockActions={
           <>
             {mode === 'wall' ? (
-              <button
-                type='button'
-                className='warp-shuffle-button'
-                aria-label='Shuffle to a random movie'
+              <ShuffleSkipButton
+                skip={isSpinActive}
                 disabled={!visibleMovies.length}
-                onClick={() => handleShuffle()}
-              >
-                <Dices className='warp-shuffle-icon' aria-hidden='true' />
-                <span className='warp-shuffle-label'>Shuffle</span>
-              </button>
+                onShuffle={handleShuffle}
+                onSkip={handleSkip}
+              />
             ) : null}
             {mode === 'wall' ? (
               <div
@@ -1981,13 +2130,17 @@ type WarpWallProps = {
   movies: TestMovie[]
   onLoadProgress: (percent: number) => void
   onMovingChange: (moving: boolean) => void
-  onOpenMovie: (movie: TestMovie) => void
+  onOpenMovie: (movie: TestMovie, source: 'tap' | 'shuffle') => void
   onReady: () => void
   onSelectMovie: (movie: TestMovie) => void
   onUserSpin: () => void
   spinRequest: { itemId: string; nonce: number } | null
   zoom: number
   initialFaceId: string | null
+  shufflePro: ShuffleProController
+  controlRef: { current: InfiniteMovieMenuControl | null }
+  onSpinActiveChange: (active: boolean) => void
+  onGestureSettled: (totalRad: number) => void
 }
 
 const WarpWall = ({
@@ -2005,6 +2158,10 @@ const WarpWall = ({
   spinRequest,
   zoom,
   initialFaceId,
+  shufflePro,
+  controlRef,
+  onSpinActiveChange,
+  onGestureSettled,
 }: WarpWallProps) => {
   const menuItems = useMemo<InfiniteMovieMenuItem<TestMovie>[]>(
     () =>
@@ -2026,7 +2183,8 @@ const WarpWall = ({
   )
 
   const handleOpenItem = useCallback(
-    (item: (typeof menuItems)[number]) => onOpenMovie(item.payload),
+    (item: (typeof menuItems)[number], source: 'tap' | 'shuffle') =>
+      onOpenMovie(item.payload, source),
     [onOpenMovie],
   )
 
@@ -2059,6 +2217,10 @@ const WarpWall = ({
         scale={0.9}
         zoom={zoom}
         initialFaceId={initialFaceId}
+        shufflePro={shufflePro}
+        controlRef={controlRef}
+        onSpinActiveChange={onSpinActiveChange}
+        onGestureSettled={onGestureSettled}
         spinRequest={spinRequest}
         onActiveItemChange={handleActiveItemChange}
       />

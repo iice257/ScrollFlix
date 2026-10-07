@@ -1,0 +1,142 @@
+/* Shuffle Pro: every piece of its DOM styling lives here. This file is not read
+   by the light-theme generator and sits outside the components layer, so it
+   wins over styles.css; colours that differ per theme are written out below
+   under [data-theme="light"]. */
+
+/* ------------------------------------------------------------- Skip button */
+
+.warp-shuffle-button {
+  overflow: hidden;
+  transition:
+    background 180ms ease,
+    transform 180ms ease,
+    width 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.warp-shuffle-icons {
+  position: relative;
+  display: grid;
+  width: 17px;
+  height: 17px;
+  flex: none;
+}
+
+.warp-shuffle-icons .warp-shuffle-icon {
+  grid-area: 1 / 1;
+  transition:
+    opacity 200ms ease,
+    transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.warp-shuffle-icons .warp-shuffle-icon.is-skip {
+  opacity: 0;
+  transform: translateX(-7px) scale(0.7);
+}
+
+.warp-shuffle-button.is-skip .warp-shuffle-icon.is-shuffle {
+  opacity: 0;
+  transform: rotate(-80deg) scale(0.6);
+}
+
+.warp-shuffle-button.is-skip .warp-shuffle-icon.is-skip {
+  opacity: 1;
+  transform: none;
+}
+
+.warp-shuffle-label {
+  position: relative;
+}
+
+.warp-shuffle-label > span {
+  display: block;
+  white-space: nowrap;
+  transition:
+    opacity 200ms ease,
+    transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.warp-shuffle-label > .is-skip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  transform: translateY(7px);
+}
+
+.warp-shuffle-button.is-skip .warp-shuffle-label > .is-shuffle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  transform: translateY(-7px);
+}
+
+.warp-shuffle-button.is-skip .warp-shuffle-label > .is-skip {
+  position: static;
+  opacity: 1;
+  transform: none;
+}
+
+/* The page's own vignette would muddy the sky, so it steps back during a run. */
+.warp-infinite-sheen {
+  transition: opacity 700ms ease;
+}
+
+.warp-shell[data-shuffle-pro="on"] .warp-infinite-sheen {
+  opacity: 0.22;
+}
+
+/* ------------------------------------------------------------- debug panel */
+
+.warp-sp-debug {
+  position: fixed;
+  z-index: 130;
+  bottom: 16px;
+  left: 16px;
+  display: grid;
+  width: 280px;
+  gap: 8px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 16px;
+  background: rgb(12 12 12 / 0.94);
+  padding: 12px;
+  color: #fff;
+  font-size: 11px;
+}
+
+.warp-sp-debug-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.warp-sp-debug button {
+  border: 1px solid rgb(255 255 255 / 0.18);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.08);
+  padding: 4px 10px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.warp-sp-debug button:hover {
+  background: rgb(255 255 255 / 0.2);
+}
+
+.warp-sp-debug dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  margin: 0;
+}
+
+.warp-sp-debug dt {
+  color: rgb(255 255 255 / 0.5);
+}
+
+.warp-sp-debug dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type WheelEvent,
   useCallback,
@@ -13,6 +14,21 @@ import {
   type HoneycombVec3 as Vec3,
   createHoneycombSpherePositions,
 } from './honeycomb-layout'
+import { unlockAudio } from './shuffle-pro/shuffle-pro-audio'
+import type {
+  PressSession,
+  ShuffleProController,
+  ShuffleProPort,
+} from './shuffle-pro/shuffle-pro-controller'
+import {
+  PALETTES,
+  QUALITY_FULL,
+  QUALITY_LITE,
+  SkyPass,
+  type SkyQuality,
+  type SkyState,
+  type SkyView,
+} from './shuffle-pro/sky-pass'
 
 export type InfiniteMovieMenuItem<T> = {
   id: string
@@ -34,7 +50,11 @@ type InfiniteMovieMenuProps<T> = {
   onLoadProgress?: (percent: number) => void
   isActive?: boolean
   onMovingChange?: (moving: boolean) => void
-  onOpenItem?: (item: InfiniteMovieMenuItem<T>) => void
+  // `source` tells a user's tap apart from a shuffle landing on the poster.
+  onOpenItem?: (
+    item: InfiniteMovieMenuItem<T>,
+    source: 'tap' | 'shuffle',
+  ) => void
   // Spin to this item, then open it (Shuffle). The nonce re-triggers repeats.
   spinRequest?: { itemId: string; nonce: number } | null
   onReady?: () => void
@@ -43,6 +63,19 @@ type InfiniteMovieMenuProps<T> = {
   zoom?: number
   // The movie to face before the first frame (consumed once, on first build).
   initialFaceId?: string | null
+  // Shuffle Pro: the controller that owns holds, runs and the sky.
+  shufflePro?: ShuffleProController | null
+  // True while a Shuffle spin is heading for a poster (drives Skip).
+  onSpinActiveChange?: (active: boolean) => void
+  // Total rotation of a drag gesture, reported once the globe rests.
+  onGestureSettled?: (totalRad: number) => void
+  // Imperative handle for the page (Skip).
+  controlRef?: { current: InfiniteMovieMenuControl | null }
+}
+
+export type InfiniteMovieMenuControl = {
+  // Finishes a Shuffle spin now, settling on its poster within 300ms.
+  skipSpin: () => void
 }
 
 type Vec2 = [number, number]
@@ -80,6 +113,18 @@ const DETAIL_CLOSE_EASE_MS = 460
 const MOTION_BLUR_THRESHOLD = 2.2
 const MOTION_BLUR_CAP = 6.5
 const MOTION_BLUR_MAX_SMEAR = 0.012
+// Rotation velocity (turns per frame) below which a drag gesture has rested.
+const GESTURE_REST_VELOCITY = 0.0002
+// Shuffle Pro: how much the blur grows during a run, and how strongly the
+// path's colour grades the posters at full wash.
+const MOTION_BLUR_PRO_BOOST = 2
+const KICK_FREQ = 10.5
+const KICK_ZETA = 0.5
+const GRADE_STRENGTH = 0.22
+// Adaptive sky quality: measure the first frames of a run and step down if the
+// average frame time is over budget.
+const QUALITY_PROBE_FRAMES = 45
+const QUALITY_STEP_DOWN_MS = 20
 const HOLD_TO_DRAG_MS = 220
 const CLICK_MOVE_TOLERANCE_PX = 8
 // Shuffle: snap strength while spinning to a poster, and how close (cosine of
@@ -111,6 +156,8 @@ type GestureLogEntry = {
 }
 
 type PressState = {
+  session: PressSession | null
+  pointerType: string
   dragging: boolean
   holdTimer: number | null
   kind: 'hold' | 'drag' | 'catch' | null
@@ -471,6 +518,8 @@ uniform sampler2D uTex;
 uniform int uItemCount;
 uniform int uAtlasSize;
 uniform float uAtlasPadding;
+uniform float uExposure;
+uniform vec4 uTint;
 
 out vec4 outColor;
 
@@ -513,6 +562,9 @@ void main() {
   float mask = roundedRectMask(vUvs);
   outColor = color;
   outColor.rgb *= mix(0.58, 1.12, vAlpha);
+  // Shuffle Pro grade: a soft exposure lift and the path's colour washing in.
+  outColor.rgb *= 1.0 + uExposure;
+  outColor.rgb = mix(outColor.rgb, outColor.rgb * uTint.rgb * 1.18, uTint.a);
   outColor.a *= mask * vAlpha;
   if (outColor.a < 0.02) discard;
 }
@@ -921,7 +973,20 @@ class ArcballControl {
   private previousPointerPos: Vec2 = [0, 0]
   private lastMoveAt = 0
   private moveSpeedPxMs = 0
-  private releaseTauMs = BASE_RELEASE_TAU_MS
+  // Time constant of the post-release decay; Shuffle Pro's landing sets its own.
+  releaseTauMs = BASE_RELEASE_TAU_MS
+  // Shuffle Pro: spin about a screen-space axis at a fixed angular speed.
+  autoSpin: { axis: Vec3; omega: number } | null = null
+  // Reports the total rotation of a drag gesture once the globe comes to rest.
+  onGestureSettled: ((totalRad: number) => void) | null = null
+  private trackedRotation: number | null = null
+  private settle: {
+    from: Quat
+    to: Quat
+    elapsed: number
+    duration: number
+    onDone: () => void
+  } | null = null
   private combinedQuat: Quat = identityQuat()
   private smoothedRotationVelocity = 0
   private readonly cleanupHandlers: Array<() => void> = []
@@ -1003,10 +1068,72 @@ class ArcballControl {
     ]
   }
 
+  // Starts adding up rotation for a drag gesture (reported at rest).
+  beginTracking() {
+    this.trackedRotation ??= 0
+  }
+
+  // Eases the orientation to bring a model-space direction to the viewer
+  // within `duration` ms (ease-out), then calls onDone. Used by Skip.
+  beginSettle(direction: Vec3, duration: number, onDone: () => void) {
+    const current = transformQuat3(direction, this.orientation)
+    const target = this.snapDirection
+    const d = dot3(normalize3(current), target)
+    const turn =
+      d < -0.9999
+        ? axisAngleQuat([0, 1, 0], Math.PI)
+        : this.quatFromVectors(normalize3(current), target)
+    this.autoSpin = null
+    this.pointerRotation = identityQuat()
+    this.settle = {
+      from: [...this.orientation],
+      to: normalizeQuat(multiplyQuat(turn, this.orientation)),
+      elapsed: 0,
+      duration: Math.max(1, duration),
+      onDone,
+    }
+  }
+
+  cancelSettle() {
+    this.settle = null
+  }
+
+  get isSettling() {
+    return this.settle !== null
+  }
+
   update(deltaTime: number) {
     const timeScale = deltaTime / TARGET_FRAME_DURATION + 0.00001
     let angleFactor = timeScale
     let snapRotation = identityQuat()
+
+    if (this.settle) {
+      const settle = this.settle
+      settle.elapsed += deltaTime
+      const t = Math.min(1, settle.elapsed / settle.duration)
+      const eased = 1 - (1 - t) ** 3
+      const previous = this.orientation
+      this.orientation = slerpQuat(settle.from, settle.to, eased)
+      // Express the step as a rotation so velocity and blur stay meaningful.
+      const step = normalizeQuat(
+        multiplyQuat(this.orientation, conjugateQuat(previous)),
+      )
+      this.pointerRotation = identityQuat()
+      this.combinedQuat = step
+      const rad = Math.acos(Math.min(Math.max(step[3], -1), 1)) * 2
+      const sin = Math.sin(rad / 2)
+      if (sin > 0.000001) {
+        this.rotationAxis = [step[0] / sin, step[1] / sin, step[2] / sin]
+      }
+      this.smoothedRotationVelocity = rad / (2 * Math.PI)
+      this.rotationVelocity = this.smoothedRotationVelocity / timeScale
+      if (t >= 1) {
+        this.settle = null
+        settle.onDone()
+      }
+      this.updateCallback(deltaTime)
+      return
+    }
 
     if (this.isPointerDown) {
       const intensity = 0.3 * timeScale
@@ -1033,6 +1160,12 @@ class ArcballControl {
           intensity,
         )
       }
+    } else if (this.autoSpin) {
+      // Constant angular speed about a fixed axis; no snapping while it runs.
+      this.pointerRotation = axisAngleQuat(
+        this.autoSpin.axis,
+        (this.autoSpin.omega * deltaTime) / 1000,
+      )
     } else {
       const intensity = 1 - Math.exp(-deltaTime / this.releaseTauMs)
       this.pointerRotation = slerpQuat(
@@ -1077,6 +1210,19 @@ class ArcballControl {
     this.smoothedRotationVelocity +=
       (rotationVelocity - this.smoothedRotationVelocity) * 0.5 * timeScale
     this.rotationVelocity = this.smoothedRotationVelocity / timeScale
+
+    if (this.trackedRotation !== null) {
+      this.trackedRotation += rad
+      if (
+        !this.isPointerDown &&
+        !this.autoSpin &&
+        Math.abs(this.rotationVelocity) < GESTURE_REST_VELOCITY
+      ) {
+        const total = this.trackedRotation
+        this.trackedRotation = null
+        this.onGestureSettled?.(total)
+      }
+    }
     this.updateCallback(deltaTime)
   }
 
@@ -1166,6 +1312,18 @@ class InfiniteMovieEngine<T> {
     onArrive: (index: number) => void
   } | null = null
   private nudgeTimer: number | null = null
+  // Shuffle Pro: sky pass, camera springs, frame timing.
+  private sky: SkyPass | null = null
+  private skyState: SkyState | null = null
+  private skyQuality: SkyQuality = QUALITY_FULL
+  private skyQualityLevel: 'full' | 'lite' = 'full'
+  private qualityProbe: { frames: number; sum: number } | null = null
+  private pull = { x: 0, v: 0, target: 0, freq: 9, zeta: 1 }
+  private kick = { x: 0, v: 0 }
+  private readonly frameTimes = new Float32Array(180)
+  private frameTimeCount = 0
+  private statsEnabled = false
+  onSpinActive: ((active: boolean) => void) | null = null
 
   private readonly handleContextLost = (event: Event) => {
     event.preventDefault()
@@ -1227,6 +1385,8 @@ class InfiniteMovieEngine<T> {
       ),
       uMotionBlur: gl.getUniformLocation(program, 'uMotionBlur'),
       uMotionBlurMax: gl.getUniformLocation(program, 'uMotionBlurMax'),
+      uExposure: gl.getUniformLocation(program, 'uExposure'),
+      uTint: gl.getUniformLocation(program, 'uTint'),
       uTex: gl.getUniformLocation(program, 'uTex'),
       uItemCount: gl.getUniformLocation(program, 'uItemCount'),
       uAtlasSize: gl.getUniformLocation(program, 'uAtlasSize'),
@@ -1265,7 +1425,24 @@ class InfiniteMovieEngine<T> {
 
   run(time = 0) {
     if (this.disposed || this.contextLost || this.paused) return
-    const deltaTime = Math.min(32, time - this.time || TARGET_FRAME_DURATION)
+    const rawDelta = time - this.time
+    const deltaTime = Math.min(32, rawDelta || TARGET_FRAME_DURATION)
+    if (this.statsEnabled && rawDelta > 0 && rawDelta < 1000) {
+      this.frameTimes[this.frameTimeCount % this.frameTimes.length] = rawDelta
+      this.frameTimeCount += 1
+    }
+    if (this.qualityProbe && rawDelta > 0 && rawDelta < 1000) {
+      this.qualityProbe.frames += 1
+      this.qualityProbe.sum += rawDelta
+      if (this.qualityProbe.frames >= QUALITY_PROBE_FRAMES) {
+        const average = this.qualityProbe.sum / this.qualityProbe.frames
+        this.qualityProbe = null
+        if (average > QUALITY_STEP_DOWN_MS) {
+          this.skyQuality = QUALITY_LITE
+          this.skyQualityLevel = 'lite'
+        }
+      }
+    }
     this.time = time
     this.frames += deltaTime / TARGET_FRAME_DURATION
     if (this.animate(deltaTime)) this.render()
@@ -1321,6 +1498,7 @@ class InfiniteMovieEngine<T> {
     if (this.nudgeTimer) window.clearTimeout(this.nudgeTimer)
     this.cleanupCallbacks.forEach((cleanup) => cleanup())
     this.control.dispose()
+    this.sky?.dispose()
     this.canvas.removeEventListener('webglcontextlost', this.handleContextLost)
     if (!this.gl.isContextLost()) {
       if (this.texture) this.gl.deleteTexture(this.texture)
@@ -1335,6 +1513,7 @@ class InfiniteMovieEngine<T> {
 
   beginPointerDrag(clientX: number, clientY: number, pointerId?: number) {
     this.cancelSpin()
+    this.control.beginTracking()
     if (this.nudgeTimer) window.clearTimeout(this.nudgeTimer)
     this.nudgeTimer = null
     this.nudgePos = null
@@ -1435,11 +1614,157 @@ class InfiniteMovieEngine<T> {
       onArrive,
     }
     this.control.snapStrength = SPIN_SNAP_STRENGTH
+    this.onSpinActive?.(true)
   }
 
   cancelSpin() {
+    const wasSpinning = this.spinTarget !== null || this.control.isSettling
     this.spinTarget = null
     this.control.snapStrength = null
+    this.control.cancelSettle()
+    if (wasSpinning) this.onSpinActive?.(false)
+  }
+
+  // True while a Shuffle spin or Skip settle is heading for a poster.
+  hasSpinTarget() {
+    return this.spinTarget !== null || this.control.isSettling
+  }
+
+  setGestureSettledHandler(handler: ((totalRad: number) => void) | null) {
+    this.control.onGestureSettled = handler
+  }
+
+  // Skip: ease the globe to its target within `duration` ms, then arrive.
+  settleToItem(
+    itemId: string,
+    duration: number,
+    onArrive: (index: number) => void,
+  ) {
+    if (this.disposed) return
+    const index =
+      this.spinTarget?.index ?? this.findBestInstanceIndexForItem(itemId)
+    const position = this.instancePositions[index]
+    if (!position) return
+    this.spinTarget = null
+    this.control.snapStrength = null
+    this.control.beginSettle(normalize3(position), duration, () => {
+      this.onSpinActive?.(false)
+      onArrive(index)
+    })
+    this.onSpinActive?.(true)
+  }
+
+  // --- Shuffle Pro -------------------------------------------------------
+
+  get cameraDistanceRatio() {
+    return this.cameraRatio
+  }
+
+  get cameraRest() {
+    return this.cameraRestZ
+  }
+
+  // Takes over from a held drag: spin about the axis at omega rad/s. The
+  // pointer stays captured so its release still reaches the canvas.
+  startAutoSpin(axis: Vec3, omega: number) {
+    this.cancelSpin()
+    if (this.nudgeTimer) window.clearTimeout(this.nudgeTimer)
+    this.nudgeTimer = null
+    this.nudgePos = null
+    this.control.endDrag()
+    this.control.autoSpin = { axis: normalize3(axis), omega }
+    this.renderDirty = true
+  }
+
+  setAutoSpin(axis: Vec3, omega: number) {
+    if (!this.control.autoSpin) return
+    this.control.autoSpin = { axis: normalize3(axis), omega }
+  }
+
+  // Lets the spin decay on its own with the given time constant.
+  stopAutoSpin(releaseTauMs: number) {
+    this.control.autoSpin = null
+    this.control.releaseTauMs = releaseTauMs
+  }
+
+  isAutoSpinning() {
+    return this.control.autoSpin !== null
+  }
+
+  // The camera's extra distance eases toward the target as a spring: critical
+  // damping while a run builds, slightly underdamped for the landing glide.
+  setCameraPull(target: number, freq: number, zeta: number) {
+    this.pull.target = target
+    this.pull.freq = freq
+    this.pull.zeta = zeta
+  }
+
+  // A quick push on the camera (negative = toward the globe) that springs back.
+  kickCamera(velocity: number) {
+    this.kick.v += velocity
+  }
+
+  setSkyState(state: SkyState | null) {
+    if (state && !this.skyState) {
+      this.qualityProbe = { frames: 0, sum: 0 }
+      this.skyQuality = QUALITY_FULL
+      this.skyQualityLevel = 'full'
+    }
+    this.skyState = state
+    this.renderDirty = true
+  }
+
+  getSkyStats() {
+    return {
+      qualityLevel: this.skyQualityLevel,
+      drawCount: this.sky?.drawCount ?? 0,
+    }
+  }
+
+  setStatsEnabled(enabled: boolean) {
+    this.statsEnabled = enabled
+    this.frameTimeCount = 0
+  }
+
+  getFrameStats() {
+    const count = Math.min(this.frameTimeCount, this.frameTimes.length)
+    if (!count) return { average: 0, p95: 0 }
+    const samples = Array.from(this.frameTimes.slice(0, count)).sort(
+      (a, b) => a - b,
+    )
+    const average = samples.reduce((sum, value) => sum + value, 0) / count
+    return {
+      average,
+      p95: samples[Math.min(count - 1, Math.floor(count * 0.95))],
+    }
+  }
+
+  getAngularSpeed() {
+    return this.angularSpeed()
+  }
+
+  // Screen radius of the globe in sky units (vertical extent is -1..1).
+  private globeScreenRadius() {
+    const distance = this.cameraPosition[2]
+    const radius = this.sphereRadius * 0.92
+    const f = this.projectionMatrix[5]
+    return (
+      (radius /
+        Math.sqrt(Math.max(1e-4, distance * distance - radius * radius))) *
+      f
+    )
+  }
+
+  private skyView(): SkyView {
+    return {
+      width: this.gl.drawingBufferWidth,
+      height: this.gl.drawingBufferHeight,
+      viewMatrix: this.viewMatrix,
+      projectionMatrix: this.projectionMatrix,
+      globeRadius: this.globeScreenRadius(),
+      sphereRadius: this.sphereRadius,
+      cameraZ: this.cameraPosition[2],
+    }
   }
 
   isSpinning() {
@@ -1986,7 +2311,9 @@ class InfiniteMovieEngine<T> {
         orientation[2] * last[2] +
         orientation[3] * last[3],
     )
+    const skyUp = this.skyState !== null && this.skyState.intensity > 0.002
     const isStill =
+      !skyUp &&
       !this.renderDirty &&
       !this.control.isPointerDown &&
       orientationDot > 1 - 1e-10 &&
@@ -2058,13 +2385,28 @@ class InfiniteMovieEngine<T> {
 
   private render() {
     const gl = this.gl
+    gl.clearColor(0, 0, 0, 0)
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+
+    // Shuffle Pro's sky sits behind the globe; at intensity 0 it is skipped
+    // entirely (and never even created until the first run).
+    const sky = this.skyState
+    if (sky && sky.intensity > 0.002) {
+      this.sky ??= new SkyPass(gl)
+      this.sky.drawSky(
+        sky,
+        this.skyQuality,
+        this.skyView(),
+        gl.drawingBufferWidth,
+        gl.drawingBufferHeight,
+      )
+    }
+
     gl.useProgram(this.program)
     gl.enable(gl.CULL_FACE)
     gl.enable(gl.DEPTH_TEST)
     gl.enable(gl.BLEND)
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
-    gl.clearColor(0, 0, 0, 0)
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
     gl.uniformMatrix4fv(this.locations.uWorldMatrix, false, this.worldMatrix)
     gl.uniformMatrix4fv(this.locations.uViewMatrix, false, this.viewMatrix)
@@ -2081,7 +2423,19 @@ class InfiniteMovieEngine<T> {
       this.smoothRotationVelocity * 1.1,
     )
     gl.uniform1f(this.locations.uMotionBlur, this.motionBlurAmount())
-    gl.uniform1f(this.locations.uMotionBlurMax, MOTION_BLUR_MAX_SMEAR)
+    gl.uniform1f(
+      this.locations.uMotionBlurMax,
+      MOTION_BLUR_MAX_SMEAR * (1 + MOTION_BLUR_PRO_BOOST * (sky?.blur ?? 0)),
+    )
+    const tint = sky ? PALETTES[sky.tier].c1 : [1, 1, 1]
+    gl.uniform1f(this.locations.uExposure, sky?.exposure ?? 0)
+    gl.uniform4f(
+      this.locations.uTint,
+      tint[0],
+      tint[1],
+      tint[2],
+      sky ? sky.color * sky.intensity * GRADE_STRENGTH : 0,
+    )
     gl.uniform1i(this.locations.uItemCount, Math.max(1, this.items.length))
     gl.uniform1i(this.locations.uAtlasSize, this.atlasSize)
     gl.uniform1f(
@@ -2099,6 +2453,10 @@ class InfiniteMovieEngine<T> {
       0,
       this.instancePositions.length,
     )
+
+    if (sky && this.sky && sky.particles > 0.001 && sky.intensity > 0.002) {
+      this.sky.drawParticles(sky, this.skyQuality, this.skyView())
+    }
   }
 
   private onControlUpdate(deltaTime: number) {
@@ -2152,6 +2510,33 @@ class InfiniteMovieEngine<T> {
     if (this.detailProgress > 0.02 || this.detailTargetProgress > 0) {
       damping = 13 / timeScale
     }
+
+    // Shuffle Pro's camera: a pull-back spring plus a quick "catch" kick.
+    const seconds = Math.min(0.05, deltaTime / 1000)
+    const pull = this.pull
+    const pullAccel =
+      pull.freq * pull.freq * (pull.target - pull.x) -
+      2 * pull.zeta * pull.freq * pull.v
+    pull.v += pullAccel * seconds
+    pull.x += pull.v * seconds
+    const kick = this.kick
+    const kickAccel =
+      -KICK_FREQ * KICK_FREQ * kick.x - 2 * KICK_ZETA * KICK_FREQ * kick.v
+    kick.v += kickAccel * seconds
+    kick.x += kick.v * seconds
+    if (
+      Math.abs(pull.x) < 1e-5 &&
+      Math.abs(pull.v) < 1e-5 &&
+      pull.target === 0
+    ) {
+      pull.x = 0
+      pull.v = 0
+    }
+    if (Math.abs(kick.x) < 1e-5 && Math.abs(kick.v) < 1e-5) {
+      kick.x = 0
+      kick.v = 0
+    }
+    cameraTargetZ += pull.x + kick.x
 
     this.cameraPosition[2] += (cameraTargetZ - this.cameraPosition[2]) / damping
     this.updateCameraMatrix()
@@ -2287,6 +2672,10 @@ export const InfiniteMovieMenu = <T,>({
   onUserSpin,
   zoom = 1,
   initialFaceId = null,
+  shufflePro = null,
+  onSpinActiveChange,
+  onGestureSettled,
+  controlRef,
   spinRequest = null,
 }: InfiniteMovieMenuProps<T>) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -2299,6 +2688,26 @@ export const InfiniteMovieMenu = <T,>({
   isActiveRef.current = isActive
   const pressRef = useRef<PressState | null>(null)
   const touchOpenGuardRef = useRef<(() => void) | null>(null)
+  const portRef = useRef<ShuffleProPort | null>(null)
+  // Callbacks and items live in refs so the engine and its Shuffle Pro port
+  // never rebuild when their identities change.
+  const onOpenItemRef = useRef(onOpenItem)
+  onOpenItemRef.current = onOpenItem
+  const onSpinActiveChangeRef = useRef(onSpinActiveChange)
+  onSpinActiveChangeRef.current = onSpinActiveChange
+  const onGestureSettledRef = useRef(onGestureSettled)
+  onGestureSettledRef.current = onGestureSettled
+  const itemsRef = useRef(items)
+  itemsRef.current = items
+  const shuffleProRef = useRef(shufflePro)
+  shuffleProRef.current = shufflePro
+  const onActiveItemChangeRef = useRef(onActiveItemChange)
+  onActiveItemChangeRef.current = onActiveItemChange
+  // The Shuffle spin in flight, so Skip can finish it.
+  const spinInFlightRef = useRef<{
+    item: InfiniteMovieMenuItem<T>
+    arrive: (index: number) => void
+  } | null>(null)
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
   // Consumed once, by the first engine build that has items to face.
@@ -2363,6 +2772,59 @@ export const InfiniteMovieMenu = <T,>({
         zoomRef.current,
       )
       engineRef.current = engine
+      engine.onSpinActive = (active) => onSpinActiveChangeRef.current?.(active)
+      engine.setGestureSettledHandler((total) =>
+        onGestureSettledRef.current?.(total),
+      )
+      const openShuffled = (item: InfiniteMovieMenuItem<T>, index: number) => {
+        activeItemRef.current = item
+        setActiveItem(item)
+        onActiveItemChangeRef.current(item)
+        engine?.setDetailFocus(item.id, true, 'fast', index)
+        onOpenItemRef.current?.(item, 'shuffle')
+      }
+      const findItem = (id: string) =>
+        itemsRef.current.find((candidate) => candidate.id === id)
+      const shuffleProPort: ShuffleProPort = {
+        getCameraRatio: () => engine?.cameraDistanceRatio ?? 1,
+        getCameraRest: () => engine?.cameraRest ?? 3,
+        startAutoSpin: (axis, omega) => engine?.startAutoSpin(axis, omega),
+        setAutoSpin: (axis, omega) => engine?.setAutoSpin(axis, omega),
+        stopAutoSpin: (tau) => engine?.stopAutoSpin(tau),
+        getAngularSpeed: () => engine?.getAngularSpeed() ?? 0,
+        setCameraPull: (target, freq, zeta) =>
+          engine?.setCameraPull(target, freq, zeta),
+        kickCamera: (velocity) => engine?.kickCamera(velocity),
+        setSkyState: (state) => engine?.setSkyState(state),
+        landOn: (itemId, onArrive) => {
+          const item = findItem(itemId)
+          if (!item) {
+            onArrive()
+            return
+          }
+          engine?.spinToItem(itemId, (index) => {
+            openShuffled(item, index)
+            onArrive()
+          })
+        },
+        settleTo: (itemId, ms, onArrive) => {
+          const item = findItem(itemId)
+          if (!item) {
+            onArrive()
+            return
+          }
+          engine?.settleToItem(itemId, ms, (index) => {
+            openShuffled(item, index)
+            onArrive()
+          })
+        },
+        cancelLanding: () => engine?.cancelSpin(),
+        getFrameStats: () => engine?.getFrameStats() ?? { average: 0, p95: 0 },
+        getSkyStats: () =>
+          engine?.getSkyStats() ?? { qualityLevel: 'full', drawCount: 0 },
+      }
+      portRef.current = shuffleProPort
+      shuffleProRef.current?.attachPort(shuffleProPort)
       if (initialFaceRef.current) {
         engine.faceItem(initialFaceRef.current)
         initialFaceRef.current = null
@@ -2382,6 +2844,8 @@ export const InfiniteMovieMenu = <T,>({
 
     return () => {
       window.removeEventListener('resize', onResize)
+      if (portRef.current) shuffleProRef.current?.detachPort(portRef.current)
+      portRef.current = null
       engineRef.current = null
       engine?.dispose()
     }
@@ -2535,7 +2999,7 @@ export const InfiniteMovieMenu = <T,>({
       setActiveItem(hit.item)
       onActiveItemChange(hit.item)
       engineRef.current?.setDetailFocus(hit.item.id, true, 'fast', hit.index)
-      onOpenItem?.(hit.item)
+      onOpenItem?.(hit.item, 'tap')
     },
     [onActiveItemChange, onOpenItem],
   )
@@ -2548,18 +3012,39 @@ export const InfiniteMovieMenu = <T,>({
     const engine = engineRef.current
     if (!engine) {
       // Fallback (no WebGL): nothing to spin, open straight away.
-      onOpenItem?.(item)
+      onOpenItem?.(item, 'shuffle')
       return
     }
-    engine.spinToItem(item.id, (index) => {
+    const arrive = (index: number) => {
+      spinInFlightRef.current = null
       activeItemRef.current = item
       setActiveItem(item)
       onActiveItemChange(item)
       engine.setDetailFocus(item.id, true, 'fast', index)
-      onOpenItem?.(item)
-    })
-    return () => engine.cancelSpin()
+      onOpenItem?.(item, 'shuffle')
+    }
+    spinInFlightRef.current = { item, arrive }
+    engine.spinToItem(item.id, arrive)
+    return () => {
+      spinInFlightRef.current = null
+      engine.cancelSpin()
+    }
   }, [spinRequest])
+
+  useEffect(() => {
+    if (!controlRef) return
+    controlRef.current = {
+      skipSpin: () => {
+        const spin = spinInFlightRef.current
+        const engine = engineRef.current
+        if (!spin || !engine) return
+        engine.settleToItem(spin.item.id, 300, (index) => spin.arrive(index))
+      },
+    }
+    return () => {
+      controlRef.current = null
+    }
+  }, [controlRef])
 
   const releasePress = () => {
     const press = pressRef.current
@@ -2582,6 +3067,8 @@ export const InfiniteMovieMenu = <T,>({
     if (event.pointerType === 'mouse' && event.button !== 0) return
     releasePress()
     const press: PressState = {
+      session: null,
+      pointerType: event.pointerType,
       dragging: false,
       holdTimer: null,
       kind: null,
@@ -2595,6 +3082,22 @@ export const InfiniteMovieMenu = <T,>({
       y: event.clientY,
     }
     pressRef.current = press
+    // A real user gesture: the one place the whoosh's audio can be unlocked.
+    unlockAudio()
+    // During a Shuffle Pro run a press is Skip (or ignored), never a drag.
+    const proSession = shuffleProRef.current?.pressStart({
+      nx:
+        (event.clientX - event.currentTarget.getBoundingClientRect().left) /
+        Math.max(1, event.currentTarget.clientWidth),
+      ny:
+        (event.clientY - event.currentTarget.getBoundingClientRect().top) /
+        Math.max(1, event.currentTarget.clientHeight),
+    })
+    if (proSession === 'consumed') {
+      pressRef.current = null
+      return
+    }
+    press.session = proSession ?? null
     try {
       event.currentTarget.setPointerCapture(event.pointerId)
     } catch {
@@ -2633,10 +3136,15 @@ export const InfiniteMovieMenu = <T,>({
   const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const press = pressRef.current
     if (!press || press.pointerId !== event.pointerId) return
+    const stepX = event.clientX - press.lastX
+    const stepY = event.clientY - press.lastY
     press.lastX = event.clientX
     press.lastY = event.clientY
     const movedPx = Math.hypot(event.clientX - press.x, event.clientY - press.y)
     press.maxMovedPx = Math.max(press.maxMovedPx, movedPx)
+    shuffleProRef.current?.pressMove(press.maxMovedPx, stepX, stepY)
+    // Once Shuffle Pro owns the globe the pointer only keeps the hold alive.
+    if (press.session?.triggered) return
 
     if (press.dragging) {
       engineRef.current?.movePointerDrag(event.clientX, event.clientY)
@@ -2651,6 +3159,15 @@ export const InfiniteMovieMenu = <T,>({
     if (!press) return
     const ms = Math.round(performance.now() - press.startTime)
     const movedPx = Math.round(press.maxMovedPx)
+
+    // A press that started a Shuffle Pro run never opens a poster on release.
+    const ownedByShufflePro = press.session?.triggered ?? false
+    if (press.session) shuffleProRef.current?.pressRelease()
+    if (ownedByShufflePro) {
+      engineRef.current?.endPointerDrag(press.pointerId)
+      logGesture({ kind: 'hold', ms, movedPx })
+      return
+    }
 
     if (press.dragging) {
       engineRef.current?.endPointerDrag(press.pointerId)
@@ -2701,8 +3218,21 @@ export const InfiniteMovieMenu = <T,>({
   const handlePointerCancel = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (pressRef.current?.pointerId !== event.pointerId) return
     const press = releasePress()
-    if (press?.dragging) engineRef.current?.cancelPointerDrag(press.pointerId)
+    if (press?.session) shuffleProRef.current?.pressRelease()
+    if (press?.session?.triggered) {
+      engineRef.current?.endPointerDrag(press.pointerId)
+    } else if (press?.dragging) {
+      engineRef.current?.cancelPointerDrag(press.pointerId)
+    }
     if (GESTURE_DEBUG) setDebugPick(null)
+  }
+
+  // Touch and pen long-presses raise a context menu that would end a hold;
+  // swallow it only while such a press is active so desktop right-click still
+  // reaches the native menu.
+  const handleContextMenu = (event: ReactMouseEvent<HTMLCanvasElement>) => {
+    const press = pressRef.current
+    if (press && press.pointerType !== 'mouse') event.preventDefault()
   }
 
   return (
@@ -2725,6 +3255,7 @@ export const InfiniteMovieMenu = <T,>({
           onPointerMove={handlePointerMove}
           onPointerCancel={handlePointerCancel}
           onPointerUp={handlePointerUp}
+          onContextMenu={handleContextMenu}
         />
       )}
 
