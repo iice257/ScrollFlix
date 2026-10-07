@@ -1098,6 +1098,80 @@
   }
 }
 
+.warp-shell[data-theme="light"] .warp-saved-button {
+  border: 1px solid rgb(33 26 16 / 0.2);
+  color: rgb(238 231 216);
+  box-shadow: 0 14px 44px rgb(110 78 34 / 0.143);
+}
+
+.warp-shell[data-theme="light"] .warp-saved-button:hover,
+.warp-shell[data-theme="light"] .warp-saved-button:focus-visible,
+.warp-shell[data-theme="light"] .warp-saved-button.is-active {
+  background: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-saved-count {
+  border: 2px solid rgb(247 240 225);
+  background: rgb(33 26 16);
+  color: rgb(247 240 225);
+}
+
+.warp-shell[data-theme="light"] .warp-saved-list li:hover {
+  background: rgb(33 26 16 / 0.06);
+}
+
+.warp-shell[data-theme="light"] .warp-saved-row {
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-saved-row:focus-visible {
+  outline: 2px solid rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-saved-thumb {
+  background: rgb(33 26 16 / 0.08);
+}
+
+.warp-shell[data-theme="light"] .warp-saved-copy strong {
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-saved-copy small {
+  color: rgb(33 26 16 / 0.55);
+}
+
+.warp-shell[data-theme="light"] .warp-saved-remove {
+  color: rgb(33 26 16 / 0.5);
+}
+
+.warp-shell[data-theme="light"] .warp-saved-remove:hover,
+.warp-shell[data-theme="light"] .warp-saved-remove:focus-visible {
+  background: rgb(33 26 16 / 0.14);
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-saved-empty {
+  color: rgb(33 26 16 / 0.62);
+}
+
+.warp-shell[data-theme="light"] .warp-details-heart {
+  border: 1px solid rgb(33 26 16 / 0.2);
+  background: rgb(33 26 16 / 0.08);
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-details-heart:hover,
+.warp-shell[data-theme="light"] .warp-details-heart:focus-visible {
+  border-color: rgb(33 26 16 / 0.4);
+  background: rgb(33 26 16 / 0.18);
+}
+
+.warp-shell[data-theme="light"] .warp-details-heart.is-saved {
+  border-color: rgb(255 92 124 / 0.6);
+  background: rgb(255 92 124 / 0.16);
+  color: rgb(255 107 138);
+}
+
 /* Stage: tan beige with a cream centre glow and a faint gold edge. */
 .warp-shell[data-theme="light"],
 .phantom-test-shell[data-theme="light"] {
@@ -1146,6 +1220,8 @@
 .warp-shell[data-theme="light"] .warp-sort-button,
 .warp-shell[data-theme="light"] .warp-shuffle-button,
 .warp-shell[data-theme="light"] .warp-info-button,
+.warp-shell[data-theme="light"] .warp-saved-button,
+.warp-shell[data-theme="light"] .warp-details-heart,
 .warp-shell[data-theme="light"] .warp-theme-switch button,
 .warp-shell[data-theme="light"] .warp-details-next,
 .warp-shell[data-theme="light"] .warp-details-watch,

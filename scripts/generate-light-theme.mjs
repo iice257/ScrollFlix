@@ -206,6 +206,8 @@ const stage = `
 .warp-shell${THEME} .warp-sort-button,
 .warp-shell${THEME} .warp-shuffle-button,
 .warp-shell${THEME} .warp-info-button,
+.warp-shell${THEME} .warp-saved-button,
+.warp-shell${THEME} .warp-details-heart,
 .warp-shell${THEME} .warp-theme-switch button,
 .warp-shell${THEME} .warp-details-next,
 .warp-shell${THEME} .warp-details-watch,

@@ -10,12 +10,14 @@ import {
   ChevronsDown,
   ChevronsUp,
   Dices,
+  Heart,
   Info,
   Maximize2,
   Minimize2,
   Moon,
   Play,
   Search,
+  Share2,
   SlidersHorizontal,
   Sun,
   Volume2,
@@ -51,12 +53,18 @@ import {
   type InfiniteMovieMenuItem,
 } from './infinite-movie-menu'
 import { pickLandingMovie } from './landing'
+import { savedStore } from './saved-store'
 import {
   ImmersiveCorner,
   ImmersiveEnterButton,
   ImmersiveExitPill,
 } from './shuffle-pro/immersive-controls'
 import { PremiumEyebrow, PremiumFrame } from './shuffle-pro/premium-frame'
+import {
+  deliverShareCard,
+  renderShareCard,
+  shareFileName,
+} from './shuffle-pro/share-card'
 import { eggSoundStore, unlockAudio } from './shuffle-pro/shuffle-pro-audio'
 import type { ShuffleProController } from './shuffle-pro/shuffle-pro-controller'
 import {
@@ -1465,6 +1473,7 @@ export const TestGalleryApp = () => {
   const [listSearchQuery, setListSearchQuery] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [savedOpen, setSavedOpen] = useState(false)
   const [aboutMaximized, setAboutMaximized] = useState(false)
   const [initialGalleryReady, setInitialGalleryReady] = useState(false)
   const [galleryLoadPercent, setGalleryLoadPercent] = useState(0)
@@ -1764,6 +1773,7 @@ export const TestGalleryApp = () => {
       setWatchMovieId(null)
       setFilterOpen(false)
       setAboutOpen(false)
+      setSavedOpen(false)
       setSortOpen(false)
     },
   })
@@ -1784,6 +1794,20 @@ export const TestGalleryApp = () => {
   )
   const filterPresence = useExitPresence(filterOpen)
   const aboutPresence = useExitPresence(aboutOpen)
+  const savedPresence = useExitPresence(savedOpen)
+  const savedEntries = useSyncExternalStore(
+    savedStore.subscribe,
+    savedStore.get,
+    savedStore.get,
+  )
+  const savedMovies = useMemo(() => {
+    const byId = new Map(movies.map((movie) => [movie.id, movie]))
+    // Ids that no longer exist (say, after a catalogue change) are skipped.
+    return savedEntries.flatMap((entry) => {
+      const movie = byId.get(entry.id)
+      return movie ? [movie] : []
+    })
+  }, [movies, savedEntries])
   const sortPresence = useExitPresence(sortOpen && mode === 'list')
   const watchPresence = useExitPresence(Boolean(watchMovie), watchMovie)
   const detailsPresence = useExitPresence(Boolean(detailsMovie), detailsMovie)
@@ -1891,6 +1915,7 @@ export const TestGalleryApp = () => {
     setWatchMovieId(null)
     setFilterOpen(false)
     setAboutOpen(false)
+    setSavedOpen(false)
   }, [])
 
   // Opening a poster yourself breaks the Shuffle Pro streak.
@@ -1974,6 +1999,7 @@ export const TestGalleryApp = () => {
     mode,
     Boolean(watchMovieId),
     aboutOpen,
+    savedOpen,
   ])
   const streakBreakReady = useRef(false)
   // biome-ignore lint/correctness/useExhaustiveDependencies: the signature carries the inputs
@@ -2017,6 +2043,7 @@ export const TestGalleryApp = () => {
         detailsMovieId ||
         watchMovieId ||
         aboutOpen ||
+        savedOpen ||
         filterOpen ||
         sortOpen ||
         shuffleProController.canAbort()
@@ -2033,6 +2060,7 @@ export const TestGalleryApp = () => {
     exitImmersive,
     filterOpen,
     immersive,
+    savedOpen,
     shuffleProController,
     sortOpen,
     watchMovieId,
@@ -2065,6 +2093,7 @@ export const TestGalleryApp = () => {
       !detailsMovieId &&
       !watchMovieId &&
       !aboutOpen &&
+      !savedOpen &&
       !filterOpen &&
       !sortOpen
     )
@@ -2072,17 +2101,19 @@ export const TestGalleryApp = () => {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      // Close only the top-most layer: watch links, then details, then panels.
+      // Close only the top-most layer: watch links, then details, then About,
+      // then Saved, then panels.
       if (watchMovieId) setWatchMovieId(null)
       else if (detailsMovieId) setDetailsMovieId(null)
       else if (aboutOpen) setAboutOpen(false)
+      else if (savedOpen) setSavedOpen(false)
       else if (sortOpen) setSortOpen(false)
       else setFilterOpen(false)
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [aboutOpen, detailsMovieId, filterOpen, sortOpen, watchMovieId])
+  }, [aboutOpen, detailsMovieId, filterOpen, savedOpen, sortOpen, watchMovieId])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -2095,7 +2126,7 @@ export const TestGalleryApp = () => {
         mode,
         galleryReady: initialGalleryReady,
         overlayOpen: Boolean(
-          watchMovieId || aboutOpen || filterOpen || sortOpen,
+          watchMovieId || aboutOpen || savedOpen || filterOpen || sortOpen,
         ),
         detailsOpen: Boolean(detailsMovieId),
         hasTarget:
@@ -2130,6 +2161,7 @@ export const TestGalleryApp = () => {
     handleShuffle,
     handleSkip,
     promptFullscreenHint,
+    savedOpen,
     initialGalleryReady,
     listMovies.length,
     mode,
@@ -2434,16 +2466,59 @@ export const TestGalleryApp = () => {
 
       <button
         type='button'
+        className={cn('warp-saved-button', savedOpen && 'is-active')}
+        aria-label={
+          savedMovies.length
+            ? `Saved movies, ${savedMovies.length}`
+            : 'Saved movies'
+        }
+        aria-expanded={savedOpen}
+        onClick={() => {
+          setSavedOpen((isOpen) => !isOpen)
+          setAboutOpen(false)
+          setFilterOpen(false)
+        }}
+      >
+        <Heart aria-hidden='true' />
+        {savedMovies.length ? (
+          <span className='warp-saved-count' aria-hidden='true'>
+            {savedMovies.length > 99 ? '99+' : savedMovies.length}
+          </span>
+        ) : null}
+      </button>
+      <button
+        type='button'
         className={cn('warp-info-button', aboutOpen && 'is-active')}
         aria-label='About ScrollFlix'
         aria-expanded={aboutOpen}
         onClick={() => {
           setAboutOpen((isOpen) => !isOpen)
+          setSavedOpen(false)
           setFilterOpen(false)
         }}
       >
         <Info aria-hidden='true' />
       </button>
+
+      {savedPresence.isPresent ? (
+        <>
+          <button
+            type='button'
+            className='warp-drawer-scrim'
+            data-motion={savedPresence.motionPhase}
+            aria-label='Close saved movies'
+            tabIndex={-1}
+            onClick={() => setSavedOpen(false)}
+          />
+          <SavedDrawer
+            motionPhase={savedPresence.motionPhase}
+            movies={savedMovies}
+            onClose={() => setSavedOpen(false)}
+            onOpenMovie={handleOpenMovie}
+            onRemove={(movie) => savedStore.remove(movie.id)}
+          />
+        </>
+      ) : null}
 
       {mode === 'wall' ? (
         <output
@@ -2549,6 +2624,10 @@ export const TestGalleryApp = () => {
               ? premiumFrame.tier
               : null
           }
+          saved={savedEntries.some(
+            (entry) => entry.id === detailsPresence.value?.id,
+          )}
+          onToggleSaved={(movie) => savedStore.toggle(movie.id)}
           onClose={() => setDetailsMovieId(null)}
           onOpenMovie={handleOpenMovie}
           onWatch={handleOpenWatchLinks}
@@ -4160,6 +4239,85 @@ const AboutDrawer = ({
     </aside>
   )
 
+type SavedDrawerProps = {
+  motionPhase: MotionPhase
+  movies: TestMovie[]
+  onClose: () => void
+  onOpenMovie: (movie: TestMovie) => void
+  onRemove: (movie: TestMovie) => void
+}
+
+// Rises from the heart button exactly like the compact About drawer.
+const SavedDrawer = ({
+  motionPhase,
+  movies,
+  onClose,
+  onOpenMovie,
+  onRemove,
+}: SavedDrawerProps) => (
+  <aside
+    className='warp-about-drawer warp-saved-drawer'
+    data-motion={motionPhase}
+    aria-label='Saved movies'
+  >
+    <header className='warp-about-drawer-heading'>
+      <div>
+        <h2>Saved</h2>
+        <p>
+          {movies.length
+            ? `${movies.length} ${movies.length === 1 ? 'movie' : 'movies'}`
+            : 'Your shortlist'}
+        </p>
+      </div>
+      <button
+        type='button'
+        className='warp-about-drawer-close'
+        aria-label='Close saved movies'
+        onClick={onClose}
+      >
+        <X aria-hidden='true' />
+      </button>
+    </header>
+    {movies.length ? (
+      <ul className='warp-saved-list'>
+        {movies.map((movie) => (
+          <li key={movie.id}>
+            <button
+              type='button'
+              className='warp-saved-row'
+              onClick={() => onOpenMovie(movie)}
+            >
+              <span className='warp-saved-thumb'>
+                <MoviePoster movie={movie} size='list' />
+              </span>
+              <span className='warp-saved-copy'>
+                <strong>{movie.title}</strong>
+                <small>
+                  {[movie.year, movie.rating ? `★ ${movie.rating}` : null]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </small>
+              </span>
+            </button>
+            <button
+              type='button'
+              className='warp-saved-remove'
+              aria-label={`Remove ${movie.title} from saved`}
+              onClick={() => onRemove(movie)}
+            >
+              <X aria-hidden='true' />
+            </button>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p className='warp-saved-empty'>
+        Nothing saved yet. Tap ♥ on any movie card to keep it here.
+      </p>
+    )}
+  </aside>
+)
+
 const WATCH_LINKS = [
   { label: 'Netflix', meta: 'Subscription' },
   { label: 'Prime Video', meta: 'Rent or buy' },
@@ -4235,6 +4393,8 @@ type MovieDetailsCardProps = {
   motionPhase: MotionPhase
   movie: TestMovie
   premiumTier: Tier | null
+  saved: boolean
+  onToggleSaved: (movie: TestMovie) => void
   onClose: () => void
   onOpenMovie: (movie: TestMovie) => void
   onApplyFilter: (filter: MovieCardFilter) => void
@@ -4247,12 +4407,36 @@ const MovieDetailsCard = ({
   motionPhase,
   movie,
   premiumTier,
+  saved,
+  onToggleSaved,
   onClose,
   onOpenMovie,
   onApplyFilter,
   onNextSuggestion,
   onWatch,
 }: MovieDetailsCardProps) => {
+  const [isSharing, setIsSharing] = useState(false)
+  const shareMovie = async () => {
+    if (!premiumTier || isSharing) return
+    setIsSharing(true)
+    try {
+      const blob = await renderShareCard({
+        title: movie.title,
+        year: movie.year,
+        tier: premiumTier,
+        posterUrl: movie.posterDetailUrl ?? movie.posterUrl,
+      })
+      await deliverShareCard(
+        blob,
+        shareFileName(movie.title, premiumTier),
+        movie.title,
+      )
+    } catch {
+      // Sharing is best effort; nothing to surface if it fails.
+    } finally {
+      setIsSharing(false)
+    }
+  }
   const [reducedMotion] = useState(() => readReducedMotion(null))
   // Wide screens get a centred panel with everything visible; small screens
   // keep the draggable bottom sheet with a More/Less toggle.
@@ -4511,6 +4695,26 @@ const MovieDetailsCard = ({
                   <Play aria-hidden='true' size={15} strokeWidth={2.6} />
                   Where to watch
                 </button>
+                <button
+                  type='button'
+                  className={cn('warp-details-heart', saved && 'is-saved')}
+                  aria-pressed={saved}
+                  aria-label={saved ? 'Remove from saved' : 'Save movie'}
+                  onClick={() => onToggleSaved(movie)}
+                >
+                  <Heart aria-hidden='true' />
+                </button>
+                {premiumTier ? (
+                  <button
+                    type='button'
+                    className='warp-details-heart warp-details-share'
+                    aria-label='Share this pick'
+                    disabled={isSharing}
+                    onClick={() => void shareMovie()}
+                  >
+                    <Share2 aria-hidden='true' />
+                  </button>
+                ) : null}
               </div>
               {showFullContent ? (
                 <div className='warp-details-expanded-content'>

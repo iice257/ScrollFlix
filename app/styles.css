@@ -4861,4 +4861,290 @@
     }
   }
 
+
+  /* Saved movies: a heart button above the i button, and a drawer that rises
+     from it the same way the compact About drawer does. */
+  .warp-saved-button {
+    position: fixed;
+    right: 24px;
+    bottom: calc(28px + var(--warp-control-height) + 10px);
+    z-index: 54;
+    display: grid;
+    width: var(--warp-control-height);
+    height: var(--warp-control-height);
+    place-items: center;
+    border: 1px solid rgb(255 255 255 / 0.2);
+    border-radius: 999px;
+    background: var(--warp-pill-bg);
+    color: #0b0b0b;
+    box-shadow: 0 14px 44px rgb(0 0 0 / 0.34);
+    backdrop-filter: blur(14px) saturate(0.96);
+    -webkit-backdrop-filter: blur(14px) saturate(0.96);
+    transition:
+      background 160ms ease,
+      opacity 220ms ease,
+      transform 160ms ease;
+  }
+
+  .warp-saved-button svg {
+    width: 19px;
+    height: 19px;
+    stroke-width: 2.4;
+  }
+
+  .warp-saved-button:hover,
+  .warp-saved-button:focus-visible,
+  .warp-saved-button.is-active {
+    outline: none;
+    background: #fff;
+  }
+
+  .warp-saved-button:active {
+    transform: translateY(1px) scale(0.96);
+  }
+
+  .warp-shell[data-details-open="true"] .warp-saved-button {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .warp-saved-count {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    display: grid;
+    min-width: 19px;
+    height: 19px;
+    place-items: center;
+    border: 2px solid #000;
+    border-radius: 999px;
+    background: #fff;
+    padding: 0 4px;
+    color: #000;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .warp-saved-drawer {
+    bottom: calc(28px + var(--warp-control-height) * 2 + 22px);
+    max-height: calc(100dvh - 140px);
+  }
+
+  .warp-saved-list {
+    display: grid;
+    gap: 2px;
+    max-height: min(380px, 52dvh);
+    margin: 0 -6px;
+    padding: 0 6px 0 0;
+    overflow-y: auto;
+    list-style: none;
+    scrollbar-width: none;
+  }
+
+  .warp-saved-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .warp-saved-list li {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px;
+    border-radius: 14px;
+    padding-right: 4px;
+    transition: background 160ms ease;
+  }
+
+  .warp-saved-list li:hover {
+    background: rgb(255 255 255 / 0.06);
+  }
+
+  .warp-saved-row {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: 38px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    border: 0;
+    border-radius: 14px;
+    background: transparent;
+    padding: 6px;
+    color: #fff;
+    text-align: left;
+  }
+
+  .warp-saved-row:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: -2px;
+  }
+
+  .warp-saved-thumb {
+    display: block;
+    width: 38px;
+    height: 56px;
+    overflow: hidden;
+    border-radius: 8px;
+    background: rgb(255 255 255 / 0.08);
+  }
+
+  .warp-saved-thumb .warp-poster-frame,
+  .warp-saved-thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .warp-saved-copy {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .warp-saved-copy strong {
+    overflow: hidden;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .warp-saved-copy small {
+    color: rgb(255 255 255 / 0.55);
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  .warp-saved-remove {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: rgb(255 255 255 / 0.5);
+    transition:
+      background 160ms ease,
+      color 160ms ease;
+  }
+
+  .warp-saved-remove svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .warp-saved-remove:hover,
+  .warp-saved-remove:focus-visible {
+    outline: none;
+    background: rgb(255 255 255 / 0.14);
+    color: #fff;
+  }
+
+  .warp-saved-empty {
+    margin: 0;
+    color: rgb(255 255 255 / 0.62);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  /* Heart (and share) buttons on the details card. */
+  .warp-details-heart {
+    display: inline-grid;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid rgb(255 255 255 / 0.2);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.08);
+    color: #fff;
+    transition:
+      background 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .warp-details-heart svg {
+    width: 18px;
+    height: 18px;
+    stroke-width: 2.4;
+  }
+
+  .warp-details-heart:hover,
+  .warp-details-heart:focus-visible {
+    outline: none;
+    border-color: rgb(255 255 255 / 0.4);
+    background: rgb(255 255 255 / 0.18);
+  }
+
+  .warp-details-heart:active {
+    transform: translateY(1px) scale(0.96);
+  }
+
+  .warp-details-heart:disabled {
+    opacity: 0.55;
+  }
+
+  .warp-details-heart.is-saved {
+    border-color: rgb(255 92 124 / 0.6);
+    background: rgb(255 92 124 / 0.16);
+    color: #ff6b8a;
+  }
+
+  .warp-details-heart.is-saved svg {
+    fill: currentColor;
+    animation: warp-heart-pop 200ms cubic-bezier(0.34, 1.6, 0.5, 1) both;
+  }
+
+  @keyframes warp-heart-pop {
+    from {
+      transform: scale(0.6);
+    }
+    60% {
+      transform: scale(1.22);
+    }
+    to {
+      transform: scale(1);
+    }
+  }
+
+  @media (max-width: 900px) {
+    .warp-saved-button {
+      right: 12px;
+      bottom: calc(18px + var(--warp-control-height) + 10px);
+    }
+
+    .warp-saved-drawer {
+      bottom: calc(18px + var(--warp-control-height) * 2 + 20px);
+    }
+
+    .warp-details-heart {
+      width: 38px;
+      height: 38px;
+    }
+  }
+
+  @media (max-width: 359px) {
+    .warp-shell[data-mode="list"] .warp-saved-button,
+    .warp-shell[data-mode="wall"] .warp-saved-button,
+    .warp-shell[data-mode="filters"] .warp-saved-button {
+      bottom: calc(18px + (var(--warp-control-height) + 10px) * 2);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .warp-details-heart.is-saved svg {
+      animation: none;
+    }
+  }
+
 }
