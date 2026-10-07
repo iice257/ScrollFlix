@@ -1718,6 +1718,9 @@ class InfiniteMovieEngine<T> {
     return {
       qualityLevel: this.skyQualityLevel,
       drawCount: this.sky?.drawCount ?? 0,
+      cameraZ: this.cameraPosition[2],
+      pull: this.pull.x,
+      kick: this.kick.x,
     }
   }
 
@@ -2819,9 +2822,16 @@ export const InfiniteMovieMenu = <T,>({
           })
         },
         cancelLanding: () => engine?.cancelSpin(),
+        setStatsEnabled: (enabled) => engine?.setStatsEnabled(enabled),
         getFrameStats: () => engine?.getFrameStats() ?? { average: 0, p95: 0 },
         getSkyStats: () =>
-          engine?.getSkyStats() ?? { qualityLevel: 'full', drawCount: 0 },
+          engine?.getSkyStats() ?? {
+            qualityLevel: 'full',
+            drawCount: 0,
+            cameraZ: 0,
+            pull: 0,
+            kick: 0,
+          },
       }
       portRef.current = shuffleProPort
       shuffleProRef.current?.attachPort(shuffleProPort)

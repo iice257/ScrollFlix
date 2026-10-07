@@ -18,6 +18,8 @@ import {
   Search,
   SlidersHorizontal,
   Sun,
+  Volume2,
+  VolumeX,
   X,
 } from 'lucide-react'
 import {
@@ -30,6 +32,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import { useMediaQuery } from '../../../hooks/use-media-query'
 import { cn } from '../../../utils/tw'
@@ -45,12 +48,19 @@ import {
   type InfiniteMovieMenuItem,
 } from './infinite-movie-menu'
 import { pickLandingMovie } from './landing'
-import { unlockAudio } from './shuffle-pro/shuffle-pro-audio'
+import { PremiumEyebrow, PremiumFrame } from './shuffle-pro/premium-frame'
+import { eggSoundStore, unlockAudio } from './shuffle-pro/shuffle-pro-audio'
 import type { ShuffleProController } from './shuffle-pro/shuffle-pro-controller'
+import {
+  SHUFFLE_PRO_DEBUG,
+  ShuffleProDebugPanel,
+} from './shuffle-pro/shuffle-pro-debug'
 import { isBigSpin } from './shuffle-pro/shuffle-pro-logic'
+import type { Tier } from './shuffle-pro/shuffle-pro-logic'
 import { ShuffleSkipButton } from './shuffle-pro/shuffle-skip-button'
 import {
   pickOtherMovie,
+  readReducedMotion,
   useShuffleProController,
 } from './shuffle-pro/use-shuffle-pro'
 
@@ -1369,7 +1379,7 @@ export const TestGalleryApp = () => {
   // The premium frame stays on the card until it has finished closing.
   const [premiumFrame, setPremiumFrame] = useState<{
     movieId: string
-    tier: NonNullable<typeof shuffleProSnapshot.tier>
+    tier: Tier
   } | null>(null)
 
   const watchMovie = useMemo(
@@ -1752,6 +1762,12 @@ export const TestGalleryApp = () => {
       <output className='sr-only' aria-live='polite'>
         {shuffleProSnapshot.announcement}
       </output>
+      {SHUFFLE_PRO_DEBUG ? (
+        <ShuffleProDebugPanel
+          controller={shuffleProController}
+          reducedMotionOverride={reducedMotionOverride}
+        />
+      ) : null}
       {/* Stays mounted in other views so returning to the gallery is instant. */}
       <WarpWall
         activeMovieId={activeMovie?.id ?? null}
@@ -2111,6 +2127,11 @@ export const TestGalleryApp = () => {
           movies={movies}
           motionPhase={detailsPresence.motionPhase}
           movie={detailsPresence.value}
+          premiumTier={
+            premiumFrame?.movieId === detailsPresence.value.id
+              ? premiumFrame.tier
+              : null
+          }
           onClose={() => setDetailsMovieId(null)}
           onOpenMovie={handleOpenMovie}
           onWatch={handleOpenWatchLinks}
@@ -3227,6 +3248,38 @@ const AboutGlobeDiagram = () => (
   </svg>
 )
 
+// The easter egg's whoosh can be silenced; on by default.
+const EggSoundSetting = () => {
+  const enabled = useSyncExternalStore(
+    eggSoundStore.subscribe,
+    eggSoundStore.get,
+    eggSoundStore.get,
+  )
+  return (
+    <fieldset className='warp-about-setting'>
+      <legend>Easter egg sound</legend>
+      <div className='warp-theme-switch'>
+        {([true, false] as const).map((option) => (
+          <button
+            type='button'
+            key={String(option)}
+            aria-pressed={enabled === option}
+            className={cn(enabled === option && 'is-active')}
+            onClick={() => eggSoundStore.set(option)}
+          >
+            {option ? (
+              <Volume2 aria-hidden='true' />
+            ) : (
+              <VolumeX aria-hidden='true' />
+            )}
+            {option ? 'On' : 'Off'}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
 const AboutDrawer = ({
   theme,
   onThemeChange,
@@ -3380,6 +3433,7 @@ const AboutDrawer = ({
           ))}
         </div>
       </fieldset>
+      <EggSoundSetting />
       <button
         type='button'
         className='warp-about-more'
@@ -3465,6 +3519,7 @@ type MovieDetailsCardProps = {
   movies: TestMovie[]
   motionPhase: MotionPhase
   movie: TestMovie
+  premiumTier: Tier | null
   onClose: () => void
   onOpenMovie: (movie: TestMovie) => void
   onApplyFilter: (filter: MovieCardFilter) => void
@@ -3476,12 +3531,14 @@ const MovieDetailsCard = ({
   movies,
   motionPhase,
   movie,
+  premiumTier,
   onClose,
   onOpenMovie,
   onApplyFilter,
   onNextSuggestion,
   onWatch,
 }: MovieDetailsCardProps) => {
+  const [reducedMotion] = useState(() => readReducedMotion(null))
   // Wide screens get a centred panel with everything visible; small screens
   // keep the draggable bottom sheet with a More/Less toggle.
   const isWide = useMediaQuery('(min-width: 901px)')
@@ -3663,8 +3720,12 @@ const MovieDetailsCard = ({
           style={detailsStyle}
           aria-modal='true'
           data-snap={isExpanded ? 'expanded' : 'compact'}
+          data-premium={premiumTier ?? undefined}
         >
           <span className='warp-details-ambient' aria-hidden='true' />
+          {premiumTier ? (
+            <PremiumFrame tier={premiumTier} reducedMotion={reducedMotion} />
+          ) : null}
           <button
             type='button'
             className='warp-details-close'
@@ -3699,6 +3760,7 @@ const MovieDetailsCard = ({
           )}
           <div className='warp-details-copy'>
             <div className='warp-details-copy-scroll'>
+              {premiumTier ? <PremiumEyebrow tier={premiumTier} /> : null}
               {stats.length ? (
                 <div className='warp-details-stats'>
                   {stats.map((stat, index) => (

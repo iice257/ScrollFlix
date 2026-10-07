@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { ShuffleProController } from './shuffle-pro-controller'
-import { type Tier, TIER_LABELS } from './shuffle-pro-logic'
+import { TIER_LABELS, type Tier } from './shuffle-pro-logic'
 import { shuffleProStore } from './shuffle-pro-store'
 
 export const SHUFFLE_PRO_DEBUG =
@@ -96,6 +96,11 @@ export const ShuffleProDebugPanel = ({
         </dd>
         <dt>sky quality</dt>
         <dd data-testid='sp-quality'>{state.sky.qualityLevel}</dd>
+        <dt>camera z / pull / kick</dt>
+        <dd data-testid='sp-camera'>
+          {state.sky.cameraZ.toFixed(2)} / {state.sky.pull.toFixed(2)} /{' '}
+          {state.sky.kick.toFixed(2)}
+        </dd>
         <dt>sky draws</dt>
         <dd data-testid='sp-draws'>{state.sky.drawCount}</dd>
         <dt>streak / big spins</dt>

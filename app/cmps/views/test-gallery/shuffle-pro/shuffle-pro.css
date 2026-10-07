@@ -140,3 +140,286 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* ------------------------------------------------------------ premium frame */
+
+@property --sp-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.warp-details-card[data-premium] {
+  --sp-angle: 0deg;
+  --sp-c0: #e8fbff;
+  --sp-c1: #bfe9ff;
+  --sp-c2: #7cc8ff;
+  --sp-glow: 124 200 255;
+  --sp-eyebrow: #bfe9ff;
+  border-color: transparent;
+  box-shadow:
+    0 0 0 1px rgb(var(--sp-glow) / 0.2),
+    0 0 46px rgb(var(--sp-glow) / 0.28),
+    0 0 130px rgb(var(--sp-glow) / 0.18),
+    0 40px 140px rgb(0 0 0 / 0.72);
+}
+
+.warp-details-card[data-premium="amethyst"] {
+  --sp-c0: #f1e4ff;
+  --sp-c1: #c9a7ff;
+  --sp-c2: #9b6bff;
+  --sp-glow: 155 107 255;
+  --sp-eyebrow: #c9a7ff;
+}
+
+.warp-details-card[data-premium="jade"] {
+  --sp-c0: #b8fff0;
+  --sp-c1: #5fe3c5;
+  --sp-c2: #1fa88c;
+  --sp-glow: 31 168 140;
+  --sp-eyebrow: #5fe3c5;
+}
+
+.warp-details-card[data-premium="gold"] {
+  --sp-c0: #fff3d1;
+  --sp-c1: #f7d58b;
+  --sp-c2: #e0a93b;
+  --sp-glow: 224 169 59;
+  --sp-eyebrow: #f7d58b;
+}
+
+/* A 2px conic border that makes one revolution every 6s. */
+.warp-details-card[data-premium]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(
+    from var(--sp-angle),
+    var(--sp-c2),
+    var(--sp-c0),
+    var(--sp-c1),
+    var(--sp-c2),
+    var(--sp-c0),
+    var(--sp-c2)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  pointer-events: none;
+  animation: sp-spin 6s linear infinite;
+}
+
+/* Frost: an iridescent, frosted-glass border with a cold sheen on the glass. */
+.warp-details-card[data-premium="frost"]::before {
+  background: conic-gradient(
+    from var(--sp-angle),
+    #7cc8ff,
+    #e8fbff,
+    #c6b8ff,
+    #bfe9ff,
+    #8fe9ff,
+    #e8fbff,
+    #7cc8ff
+  );
+}
+
+.warp-details-card[data-premium="frost"] {
+  background-image: linear-gradient(
+    160deg,
+    rgb(190 233 255 / 0.1),
+    transparent 38%,
+    rgb(124 200 255 / 0.06)
+  );
+}
+
+/* Jade: a smouldering teal edge that breathes (on the sheen layer, so the
+   card keeps its own open animation). */
+.warp-details-card[data-premium="jade"] .sp-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  animation: sp-smoulder 3.2s ease-in-out infinite;
+}
+
+/* Gold: foil with ornate linings. */
+.warp-details-card[data-premium="gold"]::before {
+  padding: 3px;
+  background: conic-gradient(
+    from var(--sp-angle),
+    #e0a93b,
+    #fff3d1,
+    #f2c46d,
+    #b9852a,
+    #fff3d1,
+    #e0a93b
+  );
+}
+
+.warp-details-card[data-premium="gold"]::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  z-index: 6;
+  border: 1px solid rgb(242 196 109 / 0.5);
+  border-radius: calc(var(--warp-card-radius, 24px) - 6px);
+  pointer-events: none;
+}
+
+.sp-gold-corner {
+  position: absolute;
+  z-index: 7;
+  width: 52px;
+  height: 52px;
+  color: #f2c46d;
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px rgb(224 169 59 / 0.5));
+}
+
+.sp-gold-corner[data-corner="tl"] {
+  top: 4px;
+  left: 4px;
+}
+
+.sp-gold-corner[data-corner="tr"] {
+  top: 4px;
+  right: 4px;
+  transform: scaleX(-1);
+}
+
+.sp-gold-corner[data-corner="bl"] {
+  bottom: 4px;
+  left: 4px;
+  transform: scaleY(-1);
+}
+
+.sp-gold-corner[data-corner="br"] {
+  right: 4px;
+  bottom: 4px;
+  transform: scale(-1, -1);
+}
+
+/* One foil sweep across the whole card on open (twice for Gold). */
+.sp-sheen {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.sp-sheen::before {
+  content: "";
+  position: absolute;
+  inset: -20% auto -20% -45%;
+  width: 40%;
+  background: linear-gradient(
+    100deg,
+    transparent,
+    rgb(255 255 255 / 0.22) 45%,
+    rgb(255 255 255 / 0.06) 55%,
+    transparent
+  );
+  transform: skewX(-18deg) translateX(0);
+  animation: sp-sheen 900ms 260ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.warp-details-card[data-premium="gold"] .sp-sheen::before {
+  animation-iteration-count: 2;
+  animation-duration: 900ms;
+  animation-delay: 260ms;
+}
+
+.sp-edge-particles {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.sp-edge-particles canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The eyebrow sits in flow at the top of the copy column. */
+.sp-eyebrow {
+  margin: 0;
+  color: var(--sp-eyebrow, #bfe9ff);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.sp-eyebrow > span {
+  display: inline-block;
+  margin-right: 1px;
+}
+
+@keyframes sp-spin {
+  to {
+    --sp-angle: 360deg;
+  }
+}
+
+@keyframes sp-sheen {
+  from {
+    transform: skewX(-18deg) translateX(0);
+  }
+  to {
+    transform: skewX(-18deg) translateX(420%);
+  }
+}
+
+@keyframes sp-smoulder {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 28px rgb(31 168 140 / 0.22),
+      inset 0 0 90px rgb(14 59 53 / 0.45);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 46px rgb(95 227 197 / 0.34),
+      inset 0 0 120px rgb(31 168 140 / 0.28);
+  }
+}
+
+/* Light theme: the card keeps its dark frame glow but the eyebrow needs a
+   deeper tone to stay readable on the warm surface. */
+.warp-shell[data-theme="light"] .warp-details-card[data-premium] {
+  --sp-eyebrow: #1b6aa8;
+}
+
+.warp-shell[data-theme="light"] .warp-details-card[data-premium="amethyst"] {
+  --sp-eyebrow: #6a3fc7;
+}
+
+.warp-shell[data-theme="light"] .warp-details-card[data-premium="jade"] {
+  --sp-eyebrow: #0f7a65;
+}
+
+.warp-shell[data-theme="light"] .warp-details-card[data-premium="gold"] {
+  --sp-eyebrow: #9a6a10;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .warp-details-card[data-premium]::before {
+    animation: none;
+    --sp-angle: 120deg;
+  }
+}

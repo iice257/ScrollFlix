@@ -108,8 +108,8 @@ export const PALETTES: Record<Tier, Palette> = {
     c2: hex('#7CC8FF'),
     deep: hex('#06223A'),
     accent: hex('#FFFFFF'),
-    skyTop: hex('#9FD2F5'),
-    skyBottom: hex('#EAF7FF'),
+    skyTop: hex('#7DB9EE'),
+    skyBottom: hex('#E6F4FF'),
   },
   amethyst: {
     c0: hex('#F1E4FF'),
@@ -117,8 +117,8 @@ export const PALETTES: Record<Tier, Palette> = {
     c2: hex('#9B6BFF'),
     deep: hex('#1D0F33'),
     accent: hex('#FFC8F0'),
-    skyTop: hex('#B9A3F2'),
-    skyBottom: hex('#FFE6F4'),
+    skyTop: hex('#A58BEA'),
+    skyBottom: hex('#FFD9EE'),
   },
   jade: {
     c0: hex('#B8FFF0'),
@@ -126,8 +126,8 @@ export const PALETTES: Record<Tier, Palette> = {
     c2: hex('#1FA88C'),
     deep: hex('#0E3B35'),
     accent: hex('#E8FFF9'),
-    skyTop: hex('#8DDCCB'),
-    skyBottom: hex('#E4FBF4'),
+    skyTop: hex('#6FD2BE'),
+    skyBottom: hex('#DDF8EE'),
   },
   gold: {
     c0: hex('#FFF3D1'),
@@ -135,8 +135,8 @@ export const PALETTES: Record<Tier, Palette> = {
     c2: hex('#E0A93B'),
     deep: hex('#2A1A05'),
     accent: hex('#F2C46D'),
-    skyTop: hex('#F6C26E'),
-    skyBottom: hex('#FFF1CB'),
+    skyTop: hex('#F3B35B'),
+    skyBottom: hex('#FFE7B0'),
   },
 }
 
@@ -170,6 +170,7 @@ void main() {
 
 const COMPOSITE_FRAGMENT = `#version 300 es
 precision highp float;
+precision highp int;
 uniform sampler2D uTex;
 uniform vec2 uRes;
 out vec4 outColor;
@@ -182,6 +183,7 @@ void main() {
 
 const SKY_FRAGMENT = `#version 300 es
 precision highp float;
+precision highp int;
 out vec4 outColor;
 
 uniform vec2 uRes;
@@ -295,13 +297,16 @@ vec3 galaxy(vec2 p, float r, float px) {
 
 // ---- light: heavenly clouds and god rays.
 vec3 heavenly(vec2 p, float r) {
-  vec3 sky = mix(uSkyBottom, uSkyTop, smoothstep(-1.1, 1.1, p.y));
+  vec3 sky = mix(uSkyBottom, uSkyTop, smoothstep(-0.7, 1.0, p.y));
+  // Deeper at the edges, a bright halo around the globe: a lit sky, not a flat one.
+  sky = mix(sky, uSkyTop, smoothstep(0.45, 1.7, r) * 0.7);
+  sky = mix(sky, vec3(1.0, 0.98, 0.92), exp(-max(r - uGlobeR, 0.0) / 0.35) * 0.4);
   float ang = atan(p.y, p.x);
   float rayN = vnoise(vec2(ang * 5.0 + uTime * 0.18, uTime * 0.07));
   float rays = pow(smoothstep(0.38, 1.0, rayN), 2.0);
   float falloff = smoothstep(uGlobeR * 0.8, uGlobeR * 1.15, r) * exp(-r * 0.75);
   vec3 warm = mix(vec3(1.0, 0.97, 0.88), uC0, 0.35);
-  sky += warm * rays * falloff * 0.55 * (0.35 + 0.65 * uColor);
+  sky += warm * rays * falloff * 0.95 * (0.4 + 0.6 * uColor);
   sky += warm * 0.55 * exp(-max(r - uGlobeR, 0.0) / 0.5) * 0.35;
 
   vec3 col = sky;
@@ -311,17 +316,17 @@ vec3 heavenly(vec2 p, float r) {
     vec2 q = (p * vec2(1.0, 1.7) * (0.9 + fl * 0.75)) + uDir * uFlow * par * vec2(1.0, 0.6);
     q.y += fl * 4.1;
     float c = fbm(q + vec2(uTime * 0.012 * (1.0 + fl), 0.0), uOctaves);
-    c = smoothstep(0.46, 0.82, c);
-    c = pow(c, 1.4);
+    c = smoothstep(0.52, 0.8, c);
+    c = pow(c, 1.2);
     float lit = 0.0;
     if (l == 0) {
       float c2 = fbm(q + vec2(0.0, -0.1), uOctaves);
-      lit = clamp((smoothstep(0.46, 0.82, c) - smoothstep(0.46, 0.82, c2)) * 4.0 + 0.5, 0.0, 1.0);
+      lit = clamp((smoothstep(0.52, 0.8, c) - smoothstep(0.52, 0.8, c2)) * 5.0 + 0.5, 0.0, 1.0);
     } else {
       lit = 0.7 + 0.3 * fl * 0.5;
     }
-    vec3 cloud = mix(mix(uSkyTop, vec3(0.78, 0.86, 0.98), 0.55), vec3(1.0, 0.985, 0.95), lit);
-    col = mix(col, cloud, c * (0.62 - fl * 0.1) * (0.5 + 0.5 * smoothstep(0.0, 0.6, r)));
+    vec3 cloud = mix(mix(uSkyTop, vec3(0.74, 0.84, 1.0), 0.35), vec3(1.0, 0.99, 0.96), lit * lit);
+    col = mix(col, cloud, c * (0.85 - fl * 0.12) * (0.5 + 0.5 * smoothstep(0.0, 0.6, r)));
   }
   return col;
 }
@@ -351,7 +356,8 @@ vec3 frostCreep(vec2 p, float px, out float cover) {
   cover = smoothstep(front, front * 0.25, dEdge);
   float cell = hash21(id + floor(f + 0.5));
   float glint = pow(max(0.0, sin(uTime * 2.2 + cell * 40.0)), 14.0) * edge;
-  vec3 tint = mix(uC1, uC0, 0.5 + 0.5 * edge);
+  // On the pale light sky the frost has to be bluer than the sky to read.
+  vec3 tint = uDark > 0.5 ? mix(uC1, uC0, 0.5 + 0.5 * edge) : mix(uC2, vec3(1.0), 0.2 + 0.75 * edge);
   return tint * (0.45 + 0.9 * edge) + uC0 * glint * 1.6;
 }
 
@@ -411,7 +417,7 @@ void main() {
   if (uTier == 0 && uColor > 0.001) {
     float cover;
     vec3 f = frostCreep(p, px, cover);
-    col = mix(col, uDark > 0.5 ? f : mix(f, vec3(1.0), 0.45), cover * 0.7 * uColor);
+    col = mix(col, f, cover * (uDark > 0.5 ? 0.7 : 0.85) * uColor);
   } else if (uTier == 2 && uColor > 0.001) {
     float amt;
     vec3 s = jadeSmoke(p, r, amt);
@@ -430,7 +436,7 @@ void main() {
   float core = exp(-pow(max(d, 0.0) / 0.05, 1.6)) * smoothstep(-0.12, 0.0, d);
   float halo = exp(-max(d, 0.0) / 0.32) * 0.3;
   vec3 rimCol = mix(uC1, uC0, core);
-  col += rimCol * (core * 1.15 + halo) * uRim * (uDark > 0.5 ? 1.0 : 0.75);
+  col += rimCol * (core * 1.15 + halo) * uRim * (uDark > 0.5 ? 1.0 : 0.4);
 
   // Trigger ring and peak shockwave.
   if (uRing.z >= 0.0 && uRing.z < 0.6) {
@@ -454,6 +460,7 @@ void main() {
 
 const PARTICLE_VERTEX = `#version 300 es
 precision highp float;
+precision highp int;
 uniform mat4 uViewMatrix;
 uniform mat4 uProjectionMatrix;
 uniform float uTime;
@@ -498,7 +505,7 @@ void main() {
     vec3 pos = rho * (cos(th) * e1 + sin(th) * e2);
     pos *= 1.0 + 0.04 * sin(uTime * 0.6 + aSeed.y * 30.0) * (1.0 - uReduced);
     vec4 vp = uViewMatrix * vec4(pos, 1.0);
-    float size = (0.028 + 0.05 * fract(aSeed.y * 13.7)) * uSizeScale * visible;
+    float size = (0.013 + 0.024 * fract(aSeed.y * 13.7)) * uSizeScale * visible;
     float spin = (uTime * (0.8 + aSeed.x * 2.4) + aSeed.z * 20.0) * (1.0 - uReduced);
     vp.xy += rot(spin) * corner * size;
     gl_Position = uProjectionMatrix * vp;
@@ -522,6 +529,7 @@ void main() {
 
 const PARTICLE_FRAGMENT = `#version 300 es
 precision highp float;
+precision highp int;
 uniform int uTier;
 uniform int uMode;
 uniform float uTime;
@@ -635,6 +643,14 @@ const uniformsOf = (
   names: string[],
 ): Uniforms =>
   Object.fromEntries(names.map((n) => [n, gl.getUniformLocation(program, n)]))
+
+// Sprite size per path: shards and glitter need to read at a glance.
+const PARTICLE_SIZE: Record<Tier, number> = {
+  frost: 1.5,
+  amethyst: 1.8,
+  jade: 1.2,
+  gold: 1.4,
+}
 
 const PARTICLE_COUNT = 640
 const PETAL_COUNT = 8
@@ -896,7 +912,7 @@ export class SkyPass {
     gl.depthFunc(gl.LEQUAL)
     gl.uniform1i(u.uMode, 0)
     gl.uniform1f(u.uCount, count)
-    gl.uniform1f(u.uSizeScale, 1)
+    gl.uniform1f(u.uSizeScale, PARTICLE_SIZE[state.tier])
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, PARTICLE_COUNT)
 
     if (state.tier === 'amethyst') {

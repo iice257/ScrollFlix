@@ -53,8 +53,15 @@ const setup = (
     cancelLanding: () => {
       calls.push('cancelLanding')
     },
+    setStatsEnabled: () => {},
     getFrameStats: () => ({ average: 16.7, p95: 18 }),
-    getSkyStats: () => ({ qualityLevel: 'full', drawCount: 0 }),
+    getSkyStats: () => ({
+      qualityLevel: 'full',
+      drawCount: 0,
+      cameraZ: 0,
+      pull: 0,
+      kick: 0,
+    }),
   }
 
   const whoosh = {

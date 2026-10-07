@@ -55,8 +55,15 @@ export type ShuffleProPort = {
   // Skip: ease to the movie within `ms`, then open its card.
   settleTo(itemId: string, ms: number, onArrive: () => void): void
   cancelLanding(): void
+  setStatsEnabled(enabled: boolean): void
   getFrameStats(): { average: number; p95: number }
-  getSkyStats(): { qualityLevel: 'full' | 'lite'; drawCount: number }
+  getSkyStats(): {
+    qualityLevel: 'full' | 'lite'
+    drawCount: number
+    cameraZ: number
+    pull: number
+    kick: number
+  }
 }
 
 export type ControllerDeps = {
@@ -162,6 +169,7 @@ export class ShuffleProController {
   private snapshot: ControllerSnapshot
   private readonly listeners = new Set<() => void>()
   private lastOmega = 0
+  private statsEnabled = false
 
   constructor(private readonly deps: ControllerDeps) {
     this.snapshot = this.buildSnapshot()
@@ -220,6 +228,7 @@ export class ShuffleProController {
 
   attachPort(port: ShuffleProPort) {
     this.port = port
+    if (this.statsEnabled) port.setStatsEnabled(true)
   }
 
   detachPort(port: ShuffleProPort) {
@@ -573,6 +582,11 @@ export class ShuffleProController {
 
   // ------------------------------------------------------------- debug hooks
 
+  setStatsEnabled(enabled: boolean) {
+    this.statsEnabled = enabled
+    this.port?.setStatsEnabled(enabled)
+  }
+
   debugForcePeak() {
     const run = this.run
     if (!run || this.phase !== 'windup') return
@@ -592,6 +606,9 @@ export class ShuffleProController {
       sky: port?.getSkyStats() ?? {
         qualityLevel: 'full' as const,
         drawCount: 0,
+        cameraZ: 0,
+        pull: 0,
+        kick: 0,
       },
       tier: this.run?.tier ?? null,
       streak: this.streak,
