@@ -73,6 +73,8 @@ type InfiniteMovieMenuProps<T> = {
   onSpinActiveChange?: (active: boolean) => void
   // Total rotation of a drag gesture, reported once the globe rests.
   onGestureSettled?: (totalRad: number) => void
+  // A pointer went down on the globe (the first one raises the full-screen hint).
+  onGlobePress?: () => void
   // Imperative handle for the page (Skip).
   controlRef?: { current: InfiniteMovieMenuControl | null }
 }
@@ -2753,6 +2755,7 @@ export const InfiniteMovieMenu = <T,>({
   shufflePro = null,
   onSpinActiveChange,
   onGestureSettled,
+  onGlobePress,
   controlRef,
   spinRequest = null,
 }: InfiniteMovieMenuProps<T>) => {
@@ -2775,6 +2778,8 @@ export const InfiniteMovieMenu = <T,>({
   onSpinActiveChangeRef.current = onSpinActiveChange
   const onGestureSettledRef = useRef(onGestureSettled)
   onGestureSettledRef.current = onGestureSettled
+  const onGlobePressRef = useRef(onGlobePress)
+  onGlobePressRef.current = onGlobePress
   const itemsRef = useRef(items)
   itemsRef.current = items
   const shuffleProRef = useRef(shufflePro)
@@ -3190,6 +3195,7 @@ export const InfiniteMovieMenu = <T,>({
     pressRef.current = press
     // A real user gesture: the one place the whoosh's audio can be unlocked.
     unlockAudio()
+    onGlobePressRef.current?.()
     // During a Shuffle Pro run a press is Skip (or ignored), never a drag.
     const proSession = shuffleProRef.current?.pressStart({
       nx:

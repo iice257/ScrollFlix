@@ -431,18 +431,6 @@
   background: rgb(33 26 16 / 0.14);
 }
 
-.warp-shell[data-theme="light"] .warp-fullscreen-button {
-  border: 1px solid rgb(247 240 225 / 0.8);
-  background: rgb(33 26 16);
-  color: rgb(243 236 221);
-  box-shadow: 0 10px 30px rgb(110 78 34 / 0.118);
-}
-
-.warp-shell[data-theme="light"] .warp-fullscreen-button:hover,
-.warp-shell[data-theme="light"] .warp-fullscreen-button:focus-visible {
-  background: rgb(46 39 28);
-}
-
 .warp-shell[data-theme="light"] .warp-fullscreen-tip {
   border: 1px solid rgb(33 26 16 / 0.16);
   background: rgb(232 225 210 / 0.94);
@@ -1163,7 +1151,8 @@
 .warp-shell[data-theme="light"] .warp-details-watch,
 .warp-shell[data-theme="light"] .warp-details-close,
 .warp-shell[data-theme="light"] .warp-details-genres button,
-.warp-shell[data-theme="light"] .warp-fullscreen-button,
+.warp-shell[data-theme="light"] .warp-immersive-corner,
+.warp-shell[data-theme="light"] .warp-immersive-exit,
 .warp-shell[data-theme="light"] .warp-filter-panel button,
 .warp-shell[data-theme="light"] .warp-fs-chip {
   border: 1px solid rgb(0 0 0 / 0.8);

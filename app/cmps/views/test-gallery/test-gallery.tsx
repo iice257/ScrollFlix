@@ -51,6 +51,11 @@ import {
   type InfiniteMovieMenuItem,
 } from './infinite-movie-menu'
 import { pickLandingMovie } from './landing'
+import {
+  ImmersiveCorner,
+  ImmersiveEnterButton,
+  ImmersiveExitPill,
+} from './shuffle-pro/immersive-controls'
 import { PremiumEyebrow, PremiumFrame } from './shuffle-pro/premium-frame'
 import { eggSoundStore, unlockAudio } from './shuffle-pro/shuffle-pro-audio'
 import type { ShuffleProController } from './shuffle-pro/shuffle-pro-controller'
@@ -60,6 +65,7 @@ import {
 } from './shuffle-pro/shuffle-pro-debug'
 import { isBigSpin } from './shuffle-pro/shuffle-pro-logic'
 import type { Tier } from './shuffle-pro/shuffle-pro-logic'
+import { ShuffleProShelf } from './shuffle-pro/shuffle-pro-shelf'
 import { ShuffleSkipButton } from './shuffle-pro/shuffle-skip-button'
 import {
   pickOtherMovie,
@@ -1427,7 +1433,10 @@ export const TestGalleryApp = () => {
   const fullscreenHintSeenRef = useRef<boolean | null>(null)
   if (fullscreenHintSeenRef.current === null)
     fullscreenHintSeenRef.current = readFullscreenHintSeen()
-  const [isFullscreenActive, setIsFullscreenActive] = useState(false)
+  // Immersive mode: real browser full screen where available (an in-app
+  // fallback on iPhone), with the chrome out of the way. It unlocks Pro Max.
+  const [immersive, setImmersive] = useState(false)
+  const realFullscreenRef = useRef(false)
   const [showFullscreenHint, setShowFullscreenHint] = useState(false)
   const [movies, setMovies] = useState<TestMovie[]>(
     cachedAllMovies ?? cachedMovieDataset ?? [],
@@ -1466,13 +1475,15 @@ export const TestGalleryApp = () => {
   const [timeLabel, setTimeLabel] = useState('')
   const [isGlobeMoving, setIsGlobeMoving] = useState(false)
   const [theme, setTheme] = useState<Theme>(readTheme)
+  // Leaving browser full screen (its own Esc, a gesture) leaves immersive mode.
   useEffect(() => {
     const syncFullscreen = () => {
-      const active = document.fullscreenElement === shellRef.current
-      setIsFullscreenActive(active)
+      if (!document.fullscreenElement && realFullscreenRef.current) {
+        realFullscreenRef.current = false
+        setImmersive(false)
+      }
     }
     document.addEventListener('fullscreenchange', syncFullscreen)
-    syncFullscreen()
     return () =>
       document.removeEventListener('fullscreenchange', syncFullscreen)
   }, [])
@@ -1485,14 +1496,10 @@ export const TestGalleryApp = () => {
     [],
   )
 
+  // The one-time "Go full screen" hint: five seconds after the first globe
+  // interaction, on every device. Dock clicks never trigger it.
   const promptFullscreenHint = useCallback(() => {
-    if (
-      !isMobileViewport ||
-      isFullscreenActive ||
-      fullscreenHintSeenRef.current
-    ) {
-      return
-    }
+    if (immersive || fullscreenHintSeenRef.current) return
     fullscreenHintSeenRef.current = true
     try {
       window.localStorage.setItem(FULLSCREEN_HINT_STORAGE_KEY, '1')
@@ -1506,16 +1513,30 @@ export const TestGalleryApp = () => {
       () => setShowFullscreenHint(false),
       5000,
     )
-  }, [isFullscreenActive, isMobileViewport])
+  }, [immersive])
 
-  const toggleFullscreen = useCallback(async () => {
+  const enterImmersive = useCallback(async () => {
+    setShowFullscreenHint(false)
+    setImmersive(true)
+    const shell = shellRef.current
+    if (!document.fullscreenEnabled || !shell?.requestFullscreen) return
+    try {
+      await shell.requestFullscreen({ navigationUI: 'hide' })
+      realFullscreenRef.current = true
+    } catch {
+      // Embedded or permission-restricted: stay in the in-app immersive mode.
+      realFullscreenRef.current = false
+    }
+  }, [])
+
+  const exitImmersive = useCallback(async () => {
+    setImmersive(false)
+    realFullscreenRef.current = false
     try {
       if (document.fullscreenElement) await document.exitFullscreen()
-      else await shellRef.current?.requestFullscreen({ navigationUI: 'hide' })
     } catch {
-      // Fullscreen is unavailable in embedded or permission-restricted contexts.
+      // Already out of full screen.
     }
-    setShowFullscreenHint(false)
   }, [])
 
   const changeTheme = useCallback((nextTheme: Theme) => {
@@ -1548,20 +1569,6 @@ export const TestGalleryApp = () => {
     markSpinHintSeen()
     promptFullscreenHint()
   }, [markSpinHintSeen, promptFullscreenHint])
-
-  const maybePromptFullscreenHint = useCallback(
-    (target: EventTarget | null) => {
-      if (mode !== 'wall' || detailsMovieId) return
-      if (
-        target instanceof Element &&
-        target.closest('.warp-fullscreen-control')
-      ) {
-        return
-      }
-      promptFullscreenHint()
-    },
-    [detailsMovieId, mode, promptFullscreenHint],
-  )
 
   useEffect(() => {
     let cancelled = false
@@ -1749,7 +1756,7 @@ export const TestGalleryApp = () => {
     reducedMotionOverride,
   } = useShuffleProController({
     theme,
-    immersive: false,
+    immersive,
     visibleMovies,
     currentId: activeMovieId,
     prepare: () => {
@@ -2001,6 +2008,36 @@ export const TestGalleryApp = () => {
     if (!detailsPresence.isPresent) setPremiumFrame(null)
   }, [detailsPresence.isPresent])
 
+  // Esc leaves immersive mode once nothing else is open or running.
+  useEffect(() => {
+    if (!immersive) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (
+        detailsMovieId ||
+        watchMovieId ||
+        aboutOpen ||
+        filterOpen ||
+        sortOpen ||
+        shuffleProController.canAbort()
+      ) {
+        return
+      }
+      void exitImmersive()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [
+    aboutOpen,
+    detailsMovieId,
+    exitImmersive,
+    filterOpen,
+    immersive,
+    shuffleProController,
+    sortOpen,
+    watchMovieId,
+  ])
+
   // Esc during a run slows the globe to rest, fades the sky and opens no card.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -2075,6 +2112,7 @@ export const TestGalleryApp = () => {
       if (!allowed) return
       event.preventDefault()
       if (action === 'shuffle') {
+        promptFullscreenHint()
         // While a spin is running, Space finishes it instead of shuffling.
         if (isSpinActiveRef.current) handleSkip()
         else handleShuffle()
@@ -2091,6 +2129,7 @@ export const TestGalleryApp = () => {
     handleOpenMovie,
     handleShuffle,
     handleSkip,
+    promptFullscreenHint,
     initialGalleryReady,
     listMovies.length,
     mode,
@@ -2103,18 +2142,6 @@ export const TestGalleryApp = () => {
     <main
       ref={shellRef}
       className='phantom-test-shell warp-shell min-h-dvh overflow-hidden bg-black text-white'
-      onPointerDownCapture={(event) => maybePromptFullscreenHint(event.target)}
-      onClickCapture={(event) => maybePromptFullscreenHint(event.target)}
-      onWheelCapture={(event) => maybePromptFullscreenHint(event.target)}
-      onKeyDownCapture={(event) => {
-        if (
-          ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(
-            event.key,
-          )
-        ) {
-          maybePromptFullscreenHint(event.target)
-        }
-      }}
       data-shuffle-pro={shuffleProSnapshot.phase === 'idle' ? undefined : 'on'}
       data-shuffle-tier={shuffleProSnapshot.tier ?? undefined}
       data-details-open={detailsPresence.isPresent ? 'true' : 'false'}
@@ -2122,31 +2149,18 @@ export const TestGalleryApp = () => {
       data-gallery-ready={initialGalleryReady ? 'true' : 'false'}
       data-mode={mode}
       data-theme={theme}
-      data-immersive={isFullscreenActive ? 'true' : 'false'}
+      data-immersive={immersive ? 'true' : 'false'}
     >
-      {isMobileViewport && mode === 'wall' && !detailsMovieId ? (
-        <div className='warp-fullscreen-control'>
-          <button
-            type='button'
-            className='warp-fullscreen-button'
-            aria-label={
-              isFullscreenActive ? 'Exit full screen' : 'Go full screen'
-            }
-            aria-pressed={isFullscreenActive}
-            onClick={() => void toggleFullscreen()}
-          >
-            {isFullscreenActive ? (
-              <Minimize2 aria-hidden='true' size={18} />
-            ) : (
-              <Maximize2 aria-hidden='true' size={18} />
-            )}
-          </button>
-          {showFullscreenHint ? (
-            <span className='warp-fullscreen-tip' role='tooltip'>
-              Go full screen for maximum immersion
-            </span>
-          ) : null}
-        </div>
+      {immersive ? (
+        <ImmersiveExitPill onExit={() => void exitImmersive()} />
+      ) : null}
+      {immersive && mode === 'wall' && !detailsMovieId ? (
+        <ImmersiveCorner
+          skip={isSpinActive}
+          disabled={!visibleMovies.length}
+          onShuffle={handleShuffle}
+          onSkip={handleSkip}
+        />
       ) : null}
       <output className='sr-only' aria-live='polite'>
         {shuffleProSnapshot.announcement}
@@ -2177,6 +2191,7 @@ export const TestGalleryApp = () => {
         controlRef={menuControlRef}
         onSpinActiveChange={setShuffleSpinning}
         onGestureSettled={handleGestureSettled}
+        onGlobePress={promptFullscreenHint}
       />
 
       {mode === 'list' ? (
@@ -2209,6 +2224,14 @@ export const TestGalleryApp = () => {
         activeMovie={activeMovie}
         watchOpen={Boolean(watchMovieId)}
         mode={mode}
+        topActions={
+          mode === 'wall' ? (
+            <ImmersiveEnterButton
+              onEnter={() => void enterImmersive()}
+              hint={showFullscreenHint}
+            />
+          ) : null
+        }
         movieCount={movies.length}
         selectedFilterCount={selectedFilterCount}
         timeLabel={timeLabel}
@@ -2556,6 +2579,7 @@ type WarpWallProps = {
   controlRef: { current: InfiniteMovieMenuControl | null }
   onSpinActiveChange: (active: boolean) => void
   onGestureSettled: (totalRad: number) => void
+  onGlobePress: () => void
 }
 
 const WarpWall = ({
@@ -2577,6 +2601,7 @@ const WarpWall = ({
   controlRef,
   onSpinActiveChange,
   onGestureSettled,
+  onGlobePress,
 }: WarpWallProps) => {
   const menuItems = useMemo<InfiniteMovieMenuItem<TestMovie>[]>(
     () =>
@@ -2637,6 +2662,7 @@ const WarpWall = ({
         controlRef={controlRef}
         onSpinActiveChange={onSpinActiveChange}
         onGestureSettled={onGestureSettled}
+        onGlobePress={onGlobePress}
         spinRequest={spinRequest}
         onActiveItemChange={handleActiveItemChange}
       />
@@ -3262,6 +3288,7 @@ type WarpChromeProps = {
   dockActions: ReactNode
   dockLead?: ReactNode
   dockTop: ReactNode
+  topActions?: ReactNode
   mode: ViewMode
   movieCount: number
   selectedFilterCount: number
@@ -3279,6 +3306,7 @@ const WarpChrome = ({
   dockActions,
   dockLead,
   dockTop,
+  topActions,
   mode,
   movieCount,
   selectedFilterCount,
@@ -3311,16 +3339,19 @@ const WarpChrome = ({
         <strong>{timeLabel || '--:--'} WAT</strong>
         <span>Lagos, NG</span>
       </div>
-      <button
-        type='button'
-        className='warp-cta'
-        disabled={mode !== 'filters' && !activeMovie}
-        onClick={
-          mode === 'filters' ? () => onModeChange('wall') : onOpenActiveMovie
-        }
-      >
-        {mode === 'filters' ? 'Home' : "Let's Watch"}
-      </button>
+      <div className='warp-topbar-actions'>
+        {topActions}
+        <button
+          type='button'
+          className='warp-cta'
+          disabled={mode !== 'filters' && !activeMovie}
+          onClick={
+            mode === 'filters' ? () => onModeChange('wall') : onOpenActiveMovie
+          }
+        >
+          {mode === 'filters' ? 'Home' : "Let's Watch"}
+        </button>
+      </div>
     </header>
 
     <div className='warp-active-peek' aria-live='polite'>
@@ -4034,6 +4065,7 @@ const AboutDrawer = ({
             <br />
             See if you can find the easter egg.
           </p>
+          <ShuffleProShelf title={false} />
         </section>
 
         <section className='warp-about-section'>
@@ -4094,6 +4126,7 @@ const AboutDrawer = ({
         </button>
       </header>
       <AboutControls />
+      <ShuffleProShelf />
       <fieldset className='warp-about-setting'>
         <legend>Appearance</legend>
         <div className='warp-theme-switch'>

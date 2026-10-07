@@ -1864,33 +1864,6 @@
     padding-inline: 6px;
   }
 
-  .warp-fullscreen-control {
-    position: fixed;
-    z-index: 30;
-    top: max(16px, env(safe-area-inset-top));
-    right: max(16px, env(safe-area-inset-right));
-  }
-
-  .warp-fullscreen-button {
-    display: grid;
-    width: 42px;
-    height: 42px;
-    place-items: center;
-    border: 1px solid rgb(0 0 0 / 0.8);
-    border-radius: 999px;
-    background: #fff;
-    color: #050505;
-    box-shadow: 0 10px 30px rgb(0 0 0 / 0.28);
-    transition: transform 150ms ease, background 150ms ease;
-  }
-
-  .warp-fullscreen-button:hover,
-  .warp-fullscreen-button:focus-visible {
-    outline: none;
-    background: #f0f0f0;
-    transform: translateY(-1px);
-  }
-
   .warp-fullscreen-tip {
     position: absolute;
     top: calc(100% + 10px);
@@ -4888,9 +4861,4 @@
     }
   }
 
-  @media (min-width: 901px) {
-    .warp-fullscreen-control {
-      display: none;
-    }
-  }
 }

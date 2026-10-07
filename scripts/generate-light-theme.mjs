@@ -211,7 +211,8 @@ const stage = `
 .warp-shell${THEME} .warp-details-watch,
 .warp-shell${THEME} .warp-details-close,
 .warp-shell${THEME} .warp-details-genres button,
-.warp-shell${THEME} .warp-fullscreen-button,
+.warp-shell${THEME} .warp-immersive-corner,
+.warp-shell${THEME} .warp-immersive-exit,
 .warp-shell${THEME} .warp-filter-panel button,
 .warp-shell${THEME} .warp-fs-chip {
   border: 1px solid rgb(0 0 0 / 0.8);
