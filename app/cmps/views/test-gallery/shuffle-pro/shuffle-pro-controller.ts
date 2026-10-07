@@ -601,7 +601,9 @@ export class ShuffleProController {
     const port = this.port
     return {
       phase: this.phase,
-      omega: this.lastOmega,
+      // Idle readings show the globe's own spin, handy for tuning the blur.
+      omega:
+        this.phase === 'idle' ? (port?.getAngularSpeed() ?? 0) : this.lastOmega,
       frame: port?.getFrameStats() ?? { average: 0, p95: 0 },
       sky: port?.getSkyStats() ?? {
         qualityLevel: 'full' as const,
