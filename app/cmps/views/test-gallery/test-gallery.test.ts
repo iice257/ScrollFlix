@@ -8,17 +8,22 @@ import {
   filterMoviesByGenres,
   filterMoviesByTitleSearch,
   filterMoviesByYearAndRating,
+  formatFilmCount,
   formatMovieMeta,
   getActiveSortRules,
+  getCatalogChunkCount,
   getGalleryWindow,
   getGenreOverlap,
   getRuntimeBucket,
+  getSimilarMovies,
   groupMoviesAlphabetically,
   groupMoviesByPopularity,
   groupMoviesByRating,
   groupMoviesByRuntime,
   groupMoviesByVotes,
   groupMoviesByYear,
+  isLightweightDevice,
+  mapCatalogRow,
   mapMovie,
   resolveMoviePosterUrls,
   shouldHandleGalleryKey,
@@ -499,5 +504,135 @@ describe('shouldHandleGalleryKey', () => {
     ['an interactive element focused', { activeElementKind: 'interactive' }],
   ])('ignores the key with %s', (_label, override) => {
     expect(shouldHandleGalleryKey({ ...base, ...override })).toBe(false)
+  })
+})
+
+describe('catalogue films', () => {
+  it('maps a compact catalogue row to a movie with TMDB posters', () => {
+    const mapped = mapCatalogRow(
+      [603, 'The Matrix', 1999, 79, [0, 2], 1, 'abc123', '3a4b5c', 25000, 987],
+      12,
+      2000,
+      {
+        countries: ['France', 'United States of America'],
+        genres: ['Action', 'Drama', 'Science Fiction'],
+      },
+    )
+    expect(mapped).toMatchObject({
+      id: 'c603',
+      rank: 2000,
+      title: 'The Matrix',
+      year: '1999',
+      rating: '7.9',
+      ratingValue: 7.9,
+      genres: ['Action', 'Science Fiction'],
+      countries: 'United States of America',
+      posterUrl: 'https://image.tmdb.org/t/p/w154/abc123.jpg',
+      posterDetailUrl: 'https://image.tmdb.org/t/p/w342/abc123.jpg',
+      placeholderColor: '#3a4b5c',
+      runtimeMinutes: null,
+      voteCount: 25000,
+      popularity: 98.7,
+      textIndex: 12,
+    })
+  })
+
+  it('treats a zero rating as unrated', () => {
+    const mapped = mapCatalogRow(
+      [1, 'X', 0, 0, [], -1, 'p', '000000', 0, 0],
+      0,
+      1,
+      {
+        countries: [],
+        genres: [],
+      },
+    )
+    expect(mapped.ratingValue).toBeNull()
+    expect(mapped.year).toBe('----')
+  })
+})
+
+describe('catalogue size by device', () => {
+  const manifest = { chunks: ['a', 'b', 'c', 'd', 'e'], chunkSize: 2000 }
+  const desktop = { coarsePointer: false, narrowViewport: false }
+
+  it('treats a phone, or a weak machine, as lightweight', () => {
+    expect(isLightweightDevice(desktop)).toBe(false)
+    expect(isLightweightDevice({ ...desktop, memoryGb: 8, cores: 8 })).toBe(
+      false,
+    )
+    expect(
+      isLightweightDevice({ coarsePointer: true, narrowViewport: true }),
+    ).toBe(true)
+    expect(isLightweightDevice({ ...desktop, memoryGb: 4 })).toBe(true)
+    expect(isLightweightDevice({ ...desktop, cores: 4 })).toBe(true)
+  })
+
+  it('keeps a wide touch screen on the full catalogue', () => {
+    expect(
+      isLightweightDevice({ coarsePointer: true, narrowViewport: false }),
+    ).toBe(false)
+  })
+
+  it('loads two chunks, about 5,000 films, on lightweight devices', () => {
+    expect(getCatalogChunkCount(manifest, 1056, true)).toBe(2)
+  })
+
+  it('loads every chunk elsewhere', () => {
+    expect(getCatalogChunkCount(manifest, 1056, false)).toBe(5)
+  })
+
+  it('still limits a phone when the manifest has no chunk size', () => {
+    expect(getCatalogChunkCount({ chunks: manifest.chunks }, 1056, true)).toBe(
+      2,
+    )
+  })
+
+  it('never asks for more chunks than exist', () => {
+    expect(
+      getCatalogChunkCount({ ...manifest, chunks: ['a'] }, 1056, true),
+    ).toBe(1)
+  })
+})
+
+describe('film counts', () => {
+  it('rounds down to thousands for copy', () => {
+    expect(formatFilmCount(1056)).toBe('1k+')
+    expect(formatFilmCount(5056)).toBe('5k+')
+    expect(formatFilmCount(10000)).toBe('10k+')
+    expect(formatFilmCount(640)).toBe('640')
+  })
+})
+
+describe('similar movies', () => {
+  const source = movie('s', 'Source', '2000', ['Horror', 'Thriller'], 1)
+  const pool = [
+    source,
+    {
+      ...movie('a', 'Both genres', '2001', ['Horror', 'Thriller'], 50),
+      ratingValue: 6,
+    },
+    {
+      ...movie('b', 'One genre, great', '2002', ['Horror'], 2),
+      ratingValue: 9,
+    },
+    {
+      ...movie('c', 'Obscure ten', '2003', ['Horror', 'Thriller'], 19000),
+      ratingValue: 10,
+    },
+    movie('d', 'Unrelated', '2004', ['Comedy'], 3),
+  ]
+
+  it('ranks genre overlap first, then popularity-weighted rating', () => {
+    expect(getSimilarMovies(source, pool).map((item) => item.id)).toEqual([
+      'a',
+      'c',
+      'b',
+    ])
+  })
+
+  it('caps the result and skips the film itself', () => {
+    const result = getSimilarMovies(source, pool, 1)
+    expect(result.map((item) => item.id)).toEqual(['a'])
   })
 })

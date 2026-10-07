@@ -6,6 +6,18 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["vite", "--port", "3001", "--strictPort"],
       "port": 3001
+    },
+    {
+      "name": "prod-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "preview", "--port", "4173", "--strictPort"],
+      "port": 4173
+    },
+    {
+      "name": "refine",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "../What-to-watch-refine", "--port", "3060", "--strictPort"],
+      "port": 3060
     }
   ]
 }

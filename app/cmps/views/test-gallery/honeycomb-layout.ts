@@ -25,20 +25,67 @@ const createSeedPositions = (count: number, radius: number) => {
 
 // Layouts are deterministic, so each (count, radius) is computed once per page.
 const layoutCache = new Map<string, HoneycombVec3[]>()
+const pendingLayouts = new Map<string, Promise<void>>()
+const layoutKey = (count: number, radius: number) => `${count}:${radius}`
+
+const runToEnd = <T>(steps: Generator<void, T>) => {
+  let step = steps.next()
+  while (!step.done) step = steps.next()
+  return step.value
+}
+
+export const hasHoneycombLayout = (
+  count = DEFAULT_POINT_COUNT,
+  radius = DEFAULT_RADIUS,
+) => layoutCache.has(layoutKey(count, radius))
 
 export const createHoneycombSpherePositions = (
   count = DEFAULT_POINT_COUNT,
   radius = DEFAULT_RADIUS,
 ) => {
-  const cacheKey = `${count}:${radius}`
+  const cacheKey = layoutKey(count, radius)
   const cached = layoutCache.get(cacheKey)
   if (cached) return cached
-  const positions = relaxHoneycombPositions(count, radius)
+  const positions = runToEnd(relaxHoneycombPositions(count, radius))
   layoutCache.set(cacheKey, positions)
   return positions
 }
 
-const relaxHoneycombPositions = (count: number, radius: number) => {
+// The longest the relaxation runs before handing the thread back.
+const SLICE_MS = 6
+
+// Solves a layout in short slices, so building a new globe never blocks
+// input; createHoneycombSpherePositions then finds it ready.
+export const prewarmHoneycombLayout = (
+  count = DEFAULT_POINT_COUNT,
+  radius = DEFAULT_RADIUS,
+) => {
+  const cacheKey = layoutKey(count, radius)
+  if (layoutCache.has(cacheKey)) return Promise.resolve()
+  const pending = pendingLayouts.get(cacheKey)
+  if (pending) return pending
+  const request = (async () => {
+    const steps = relaxHoneycombPositions(count, radius)
+    let sliceStart = performance.now()
+    let step = steps.next()
+    while (!step.done) {
+      if (performance.now() - sliceStart > SLICE_MS) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+        sliceStart = performance.now()
+      }
+      step = steps.next()
+    }
+    layoutCache.set(cacheKey, step.value)
+  })().finally(() => pendingLayouts.delete(cacheKey))
+  pendingLayouts.set(cacheKey, request)
+  return request
+}
+
+// One relaxation pass per step, so callers can pause between passes.
+function* relaxHoneycombPositions(
+  count: number,
+  radius: number,
+): Generator<void, HoneycombVec3[]> {
   if (count <= 1) return createSeedPositions(Math.max(0, count), radius)
 
   let positions = createSeedPositions(count, radius)
@@ -118,6 +165,7 @@ const relaxHoneycombPositions = (count: number, radius: number) => {
         (z / length) * radius,
       ]
     })
+    yield
   }
 
   return positions
