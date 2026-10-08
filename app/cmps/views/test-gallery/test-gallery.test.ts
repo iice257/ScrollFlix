@@ -477,6 +477,18 @@ describe('shouldHandleGalleryKey', () => {
     ).toBe(true)
   })
 
+  it('reshuffles through an open details card, but not from a focused control', () => {
+    const card = { ...base, detailsOpen: true }
+    expect(shouldHandleGalleryKey(card)).toBe(true)
+    expect(
+      shouldHandleGalleryKey({ ...card, activeElementKind: 'canvas' }),
+    ).toBe(true)
+    expect(
+      shouldHandleGalleryKey({ ...card, activeElementKind: 'interactive' }),
+    ).toBe(false)
+    expect(shouldHandleGalleryKey({ ...card, key: 'open' })).toBe(false)
+  })
+
   it('allows shuffle shortcuts in index mode', () => {
     expect(shouldHandleGalleryKey({ ...base, mode: 'list' })).toBe(true)
   })

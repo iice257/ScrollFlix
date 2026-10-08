@@ -102,3 +102,12 @@ Must not change or degrade: left-drag rotate, hold-to-drag (220 ms), click-to-op
 - All non-regression items still behave identically (run `npm run check`, `npm run build`, `npm run test:unit`, and the Playwright e2e suite where relevant).
 - Settings UI is polished in both themes, responsive on mobile and desktop, keyboard-accessible, and matches the existing design language (reviewed with the frontend-skill).
 - Unit tests for the settings store (defaults, persistence, validation) and the rate limiter; document the final category map in a comment at the top of the audio module.
+
+## Sequencing
+
+- Sound is the **next phase after the Shuffle Pro rebuild**.
+- `app/cmps/views/test-gallery/shuffle-pro/shuffle-pro-audio.ts` already provides the Shuffle Pro whoosh (procedural Web Audio, no files). It has its own "Easter egg sound" switch in the About drawer, stored as `wtw:sound:egg`, **on by default**. Its `AudioContext` is created and resumed inside the first globe pointerdown (and on a shuffle click or key), never before.
+- The full sound layer must fold that whoosh into its master volume and categories while keeping the owner-approved whoosh default, and it should add:
+  - the Shuffle Pro **peak chime**, tuned per path: glassy for Frost, bell for Amethyst, breathy for Jade, a rich chord for Gold;
+  - the **landing thud**.
+- Nothing else about sound ships with the rebuild.

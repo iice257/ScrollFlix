@@ -6,6 +6,7 @@ import { animateDocTitleSuffix } from './utils/anim'
 import { initTelemetry } from './utils/telemetry/init-telemetry'
 import './styles.css'
 import './light-theme.css'
+import './cmps/views/test-gallery/shuffle-pro/shuffle-pro.css'
 
 initTelemetry()
 

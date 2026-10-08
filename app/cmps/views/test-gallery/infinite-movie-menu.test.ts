@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { createHoneycombSpherePositions } from './honeycomb-layout'
 import {
+  BASE_RELEASE_TAU_MS,
   type PickEllipse,
   createPickCandidate,
   ellipseIntersectsQuad,
   pickWinner,
   pointToQuadDistance,
+  releaseTimeConstant,
 } from './infinite-movie-menu'
 
 describe('infinite movie menu geometry', () => {
@@ -186,5 +188,74 @@ describe('pickWinner', () => {
     for (let i = 0; i < 20; i += 1) {
       expect(pickWinner(candidates, [1, 1], ellipse)).toBe(first)
     }
+  })
+})
+
+describe('releaseTimeConstant', () => {
+  it('matches the original 0.1-per-frame decay at 60fps', () => {
+    expect(1 - Math.exp(-(1000 / 60) / BASE_RELEASE_TAU_MS)).toBeCloseTo(0.1, 6)
+    expect(BASE_RELEASE_TAU_MS).toBeCloseTo(158.2, 1)
+  })
+
+  it('keeps a slow drag at the baseline', () => {
+    expect(
+      releaseTimeConstant({
+        speedPxMs: 0,
+        source: 'pointer',
+        msSinceLastMove: 10,
+      }),
+    ).toBeCloseTo(BASE_RELEASE_TAU_MS, 9)
+  })
+
+  it('stretches a pointer flick to at most 1.5x', () => {
+    const flick = releaseTimeConstant({
+      speedPxMs: 1.4,
+      source: 'pointer',
+      msSinceLastMove: 5,
+    })
+    expect(flick).toBeCloseTo(BASE_RELEASE_TAU_MS * 1.5, 9)
+    const faster = releaseTimeConstant({
+      speedPxMs: 9,
+      source: 'pointer',
+      msSinceLastMove: 5,
+    })
+    expect(faster).toBeCloseTo(BASE_RELEASE_TAU_MS * 1.5, 9)
+  })
+
+  it('keeps wheel and key nudges to at most 1.2x', () => {
+    expect(
+      releaseTimeConstant({
+        speedPxMs: 5,
+        source: 'nudge',
+        msSinceLastMove: 0,
+      }),
+    ).toBeCloseTo(BASE_RELEASE_TAU_MS * 1.2, 9)
+  })
+
+  it('scales linearly between rest and the reference speed', () => {
+    expect(
+      releaseTimeConstant({
+        speedPxMs: 0.7,
+        source: 'pointer',
+        msSinceLastMove: 0,
+      }),
+    ).toBeCloseTo(BASE_RELEASE_TAU_MS * 1.25, 9)
+  })
+
+  it('ignores stale velocity: flick, hold still, release', () => {
+    expect(
+      releaseTimeConstant({
+        speedPxMs: 1.4,
+        source: 'pointer',
+        msSinceLastMove: 81,
+      }),
+    ).toBeCloseTo(BASE_RELEASE_TAU_MS, 9)
+    expect(
+      releaseTimeConstant({
+        speedPxMs: 1.4,
+        source: 'pointer',
+        msSinceLastMove: 80,
+      }),
+    ).toBeGreaterThan(BASE_RELEASE_TAU_MS)
   })
 })

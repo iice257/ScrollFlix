@@ -307,6 +307,10 @@
     height: 100%;
     cursor: grab;
     outline: none;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
     transform-origin: center;
     transition:
       filter 260ms ease,
@@ -316,7 +320,7 @@
   .warp-infinite-menu.is-hold-primed .warp-infinite-menu-canvas {
     cursor: grabbing;
     filter: brightness(0.96) saturate(1.03);
-    transform: scale(calc(var(--warp-wall-zoom, 1) * 1.018));
+    transform: scale(1.018);
   }
 
   .warp-fallback-menu {
@@ -1811,7 +1815,6 @@
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     animation: warp-spin-hint-in 420ms 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
-    max-width: min(760px, calc(100vw - 32px));
   }
 
   .warp-spin-hint::after {
@@ -1829,9 +1832,15 @@
   }
 
   .warp-spin-hint-pointer {
-    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     white-space: nowrap;
-    line-height: 1.45;
+  }
+
+  .warp-spin-hint-pointer i {
+    font-style: normal;
+    opacity: 0.4;
   }
 
   .warp-spin-hint-keys {
@@ -1841,47 +1850,18 @@
 
   .warp-spin-hint kbd {
     display: grid;
-    min-width: 22px;
-    min-height: 20px;
+    min-width: 20px;
+    height: 20px;
     place-items: center;
     border-radius: 6px;
     background: rgb(255 255 255 / 0.14);
-    padding: 0 5px;
     font-family: inherit;
     font-size: 11px;
     font-weight: 800;
-    white-space: nowrap;
   }
 
-  .warp-spin-hint kbd.is-wide {
-    padding-inline: 8px;
-  }
-
-  .warp-fullscreen-control {
-    position: fixed;
-    z-index: 30;
-    top: max(16px, env(safe-area-inset-top));
-    right: max(16px, env(safe-area-inset-right));
-  }
-
-  .warp-fullscreen-button {
-    display: grid;
-    width: 42px;
-    height: 42px;
-    place-items: center;
-    border: 1px solid rgb(0 0 0 / 0.8);
-    border-radius: 999px;
-    background: #fff;
-    color: #050505;
-    box-shadow: 0 10px 30px rgb(0 0 0 / 0.28);
-    transition: transform 150ms ease, background 150ms ease;
-  }
-
-  .warp-fullscreen-button:hover,
-  .warp-fullscreen-button:focus-visible {
-    outline: none;
-    background: #f0f0f0;
-    transform: translateY(-1px);
+  .warp-spin-hint kbd.is-word {
+    padding-inline: 6px;
   }
 
   .warp-fullscreen-tip {
@@ -1942,6 +1922,13 @@
 
     .warp-spin-hint-touch {
       display: inline;
+    }
+  }
+
+  /* Keyboard hints are for desktop; narrow screens never show this pill. */
+  @media (max-width: 900px) {
+    .warp-spin-hint {
+      display: none;
     }
   }
 
@@ -2311,8 +2298,8 @@
     background:
       radial-gradient(circle at 50% 48%, rgb(0 0 0 / 0.18), rgb(0 0 0 / 0.72) 62%, rgb(0 0 0 / 0.92)),
       rgb(0 0 0 / 0.5);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(7px);
+    -webkit-backdrop-filter: blur(7px);
     pointer-events: auto;
     animation: warp-details-backdrop-in 520ms ease both;
   }
@@ -2322,7 +2309,13 @@
   }
 
   .warp-details-card {
-    --details-max-height: min(616px, 58vw, calc(100dvh - 64px));
+    /* Card height measured with "Paperman" open at 1040px wide (612px), kept in
+       proportion as the card narrows. */
+    --details-max-height: min(
+      612px,
+      calc((100vw - 64px) * 612 / 1040),
+      calc(100dvh - 64px)
+    );
     position: relative;
     z-index: 1;
     display: grid;
@@ -2575,6 +2568,9 @@
 
   .warp-details-watch {
     display: inline-flex;
+    width: fit-content;
+    max-width: 100%;
+    flex: 0 0 auto;
     height: 44px;
     align-items: center;
     justify-content: center;
@@ -3540,6 +3536,40 @@
     animation: warp-about-pop-out 180ms ease both;
   }
 
+  /* Dims and blurs the page behind a compact drawer; clicking it closes the
+     drawer. Shared by the About and Saved drawers. */
+  .warp-drawer-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 119;
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: rgb(0 0 0 / 0.32);
+    padding: 0;
+    cursor: default;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    animation: warp-scrim-in 220ms ease both;
+  }
+
+  .warp-drawer-scrim[data-motion="exit"] {
+    animation: warp-scrim-out 180ms ease both;
+  }
+
+  @keyframes warp-scrim-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes warp-scrim-out {
+    to {
+      opacity: 0;
+    }
+  }
+
   .warp-about-drawer-heading {
     display: flex;
     align-items: start;
@@ -4108,10 +4138,6 @@
       --warp-control-inner-height: 30px;
     }
 
-    .warp-shell[data-mode="wall"] {
-      --warp-wall-zoom: 1.085;
-    }
-
     .warp-shell[data-mode="wall"]::before {
       background: linear-gradient(
         to bottom,
@@ -4120,10 +4146,6 @@
         transparent 78%,
         rgb(0 0 0 / 0.52)
       );
-    }
-
-    .warp-shell[data-mode="wall"] .warp-infinite-menu-canvas {
-      transform: scale(var(--warp-wall-zoom, 1));
     }
 
     .warp-shell[data-details-open="true"] .warp-topbar,
@@ -4696,7 +4718,6 @@
       width: 100%;
     }
 
-    .warp-details-watch,
     .warp-details-next {
       width: 100%;
       max-width: 320px;
@@ -4833,243 +4854,297 @@
     .warp-poster-placeholder,
     .warp-poster-placeholder::after,
     .warp-watch-backdrop,
-    .warp-watch-card {
+    .warp-watch-card,
+    .warp-drawer-scrim {
       transition: none;
       animation: none;
     }
   }
 
-  /* Shuffle Pro: the canvas receives its capped inverse-speed scale from the
-     interaction layer; these rules provide the visual state and release cue. */
-  .warp-shell[data-shuffle-pro-phase="spinning"] .warp-infinite-menu-canvas {
-    transform: scale(calc(var(--shuffle-pro-scale, 1) * var(--warp-wall-zoom, 1)));
-    transition: transform 180ms ease-out;
-  }
 
-  .warp-shell[data-shuffle-pro-phase="spinning"] .warp-wall {
-    filter: saturate(1.06);
-  }
-
-  .warp-shell[data-shuffle-pro-phase="transition"][data-theme="dark"] .warp-wall,
-  .warp-shell[data-shuffle-pro-phase="transition"][data-theme="dark"] .warp-infinite-menu {
-    background:
-      radial-gradient(ellipse at 50% 44%, rgb(126 205 255 / 0.3), transparent 38%),
-      radial-gradient(ellipse at 18% 68%, rgb(37 134 226 / 0.2), transparent 46%),
-      radial-gradient(ellipse at 84% 34%, rgb(80 174 255 / 0.18), transparent 42%),
-      linear-gradient(145deg, #020914, #061a32 54%, #020711);
-    transition: background 900ms ease;
-  }
-
-  /* The WebGL canvas is opaque, so put the temporary release atmosphere above it. */
-  .warp-shell[data-shuffle-pro-phase="transition"] .warp-wall::after {
-    content: '';
-    position: absolute;
-    z-index: 2;
-    inset: 0;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 700ms ease;
-  }
-
-  .warp-shell[data-shuffle-pro-phase="transition"][data-theme="dark"] .warp-wall::after {
-    opacity: 1;
-    background:
-      radial-gradient(ellipse at 50% 46%, rgb(100 190 255 / 0.32), transparent 35%),
-      radial-gradient(ellipse at 22% 72%, rgb(31 132 229 / 0.38), transparent 46%),
-      radial-gradient(ellipse at 82% 26%, rgb(87 178 255 / 0.32), transparent 38%),
-      radial-gradient(ellipse at 72% 78%, rgb(60 159 245 / 0.23), transparent 44%),
-      linear-gradient(160deg, rgb(11 52 94 / 0.3), transparent 42%, rgb(7 33 67 / 0.26));
-  }
-
-  .warp-shell[data-shuffle-pro-phase="transition"][data-theme="light"] .warp-wall::after {
-    opacity: 1;
-    background:
-      radial-gradient(2px 2px at 12% 24%, rgb(220 240 255 / 0.98) 50%, transparent 100%),
-      radial-gradient(1.5px 1.5px at 73% 17%, rgb(220 240 255 / 0.9) 50%, transparent 100%),
-      radial-gradient(2px 2px at 88% 63%, rgb(220 240 255 / 0.95) 50%, transparent 100%),
-      radial-gradient(1.5px 1.5px at 37% 79%, rgb(220 240 255 / 0.86) 50%, transparent 100%),
-      radial-gradient(1px 1px at 59% 36%, rgb(220 240 255 / 0.82) 50%, transparent 100%),
-      radial-gradient(ellipse at 50% 55%, rgb(8 37 79 / 0.22), transparent 70%),
-      linear-gradient(155deg, rgb(4 15 34 / 0.42), rgb(6 24 49 / 0.28) 58%, rgb(3 13 29 / 0.42));
-    background-size: auto, auto, auto, auto, auto, auto, 100% 100%;
-    animation: shuffle-pro-overlay-stars 3.6s ease-in-out infinite alternate;
-  }
-
-  .warp-shell[data-shuffle-pro-phase="transition"][data-theme="light"] .warp-wall,
-  .warp-shell[data-shuffle-pro-phase="transition"][data-theme="light"] .warp-infinite-menu {
-    background:
-      radial-gradient(1px 1px at 12% 24%, rgb(211 232 255 / 0.85) 50%, transparent 100%),
-      radial-gradient(1px 1px at 73% 17%, rgb(211 232 255 / 0.75) 50%, transparent 100%),
-      radial-gradient(1.5px 1.5px at 88% 63%, rgb(211 232 255 / 0.8) 50%, transparent 100%),
-      radial-gradient(1px 1px at 37% 79%, rgb(211 232 255 / 0.7) 50%, transparent 100%),
-      radial-gradient(ellipse at 50% 68%, rgb(35 92 167 / 0.3), transparent 60%),
-      linear-gradient(155deg, #06152d, #102c55 58%, #07152b);
-    background-size: auto, auto, auto, auto, auto, 100% 100%;
-    transition: background 900ms ease;
-  }
-
-  .warp-shell[data-shuffle-pro-phase="transition"][data-theme="light"] .warp-infinite-menu {
-    animation: shuffle-pro-stars 3.6s ease-in-out infinite alternate;
-  }
-
-  .warp-shell[data-shuffle-pro-variant="rare"][data-shuffle-pro-phase="transition"] .warp-wall,
-  .warp-shell[data-shuffle-pro-variant="max"][data-shuffle-pro-phase="transition"] .warp-wall,
-  .warp-shell[data-shuffle-pro-variant="rare"][data-shuffle-pro-phase="transition"] .warp-infinite-menu,
-  .warp-shell[data-shuffle-pro-variant="max"][data-shuffle-pro-phase="transition"] .warp-infinite-menu {
-    background:
-      radial-gradient(ellipse 5px 11px at 31% 28%, rgb(230 207 255 / 0.17) 45%, transparent 100%),
-      radial-gradient(ellipse 5px 11px at 69% 73%, rgb(230 207 255 / 0.14) 45%, transparent 100%),
-      radial-gradient(ellipse at 24% 36%, rgb(198 158 255 / 0.16), transparent 34%),
-      radial-gradient(ellipse at 77% 65%, rgb(231 183 255 / 0.12), transparent 38%),
-      radial-gradient(1px 1px at 18% 22%, rgb(243 224 255 / 0.72) 50%, transparent 100%),
-      radial-gradient(1px 1px at 67% 43%, rgb(243 224 255 / 0.56) 50%, transparent 100%),
-      radial-gradient(1px 1px at 81% 31%, rgb(243 224 255 / 0.62) 50%, transparent 100%),
-      linear-gradient(145deg, #171126, #251939 62%, #171126);
-  }
-
-  .warp-shell[data-shuffle-pro-phase="transition"] .warp-shuffle-pro-announcement {
+  /* Saved movies: a heart button above the i button, and a drawer that rises
+     from it the same way the compact About drawer does. */
+  .warp-saved-button {
     position: fixed;
-    z-index: 30;
-    top: max(24px, env(safe-area-inset-top));
-    left: 50%;
-    max-width: min(90vw, 360px);
-    padding: 10px 16px;
-    border: 1px solid rgb(194 224 255 / 0.32);
+    right: 24px;
+    bottom: calc(28px + var(--warp-control-height) + 10px);
+    z-index: 54;
+    display: grid;
+    width: var(--warp-control-height);
+    height: var(--warp-control-height);
+    place-items: center;
+    border: 1px solid rgb(255 255 255 / 0.2);
     border-radius: 999px;
-    background: rgb(5 19 39 / 0.78);
-    box-shadow: 0 8px 30px rgb(0 0 0 / 0.2), 0 0 24px rgb(89 174 255 / 0.12);
-    color: #eaf5ff;
-    font-size: 12px;
-    font-weight: 650;
-    letter-spacing: 0.04em;
-    text-align: center;
-    transform: translateX(-50%);
-    animation: shuffle-pro-cue-in 420ms ease both, shuffle-pro-cue-pulse 2.2s 420ms ease-in-out infinite;
+    background: var(--warp-pill-bg);
+    color: #0b0b0b;
+    box-shadow: 0 14px 44px rgb(0 0 0 / 0.34);
+    backdrop-filter: blur(14px) saturate(0.96);
+    -webkit-backdrop-filter: blur(14px) saturate(0.96);
+    transition:
+      background 160ms ease,
+      opacity 220ms ease,
+      transform 160ms ease;
+  }
+
+  .warp-saved-button svg {
+    width: 19px;
+    height: 19px;
+    stroke-width: 2.4;
+  }
+
+  .warp-saved-button:hover,
+  .warp-saved-button:focus-visible,
+  .warp-saved-button.is-active {
+    outline: none;
+    background: #fff;
+  }
+
+  .warp-saved-button:active {
+    transform: translateY(1px) scale(0.96);
+  }
+
+  .warp-shell[data-details-open="true"] .warp-saved-button {
+    opacity: 0;
     pointer-events: none;
   }
 
-  @media (min-width: 901px) {
-    .warp-fullscreen-control {
-      display: none;
-    }
-  }
-
-  .warp-shell[data-shuffle-pro-variant="rare"] .warp-shuffle-pro-announcement,
-  .warp-shell[data-shuffle-pro-variant="max"] .warp-shuffle-pro-announcement {
-    border-color: rgb(220 191 255 / 0.38);
-    background: rgb(35 23 52 / 0.8);
-    box-shadow: 0 8px 30px rgb(0 0 0 / 0.2), 0 0 22px rgb(189 147 255 / 0.15);
-    color: #f3eaff;
-  }
-
-  .warp-details-card.is-premium {
-    border-color: rgb(135 196 255 / 0.68);
-    box-shadow: 0 0 0 1px rgb(135 196 255 / 0.2), 0 24px 90px rgb(22 95 164 / 0.24), 0 40px 140px rgb(0 0 0 / 0.72);
-  }
-
-  .warp-details-card.is-premium[data-premium-variant="rare"] {
-    border-color: rgb(205 171 255 / 0.7);
-    box-shadow: 0 0 0 1px rgb(205 171 255 / 0.2), 0 24px 90px rgb(134 91 176 / 0.22), 0 40px 140px rgb(0 0 0 / 0.72);
-  }
-
-  .warp-details-card.is-premium[data-premium-variant="max"] {
-    border-color: rgb(174 244 220 / 0.72);
-    box-shadow: 0 0 0 1px rgb(174 244 220 / 0.22), 0 24px 90px rgb(22 140 104 / 0.25), 0 40px 140px rgb(0 0 0 / 0.72);
-  }
-
-  .warp-details-premium-badge {
+  .warp-saved-count {
     position: absolute;
-    z-index: 3;
-    top: 16px;
-    right: 68px;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    max-width: calc(100% - 132px);
-    overflow: hidden;
-    border: 1px solid rgb(156 205 255 / 0.32);
+    top: -6px;
+    right: -6px;
+    display: grid;
+    min-width: 19px;
+    height: 19px;
+    place-items: center;
+    border: 2px solid #000;
     border-radius: 999px;
-    background: rgb(35 74 112 / 0.34);
-    padding: 6px 10px;
-    color: #e5f3ff;
+    background: #fff;
+    padding: 0 4px;
+    color: #000;
     font-size: 10px;
-    font-weight: 750;
-    letter-spacing: 0.075em;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .warp-saved-drawer {
+    bottom: calc(28px + var(--warp-control-height) * 2 + 22px);
+    max-height: calc(100dvh - 140px);
+  }
+
+  .warp-saved-list {
+    display: grid;
+    gap: 2px;
+    max-height: min(380px, 52dvh);
+    margin: 0 -6px;
+    padding: 0 6px 0 0;
+    overflow-y: auto;
+    list-style: none;
+    scrollbar-width: none;
+  }
+
+  .warp-saved-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .warp-saved-list li {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px;
+    border-radius: 14px;
+    padding-right: 4px;
+    transition: background 160ms ease;
+  }
+
+  .warp-saved-list li:hover {
+    background: rgb(255 255 255 / 0.06);
+  }
+
+  .warp-saved-row {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: 38px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    border: 0;
+    border-radius: 14px;
+    background: transparent;
+    padding: 6px;
+    color: #fff;
+    text-align: left;
+  }
+
+  .warp-saved-row:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: -2px;
+  }
+
+  .warp-saved-thumb {
+    display: block;
+    width: 38px;
+    height: 56px;
+    overflow: hidden;
+    border-radius: 8px;
+    background: rgb(255 255 255 / 0.08);
+  }
+
+  .warp-saved-thumb .warp-poster-frame,
+  .warp-saved-thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .warp-saved-copy {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .warp-saved-copy strong {
+    overflow: hidden;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: -0.025em;
     line-height: 1.2;
     text-overflow: ellipsis;
     white-space: nowrap;
-    pointer-events: none;
   }
 
-  .warp-details-premium-badge > span {
-    color: #a9d8ff;
+  .warp-saved-copy small {
+    color: rgb(255 255 255 / 0.55);
     font-size: 12px;
+    font-weight: 650;
   }
 
-  .warp-details-card[data-premium-variant="rare"] .warp-details-premium-badge {
-    border-color: rgb(217 190 255 / 0.34);
-    background: rgb(92 63 121 / 0.3);
-    color: #f2eaff;
+  .warp-saved-remove {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: rgb(255 255 255 / 0.5);
+    transition:
+      background 160ms ease,
+      color 160ms ease;
   }
 
-  .warp-details-card[data-premium-variant="max"] .warp-details-premium-badge {
-    border-color: rgb(174 244 220 / 0.5);
-    background: rgb(36 113 87 / 0.36);
-    color: #e8fff5;
+  .warp-saved-remove svg {
+    width: 14px;
+    height: 14px;
   }
 
-  .warp-details-card[data-premium-variant="rare"] .warp-details-premium-badge > span {
-    color: #dfc4ff;
+  .warp-saved-remove:hover,
+  .warp-saved-remove:focus-visible {
+    outline: none;
+    background: rgb(255 255 255 / 0.14);
+    color: #fff;
   }
 
-  .warp-details-card[data-premium-variant="max"] .warp-details-premium-badge > span {
-    color: #aef4dc;
+  .warp-saved-empty {
+    margin: 0;
+    color: rgb(255 255 255 / 0.62);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.5;
   }
 
-  @keyframes shuffle-pro-stars {
-    from { background-position: 0 0, 0 0, 0 0, 0 0, 0 0, center; }
-    to { background-position: 2px -3px, -3px 2px, 3px 2px, -2px -3px, 0 0, center; }
+  /* Heart (and share) buttons on the details card. */
+  .warp-details-heart {
+    display: inline-grid;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid rgb(255 255 255 / 0.2);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.08);
+    color: #fff;
+    transition:
+      background 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      transform 160ms ease;
   }
 
-  @keyframes shuffle-pro-overlay-stars {
-    from { background-position: 0 0, 0 0, 0 0, 0 0, 0 0, center, center; }
-    to { background-position: 2px -3px, -3px 2px, 3px 2px, -2px -3px, 1px 2px, center, center; }
+  .warp-details-heart svg {
+    width: 18px;
+    height: 18px;
+    stroke-width: 2.4;
   }
 
-  @keyframes shuffle-pro-cue-in {
-    from { opacity: 0; translate: 0 -8px; }
-    to { opacity: 1; translate: 0 0; }
+  .warp-details-heart:hover,
+  .warp-details-heart:focus-visible {
+    outline: none;
+    border-color: rgb(255 255 255 / 0.4);
+    background: rgb(255 255 255 / 0.18);
   }
 
-  @keyframes shuffle-pro-cue-pulse {
-    0%, 100% { box-shadow: 0 8px 30px rgb(0 0 0 / 0.2), 0 0 18px rgb(89 174 255 / 0.1); }
-    50% { box-shadow: 0 8px 30px rgb(0 0 0 / 0.2), 0 0 28px rgb(89 174 255 / 0.22); }
+  .warp-details-heart:active {
+    transform: translateY(1px) scale(0.96);
+  }
+
+  .warp-details-heart:disabled {
+    opacity: 0.55;
+  }
+
+  .warp-details-heart.is-saved {
+    border-color: rgb(255 92 124 / 0.6);
+    background: rgb(255 92 124 / 0.16);
+    color: #ff6b8a;
+  }
+
+  .warp-details-heart.is-saved svg {
+    fill: currentColor;
+    animation: warp-heart-pop 200ms cubic-bezier(0.34, 1.6, 0.5, 1) both;
+  }
+
+  @keyframes warp-heart-pop {
+    from {
+      transform: scale(0.6);
+    }
+    60% {
+      transform: scale(1.22);
+    }
+    to {
+      transform: scale(1);
+    }
+  }
+
+  @media (max-width: 900px) {
+    .warp-saved-button {
+      right: 12px;
+      bottom: calc(18px + var(--warp-control-height) + 10px);
+    }
+
+    .warp-saved-drawer {
+      bottom: calc(18px + var(--warp-control-height) * 2 + 20px);
+    }
+
+    .warp-details-heart {
+      width: 38px;
+      height: 38px;
+    }
+  }
+
+  @media (max-width: 359px) {
+    .warp-shell[data-mode="list"] .warp-saved-button,
+    .warp-shell[data-mode="wall"] .warp-saved-button,
+    .warp-shell[data-mode="filters"] .warp-saved-button {
+      bottom: calc(18px + (var(--warp-control-height) + 10px) * 2);
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .warp-shell[data-shuffle-pro-phase="spinning"] .warp-infinite-menu-canvas {
-      transform: none;
-      animation: shuffle-pro-gentle-pulse 2.4s ease-in-out infinite alternate;
-    }
-
-    .warp-shell[data-shuffle-pro-phase="transition"] .warp-infinite-menu,
-    .warp-shell[data-shuffle-pro-phase="transition"] .warp-wall::after,
-    .warp-shell[data-shuffle-pro-phase="transition"] .warp-shuffle-pro-announcement {
-      animation: none;
-    }
-
-    .warp-shell[data-shuffle-pro-phase="transition"] .warp-shuffle-pro-announcement {
-      animation: shuffle-pro-gentle-pulse 2.4s ease-in-out infinite alternate;
-    }
-
-    .warp-shell[data-shuffle-pro-phase="transition"] .warp-wall::after {
-      transition: none;
+    .warp-details-heart.is-saved svg {
       animation: none;
     }
   }
 
-  @keyframes shuffle-pro-gentle-pulse {
-    from { opacity: 0.78; }
-    to { opacity: 1; }
-  }
 }

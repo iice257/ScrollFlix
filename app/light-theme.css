@@ -431,18 +431,6 @@
   background: rgb(33 26 16 / 0.14);
 }
 
-.warp-shell[data-theme="light"] .warp-fullscreen-button {
-  border: 1px solid rgb(247 240 225 / 0.8);
-  background: rgb(33 26 16);
-  color: rgb(243 236 221);
-  box-shadow: 0 10px 30px rgb(110 78 34 / 0.118);
-}
-
-.warp-shell[data-theme="light"] .warp-fullscreen-button:hover,
-.warp-shell[data-theme="light"] .warp-fullscreen-button:focus-visible {
-  background: rgb(46 39 28);
-}
-
 .warp-shell[data-theme="light"] .warp-fullscreen-tip {
   border: 1px solid rgb(33 26 16 / 0.16);
   background: rgb(232 225 210 / 0.94);
@@ -903,6 +891,10 @@
   box-shadow: 0 30px 90px rgb(110 78 34 / 0.252);
 }
 
+.warp-shell[data-theme="light"] .warp-drawer-scrim {
+  background: rgb(247 240 225 / 0.32);
+}
+
 .warp-shell[data-theme="light"] .warp-about-drawer-heading p {
   color: rgb(33 26 16 / 0.62);
 }
@@ -1106,80 +1098,78 @@
   }
 }
 
-.warp-shell[data-shuffle-pro-phase="transition"][data-theme="light"] .warp-wall::after {
-  background: radial-gradient(2px 2px at 12% 24%, rgb(47 40 30 / 0.98) 50%, transparent 100%), radial-gradient(1.5px 1.5px at 73% 17%, rgb(47 40 30 / 0.9) 50%, transparent 100%), radial-gradient(2px 2px at 88% 63%, rgb(47 40 30 / 0.95) 50%, transparent 100%), radial-gradient(1.5px 1.5px at 37% 79%, rgb(47 40 30 / 0.86) 50%, transparent 100%), radial-gradient(1px 1px at 59% 36%, rgb(47 40 30 / 0.82) 50%, transparent 100%), radial-gradient(ellipse at 50% 55%, rgb(8 37 79 / 0.22), transparent 70%), linear-gradient(155deg, rgb(4 15 34 / 0.42), rgb(6 24 49 / 0.28) 58%, rgb(3 13 29 / 0.42));
+.warp-shell[data-theme="light"] .warp-saved-button {
+  border: 1px solid rgb(33 26 16 / 0.2);
+  color: rgb(238 231 216);
+  box-shadow: 0 14px 44px rgb(110 78 34 / 0.143);
 }
 
-.warp-shell[data-shuffle-pro-phase="transition"][data-theme="light"] .warp-wall,
-.warp-shell[data-shuffle-pro-phase="transition"][data-theme="light"] .warp-infinite-menu {
-  background: radial-gradient(1px 1px at 12% 24%, rgb(52 45 34 / 0.85) 50%, transparent 100%), radial-gradient(1px 1px at 73% 17%, rgb(52 45 34 / 0.75) 50%, transparent 100%), radial-gradient(1.5px 1.5px at 88% 63%, rgb(52 45 34 / 0.8) 50%, transparent 100%), radial-gradient(1px 1px at 37% 79%, rgb(52 45 34 / 0.7) 50%, transparent 100%), radial-gradient(ellipse at 50% 68%, rgb(35 92 167 / 0.3), transparent 60%), linear-gradient(155deg, rgb(6 21 45), rgb(16 44 85) 58%, rgb(7 21 43));
+.warp-shell[data-theme="light"] .warp-saved-button:hover,
+.warp-shell[data-theme="light"] .warp-saved-button:focus-visible,
+.warp-shell[data-theme="light"] .warp-saved-button.is-active {
+  background: rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"][data-shuffle-pro-variant="rare"][data-shuffle-pro-phase="transition"] .warp-wall,
-.warp-shell[data-theme="light"][data-shuffle-pro-variant="max"][data-shuffle-pro-phase="transition"] .warp-wall,
-.warp-shell[data-theme="light"][data-shuffle-pro-variant="rare"][data-shuffle-pro-phase="transition"] .warp-infinite-menu,
-.warp-shell[data-theme="light"][data-shuffle-pro-variant="max"][data-shuffle-pro-phase="transition"] .warp-infinite-menu {
-  background: radial-gradient(ellipse 5px 11px at 31% 28%, rgb(53 46 36 / 0.17) 45%, transparent 100%), radial-gradient(ellipse 5px 11px at 69% 73%, rgb(53 46 36 / 0.14) 45%, transparent 100%), radial-gradient(ellipse at 24% 36%, rgb(198 158 255 / 0.16), transparent 34%), radial-gradient(ellipse at 77% 65%, rgb(231 183 255 / 0.12), transparent 38%), radial-gradient(1px 1px at 18% 22%, rgb(45 38 28 / 0.72) 50%, transparent 100%), radial-gradient(1px 1px at 67% 43%, rgb(45 38 28 / 0.56) 50%, transparent 100%), radial-gradient(1px 1px at 81% 31%, rgb(45 38 28 / 0.62) 50%, transparent 100%), linear-gradient(145deg, rgb(23 17 38), rgb(37 25 57) 62%, rgb(23 17 38));
+.warp-shell[data-theme="light"] .warp-saved-count {
+  border: 2px solid rgb(247 240 225);
+  background: rgb(33 26 16);
+  color: rgb(247 240 225);
 }
 
-.warp-shell[data-theme="light"][data-shuffle-pro-phase="transition"] .warp-shuffle-pro-announcement {
-  border: 1px solid rgb(59 52 41 / 0.32);
-  background: rgb(5 19 39 / 0.78);
-  box-shadow: 0 8px 30px rgb(110 78 34 / 0.084), 0 0 24px rgb(89 174 255 / 0.12);
-  color: rgb(42 35 24);
+.warp-shell[data-theme="light"] .warp-saved-list li:hover {
+  background: rgb(33 26 16 / 0.06);
 }
 
-.warp-shell[data-theme="light"][data-shuffle-pro-variant="rare"] .warp-shuffle-pro-announcement,
-.warp-shell[data-theme="light"][data-shuffle-pro-variant="max"] .warp-shuffle-pro-announcement {
-  border-color: rgb(220 191 255 / 0.38);
-  background: rgb(35 23 52 / 0.8);
-  box-shadow: 0 8px 30px rgb(110 78 34 / 0.084), 0 0 22px rgb(189 147 255 / 0.15);
-  color: rgb(42 35 25);
+.warp-shell[data-theme="light"] .warp-saved-row {
+  color: rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"] .warp-details-card.is-premium {
-  border-color: rgb(135 196 255 / 0.68);
-  box-shadow: 0 0 0 1px rgb(135 196 255 / 0.2), 0 24px 90px rgb(22 95 164 / 0.24), 0 40px 140px rgb(110 78 34 / 0.302);
+.warp-shell[data-theme="light"] .warp-saved-row:focus-visible {
+  outline: 2px solid rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"] .warp-details-card.is-premium[data-premium-variant="rare"] {
-  border-color: rgb(205 171 255 / 0.7);
-  box-shadow: 0 0 0 1px rgb(205 171 255 / 0.2), 0 24px 90px rgb(134 91 176 / 0.22), 0 40px 140px rgb(110 78 34 / 0.302);
+.warp-shell[data-theme="light"] .warp-saved-thumb {
+  background: rgb(33 26 16 / 0.08);
 }
 
-.warp-shell[data-theme="light"] .warp-details-card.is-premium[data-premium-variant="max"] {
-  border-color: rgb(174 244 220 / 0.72);
-  box-shadow: 0 0 0 1px rgb(174 244 220 / 0.22), 0 24px 90px rgb(22 140 104 / 0.25), 0 40px 140px rgb(110 78 34 / 0.302);
+.warp-shell[data-theme="light"] .warp-saved-copy strong {
+  color: rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"] .warp-details-premium-badge {
-  border: 1px solid rgb(156 205 255 / 0.32);
-  background: rgb(35 74 112 / 0.34);
-  color: rgb(44 37 26);
+.warp-shell[data-theme="light"] .warp-saved-copy small {
+  color: rgb(33 26 16 / 0.55);
 }
 
-.warp-shell[data-theme="light"] .warp-details-premium-badge > span {
-  color: rgb(169 216 255);
+.warp-shell[data-theme="light"] .warp-saved-remove {
+  color: rgb(33 26 16 / 0.5);
 }
 
-.warp-shell[data-theme="light"] .warp-details-card[data-premium-variant="rare"] .warp-details-premium-badge {
-  border-color: rgb(217 190 255 / 0.34);
-  background: rgb(92 63 121 / 0.3);
-  color: rgb(43 36 25);
+.warp-shell[data-theme="light"] .warp-saved-remove:hover,
+.warp-shell[data-theme="light"] .warp-saved-remove:focus-visible {
+  background: rgb(33 26 16 / 0.14);
+  color: rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"] .warp-details-card[data-premium-variant="max"] .warp-details-premium-badge {
-  border-color: rgb(174 244 220 / 0.5);
-  background: rgb(36 113 87 / 0.36);
-  color: rgb(42 35 25);
+.warp-shell[data-theme="light"] .warp-saved-empty {
+  color: rgb(33 26 16 / 0.62);
 }
 
-.warp-shell[data-theme="light"] .warp-details-card[data-premium-variant="rare"] .warp-details-premium-badge > span {
-  color: rgb(58 51 41);
+.warp-shell[data-theme="light"] .warp-details-heart {
+  border: 1px solid rgb(33 26 16 / 0.2);
+  background: rgb(33 26 16 / 0.08);
+  color: rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"] .warp-details-card[data-premium-variant="max"] .warp-details-premium-badge > span {
-  color: rgb(174 244 220);
+.warp-shell[data-theme="light"] .warp-details-heart:hover,
+.warp-shell[data-theme="light"] .warp-details-heart:focus-visible {
+  border-color: rgb(33 26 16 / 0.4);
+  background: rgb(33 26 16 / 0.18);
+}
+
+.warp-shell[data-theme="light"] .warp-details-heart.is-saved {
+  border-color: rgb(255 92 124 / 0.6);
+  background: rgb(255 92 124 / 0.16);
+  color: rgb(255 107 138);
 }
 
 /* Stage: tan beige with a cream centre glow and a faint gold edge. */
@@ -1213,127 +1203,12 @@
   fill: rgb(247 240 225);
 }
 
-.warp-shell[data-theme="light"] .warp-details-backdrop {
-  /* Keep the gallery visible beneath the blur instead of washing it out. */
-  background: rgb(17 31 52 / 0.42);
-}
-
-/* Shuffle Pro deliberately keeps its night-sky treatment in light mode. */
-.warp-shell[data-theme="light"][data-shuffle-pro-phase="transition"] .warp-wall,
-.warp-shell[data-theme="light"][data-shuffle-pro-phase="transition"] .warp-infinite-menu {
-  background:
-    radial-gradient(ellipse at 50% 54%, rgb(28 91 165 / 0.36), transparent 62%),
-    linear-gradient(155deg, #041127, #0b2450 54%, #030d20);
-}
-
-.warp-shell[data-theme="light"][data-shuffle-pro-phase="transition"] .warp-wall::after {
-  content: '';
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-  pointer-events: none;
-  opacity: 1;
-  background:
-    radial-gradient(2px 2px at 12% 24%, rgb(220 240 255 / 0.98) 50%, transparent 100%),
-    radial-gradient(1.5px 1.5px at 73% 17%, rgb(220 240 255 / 0.9) 50%, transparent 100%),
-    radial-gradient(2px 2px at 88% 63%, rgb(220 240 255 / 0.95) 50%, transparent 100%),
-    radial-gradient(1.5px 1.5px at 37% 79%, rgb(220 240 255 / 0.86) 50%, transparent 100%),
-    radial-gradient(1px 1px at 59% 36%, rgb(220 240 255 / 0.82) 50%, transparent 100%),
-    radial-gradient(ellipse at 50% 55%, rgb(8 37 79 / 0.22), transparent 70%),
-    linear-gradient(155deg, rgb(4 15 34 / 0.42), rgb(6 24 49 / 0.28) 58%, rgb(3 13 29 / 0.42));
-  background-size: auto, auto, auto, auto, auto, auto, 100% 100%;
-  animation: shuffle-pro-overlay-stars 3.6s ease-in-out infinite alternate;
-}
-
-.warp-shell[data-theme="light"][data-shuffle-pro-variant="rare"][data-shuffle-pro-phase="transition"] .warp-wall,
-.warp-shell[data-theme="light"][data-shuffle-pro-variant="rare"][data-shuffle-pro-phase="transition"] .warp-infinite-menu {
-  background:
-    radial-gradient(ellipse 5px 11px at 31% 28%, rgb(230 207 255 / 0.17) 45%, transparent 100%),
-    radial-gradient(ellipse 5px 11px at 69% 73%, rgb(230 207 255 / 0.14) 45%, transparent 100%),
-    radial-gradient(ellipse at 24% 36%, rgb(198 158 255 / 0.16), transparent 34%),
-    radial-gradient(ellipse at 77% 65%, rgb(231 183 255 / 0.12), transparent 38%),
-    radial-gradient(1px 1px at 67% 43%, rgb(243 224 255 / 0.56) 50%, transparent 100%),
-    radial-gradient(1px 1px at 18% 22%, rgb(243 224 255 / 0.72) 50%, transparent 100%),
-    radial-gradient(1px 1px at 81% 31%, rgb(243 224 255 / 0.62) 50%, transparent 100%),
-    linear-gradient(145deg, #171126, #251939 62%, #171126);
-}
-
-.warp-shell[data-theme="light"][data-shuffle-pro-variant="max"][data-shuffle-pro-phase="transition"] .warp-wall,
-.warp-shell[data-theme="light"][data-shuffle-pro-variant="max"][data-shuffle-pro-phase="transition"] .warp-infinite-menu {
-  background:
-    radial-gradient(ellipse at 50% 38%, rgb(72 202 151 / 0.22), transparent 38%),
-    radial-gradient(ellipse at 50% 74%, rgb(59 173 133 / 0.15), transparent 58%),
-    radial-gradient(1px 1px at 18% 24%, rgb(222 255 240 / 0.78) 50%, transparent 100%),
-    radial-gradient(1px 1px at 74% 43%, rgb(222 255 240 / 0.7) 50%, transparent 100%),
-    linear-gradient(150deg, #071d18, #10382b 58%, #071d18);
-}
-
-.warp-shell[data-theme="light"] .warp-shuffle-pro-announcement {
-  border-color: rgb(164 198 238 / 0.42);
-  background: rgb(8 27 54 / 0.86);
-  color: #eaf5ff;
-}
-
-.warp-shell[data-theme="light"][data-shuffle-pro-phase="transition"] .warp-shuffle-pro-announcement {
-  color: #eaf5ff;
-}
-
-.warp-shell[data-theme="light"] .warp-shuffle-pro-announcement[data-premium-variant="rare"],
-.warp-shell[data-theme="light"][data-shuffle-pro-variant="rare"] .warp-shuffle-pro-announcement {
-  border-color: rgb(220 191 255 / 0.42);
-  background: rgb(35 23 52 / 0.84);
-  color: #f3eaff;
-}
-
-.warp-shell[data-theme="light"][data-shuffle-pro-variant="max"] .warp-shuffle-pro-announcement {
-  border-color: rgb(174 244 220 / 0.48);
-  background: rgb(9 42 31 / 0.88);
-  color: #e8fff5;
-}
-
-.warp-shell[data-theme="light"] .warp-details-card.is-premium {
-  border-color: rgb(135 196 255 / 0.68);
-  box-shadow: 0 0 0 1px rgb(135 196 255 / 0.2), 0 24px 90px rgb(22 95 164 / 0.24), 0 40px 140px rgb(0 0 0 / 0.72);
-}
-
-.warp-shell[data-theme="light"] .warp-details-card.is-premium[data-premium-variant="rare"] {
-  border-color: rgb(205 171 255 / 0.7);
-  box-shadow: 0 0 0 1px rgb(205 171 255 / 0.2), 0 24px 90px rgb(134 91 176 / 0.22), 0 40px 140px rgb(0 0 0 / 0.72);
-}
-
-.warp-shell[data-theme="light"] .warp-details-card.is-premium[data-premium-variant="max"] {
-  border-color: rgb(174 244 220 / 0.72);
-  box-shadow: 0 0 0 1px rgb(174 244 220 / 0.22), 0 24px 90px rgb(22 140 104 / 0.25), 0 40px 140px rgb(0 0 0 / 0.72);
-}
-
-.warp-shell[data-theme="light"] .warp-details-premium-badge {
-  border-color: rgb(156 205 255 / 0.42);
-  background: rgb(35 74 112 / 0.34);
-  color: #e5f3ff;
-}
-
-.warp-shell[data-theme="light"] .warp-details-premium-badge > span {
-  color: #a9d8ff;
-}
-
-.warp-shell[data-theme="light"] .warp-details-card[data-premium-variant="rare"] .warp-details-premium-badge {
-  border-color: rgb(217 190 255 / 0.42);
-  background: rgb(92 63 121 / 0.3);
-  color: #f2eaff;
-}
-
-.warp-shell[data-theme="light"] .warp-details-card[data-premium-variant="rare"] .warp-details-premium-badge > span {
-  color: #dfc4ff;
-}
-
-.warp-shell[data-theme="light"] .warp-details-card[data-premium-variant="max"] .warp-details-premium-badge {
-  border-color: rgb(174 244 220 / 0.5);
-  background: rgb(36 113 87 / 0.36);
-  color: #e8fff5;
-}
-
-.warp-shell[data-theme="light"] .warp-details-card[data-premium-variant="max"] .warp-details-premium-badge > span {
-  color: #aef4dc;
+/* Keep instructional tooltips on the same neutral charcoal surface in both themes. */
+.warp-shell[data-theme="light"] .warp-details-tip {
+  border-color: rgb(255 255 255 / 0.14);
+  background: rgb(28 28 28 / 0.98);
+  color: #fff;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
 }
 
 /* Keep interactive controls distinct against the warm light surface. */
@@ -1345,12 +1220,15 @@
 .warp-shell[data-theme="light"] .warp-sort-button,
 .warp-shell[data-theme="light"] .warp-shuffle-button,
 .warp-shell[data-theme="light"] .warp-info-button,
+.warp-shell[data-theme="light"] .warp-saved-button,
+.warp-shell[data-theme="light"] .warp-details-heart,
 .warp-shell[data-theme="light"] .warp-theme-switch button,
 .warp-shell[data-theme="light"] .warp-details-next,
 .warp-shell[data-theme="light"] .warp-details-watch,
 .warp-shell[data-theme="light"] .warp-details-close,
 .warp-shell[data-theme="light"] .warp-details-genres button,
-.warp-shell[data-theme="light"] .warp-fullscreen-button,
+.warp-shell[data-theme="light"] .warp-immersive-corner,
+.warp-shell[data-theme="light"] .warp-immersive-exit,
 .warp-shell[data-theme="light"] .warp-filter-panel button,
 .warp-shell[data-theme="light"] .warp-fs-chip {
   border: 1px solid rgb(0 0 0 / 0.8);
