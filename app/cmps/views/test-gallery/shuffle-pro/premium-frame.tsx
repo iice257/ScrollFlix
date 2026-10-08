@@ -1,6 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { TIER_LABELS, type Tier } from './shuffle-pro-logic'
+import { Gem } from './shuffle-pro-shelf'
+import { shuffleProStore } from './shuffle-pro-store'
 import { PALETTES } from './sky-pass'
+import { CORNER_ART } from './tier-art'
 
 const rgb = ([r, g, b]: [number, number, number], alpha = 1) =>
   `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${alpha})`
@@ -9,11 +19,51 @@ const rgb = ([r, g, b]: [number, number, number], alpha = 1) =>
 export const premiumEyebrowText = (tier: Tier) =>
   `Shuffle Pro${tier === 'jade' ? ' Max' : ''} · ${TIER_LABELS[tier]}`
 
-export const PremiumEyebrow = ({ tier }: { tier: Tier }) => (
-  <p className='sp-eyebrow' data-tier={tier}>
-    <span aria-hidden='true'>✦</span> {premiumEyebrowText(tier)}
-  </p>
-)
+const TIER_ORDER: Tier[] = ['frost', 'amethyst', 'jade', 'gold']
+
+// The rarity plate at the top of the card: the path's gem, its name in foil
+// type, and four pips showing how much of the collection is found.
+export const PremiumPlate = ({ tier }: { tier: Tier }) => {
+  const data = useSyncExternalStore(
+    shuffleProStore.subscribe,
+    shuffleProStore.get,
+    shuffleProStore.get,
+  )
+  const foundCount = TIER_ORDER.filter((t) => data.found[t]).length
+  return (
+    <div
+      className='sp-plate'
+      data-tier={tier}
+      role='note'
+      aria-label={`${premiumEyebrowText(tier)}. ${foundCount} of 4 paths found.`}
+    >
+      <span className='sp-plate-gem' aria-hidden='true'>
+        <Gem tier={tier} found />
+      </span>
+      <span className='sp-plate-text' aria-hidden='true'>
+        <span className='sp-plate-kicker'>
+          Shuffle Pro{tier === 'jade' ? ' Max' : ''}
+        </span>
+        <strong className='sp-plate-name'>{TIER_LABELS[tier]}</strong>
+      </span>
+      <span className='sp-plate-pips' aria-hidden='true'>
+        {TIER_ORDER.map((t) => (
+          <i
+            key={t}
+            data-tier={t}
+            className={
+              t === tier
+                ? 'sp-pip is-lit is-current'
+                : data.found[t]
+                  ? 'sp-pip is-lit'
+                  : 'sp-pip'
+            }
+          />
+        ))}
+      </span>
+    </div>
+  )
+}
 
 const PARTICLE_MS = 2500
 const PARTICLE_FADE_MS = 600
@@ -182,41 +232,37 @@ const EdgeParticles = ({ tier }: { tier: Tier }) => {
   )
 }
 
-// Ornate corner flourish for Gold's foil lining, drawn once and mirrored.
-const GoldCorner = ({ corner }: { corner: 'tl' | 'tr' | 'bl' | 'br' }) => (
+type CornerName = 'tl' | 'tr' | 'bl' | 'br'
+
+// One flourish per path, drawn once for the top-left corner and mirrored into
+// the other three by CSS: ice branches for Frost, a star flare for Amethyst, a
+// smoke curl and leaf for Jade, and the ornate lining for Gold.
+
+const Corner = ({ tier, corner }: { tier: Tier; corner: CornerName }) => (
   <svg
-    className='sp-gold-corner'
+    className='sp-corner'
     data-corner={corner}
     viewBox='0 0 64 64'
     aria-hidden='true'
   >
-    <path
-      d='M4 60V30C4 15 15 4 30 4H60'
+    <g
       fill='none'
       stroke='currentColor'
-      strokeWidth='1.5'
+      strokeWidth='1.4'
       strokeLinecap='round'
-    />
-    <path
-      d='M12 60V34C12 22 22 12 34 12H60'
-      fill='none'
-      stroke='currentColor'
-      strokeWidth='0.8'
-      strokeLinecap='round'
-      opacity='0.7'
-    />
-    <path
-      d='M4 4 C14 6 20 12 22 22 C12 20 6 14 4 4Z'
-      fill='currentColor'
-      opacity='0.85'
-    />
-    <circle cx='30' cy='30' r='2.2' fill='currentColor' />
-    <path
-      d='M30 22V26M30 34V38M22 30H26M34 30H38'
-      stroke='currentColor'
-      strokeWidth='1'
-      strokeLinecap='round'
-    />
+      strokeLinejoin='round'
+    >
+      {CORNER_ART[tier].map((art) => (
+        <path
+          key={art.d}
+          d={art.d}
+          opacity={art.opacity}
+          strokeWidth={art.width}
+          fill={art.fill ? 'currentColor' : undefined}
+          stroke={art.fill ? 'none' : undefined}
+        />
+      ))}
+    </g>
   </svg>
 )
 
@@ -225,19 +271,121 @@ type PremiumFrameProps = {
   reducedMotion: boolean
 }
 
-// The premium frame's moving parts. The border and glow come from CSS on the
-// card itself; this adds the foil sheen, Gold's flourishes and the particles.
+// The premium frame's moving parts, layered over the card: a slow aurora in
+// the path's colours, a border that draws itself once, a foil sweep, the
+// corner ornaments and a few drifting particles. The steady rotating border
+// and glow come from CSS on the card itself.
 export const PremiumFrame = ({ tier, reducedMotion }: PremiumFrameProps) => (
   <>
+    <span className='sp-aurora' aria-hidden='true' />
+    {reducedMotion ? null : (
+      <span className='sp-draw' aria-hidden='true'>
+        <span className='sp-draw-ring' />
+      </span>
+    )}
     {reducedMotion ? null : <span className='sp-sheen' aria-hidden='true' />}
-    {tier === 'gold' ? (
-      <>
-        <GoldCorner corner='tl' />
-        <GoldCorner corner='tr' />
-        <GoldCorner corner='bl' />
-        <GoldCorner corner='br' />
-      </>
-    ) : null}
+    {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
+      <Corner key={corner} tier={tier} corner={corner} />
+    ))}
     {reducedMotion ? null : <EdgeParticles tier={tier} />}
   </>
 )
+
+// Tilts the poster toward the pointer and moves the foil's highlight with it.
+// Only on devices with a hover pointer, and never for reduced motion; one
+// listener, throttled to animation frames, removed on unmount.
+const usePosterTilt = (
+  stageRef: RefObject<HTMLDivElement | null>,
+  enabled: boolean,
+) => {
+  useEffect(() => {
+    const stage = stageRef.current
+    const card = stage?.closest<HTMLElement>('.warp-details-card')
+    const target = stage?.querySelector<HTMLElement>('.sp-stage-card')
+    if (!enabled || !stage || !card || !target) return
+    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
+
+    let frame = 0
+    let nextX = 0
+    let nextY = 0
+    let inside = false
+    const apply = () => {
+      frame = 0
+      if (!inside) {
+        target.style.removeProperty('--sp-rx')
+        target.style.removeProperty('--sp-ry')
+        target.style.setProperty('--sp-mx', '50%')
+        target.style.setProperty('--sp-my', '50%')
+        target.dataset.active = 'false'
+        return
+      }
+      const rect = stage.getBoundingClientRect()
+      const nx = Math.max(
+        -1,
+        Math.min(1, ((nextX - rect.left) / rect.width) * 2 - 1),
+      )
+      const ny = Math.max(
+        -1,
+        Math.min(1, ((nextY - rect.top) / rect.height) * 2 - 1),
+      )
+      target.style.setProperty('--sp-ry', `${nx * 8}deg`)
+      target.style.setProperty('--sp-rx', `${-ny * 8}deg`)
+      target.style.setProperty('--sp-mx', `${50 + nx * 50}%`)
+      target.style.setProperty('--sp-my', `${50 + ny * 50}%`)
+      target.dataset.active = 'true'
+    }
+    const schedule = () => {
+      if (!frame) frame = window.requestAnimationFrame(apply)
+    }
+    const onMove = (event: PointerEvent) => {
+      nextX = event.clientX
+      nextY = event.clientY
+      inside = true
+      schedule()
+    }
+    const onLeave = () => {
+      inside = false
+      schedule()
+    }
+    card.addEventListener('pointermove', onMove)
+    card.addEventListener('pointerleave', onLeave)
+    return () => {
+      card.removeEventListener('pointermove', onMove)
+      card.removeEventListener('pointerleave', onLeave)
+      if (frame) window.cancelAnimationFrame(frame)
+    }
+  }, [enabled, stageRef])
+}
+
+// The poster as a collectible: it flips over from a card back, then carries a
+// holographic foil and a glare that follow the pointer, with the path's badge.
+export const PosterStage = ({
+  tier,
+  reducedMotion,
+  children,
+}: {
+  tier: Tier
+  reducedMotion: boolean
+  children: ReactNode
+}) => {
+  const stageRef = useRef<HTMLDivElement | null>(null)
+  usePosterTilt(stageRef, !reducedMotion)
+  return (
+    <div className='sp-stage' ref={stageRef} data-tier={tier}>
+      <div className='sp-stage-card'>
+        {children}
+        <span className='sp-foil' aria-hidden='true' />
+        <span className='sp-glare' aria-hidden='true' />
+        <span className='sp-badge' aria-hidden='true'>
+          <Gem tier={tier} found />
+          {TIER_LABELS[tier]}
+        </span>
+        {reducedMotion ? null : (
+          <span className='sp-back' aria-hidden='true'>
+            <Gem tier={tier} found />
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}

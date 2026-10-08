@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pickLandingMovie } from './landing'
+import { filmLinkId, matchesFilmLink, pickLandingMovie } from './landing'
 
 const movies = [
   { id: '0-1' },
@@ -31,5 +31,18 @@ describe('pickLandingMovie', () => {
     expect(pickLandingMovie([{ id: '1-1385790' }], () => 0)?.id).toBe(
       '1-1385790',
     )
+  })
+})
+
+describe('film links', () => {
+  it('uses the TMDB id, which survives a reordered catalogue', () => {
+    expect(filmLinkId('412-27205')).toBe('27205')
+    expect(filmLinkId('27205')).toBe('27205')
+  })
+
+  it('matches a link against the full id or the TMDB id', () => {
+    expect(matchesFilmLink({ id: '412-27205' }, '27205')).toBe(true)
+    expect(matchesFilmLink({ id: '412-27205' }, '412-27205')).toBe(true)
+    expect(matchesFilmLink({ id: '412-27205' }, '99')).toBe(false)
   })
 })

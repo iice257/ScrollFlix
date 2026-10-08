@@ -1756,7 +1756,19 @@ class InfiniteMovieEngine<T> {
     this.kick.v += velocity
   }
 
+  // Gets the sky ready ahead of a run without blocking a frame (see
+  // SkyPass.prewarm). Cancelling stops the pending steps; nothing else piles up.
+  prewarmSky() {
+    this.sky ??= new SkyPass(this.gl)
+    this.sky.prewarm()
+  }
+
+  cancelSkyPrewarm() {
+    this.sky?.cancelPrewarm()
+  }
+
   setSkyState(state: SkyState | null) {
+    if (!state && this.skyState) this.sky?.trim()
     if (state && !this.skyState) {
       this.qualityProbe = { frames: 0, sum: 0 }
       this.skyQuality = QUALITY_FULL
@@ -2900,6 +2912,8 @@ export const InfiniteMovieMenu = <T,>({
           engine?.setCameraPull(target, freq, zeta),
         kickCamera: (velocity) => engine?.kickCamera(velocity),
         setSkyState: (state) => engine?.setSkyState(state),
+        prewarm: () => engine?.prewarmSky(),
+        cancelPrewarm: () => engine?.cancelSkyPrewarm(),
         landOn: (itemId, onArrive) => {
           const item = findItem(itemId)
           if (!item) {

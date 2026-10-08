@@ -9,6 +9,7 @@ import type { Whoosh } from './shuffle-pro-audio'
 import {
   type BaseTier,
   EMPTY_STREAK,
+  HOLD_PREWARM_MS,
   LANDING_TAU_MS,
   type RunProfile,
   type StreakEvent,
@@ -18,6 +19,7 @@ import {
   angularSpeedAt,
   axisForDragDirection,
   cameraPullback,
+  isNearTrigger,
   precessedAxis,
   profileFor,
   readyForSnap,
@@ -50,6 +52,9 @@ export type ShuffleProPort = {
   setCameraPull(target: number, freq: number, zeta: number): void
   kickCamera(velocity: number): void
   setSkyState(state: SkyState | null): void
+  // Warm the sky up ahead of a run, away from the frame loop; cancellable.
+  prewarm(): void
+  cancelPrewarm(): void
   // Spin to the movie with the existing snap, then open its card.
   landOn(itemId: string, onArrive: () => void): void
   // Skip: ease to the movie within `ms`, then open its card.
@@ -76,12 +81,17 @@ export type ControllerDeps = {
   isReducedMotion: () => boolean
   getFound: () => FoundPaths
   recordRun: (tier: Tier) => void
-  createWhoosh: () => Whoosh | null
+  createWhoosh: (tier: Tier) => Whoosh | null
   // A random visible movie that is not the one the globe is already on.
   pickTarget: () => string | null
   // Closes overlays before a run takes over the screen.
   prepare: () => void
   vibrate: (pattern: number | number[]) => void
+  // The tier a hold or streak is heading for (or null to let go of it), so
+  // tier-specific assets can load in the background.
+  prewarmTier?: (tier: Tier | null) => void
+  // Sound cues: the peak is reached, the landing is done.
+  onCue?: (cue: 'peak' | 'land', tier: Tier) => void
 }
 
 export type ControllerSnapshot = {
@@ -141,6 +151,9 @@ type Press = {
   nx: number
   ny: number
   triggered: boolean
+  // Decided when the press starts, so the effect can be prepared early.
+  tier: Tier
+  prewarmed: boolean
 }
 
 const SKY_HOLD_LEVEL = 0.6
@@ -170,6 +183,8 @@ export class ShuffleProController {
   private readonly listeners = new Set<() => void>()
   private lastOmega = 0
   private statsEnabled = false
+  // Whether the sky was warmed up for a streak that is one action from a run.
+  private streakPrewarmed = false
 
   constructor(private readonly deps: ControllerDeps) {
     this.snapshot = this.buildSnapshot()
@@ -248,7 +263,26 @@ export class ShuffleProController {
       random: this.deps.random,
     })
     this.streak = result.state
+    this.syncStreakPrewarm(result.state, event.type)
     return result.trigger
+  }
+
+  // One action short of a run: warm the effect up. Anything that breaks the
+  // streak lets go of it again.
+  private syncStreakPrewarm(
+    state: StreakState,
+    eventType: StreakEvent['type'],
+  ) {
+    if (!this.port) return
+    if (isNearTrigger(state, this.deps.isImmersive())) {
+      if (!this.streakPrewarmed) {
+        this.streakPrewarmed = true
+        this.port.prewarm()
+      }
+    } else if (this.streakPrewarmed && eventType !== 'neutral') {
+      this.streakPrewarmed = false
+      this.port.cancelPrewarm()
+    }
   }
 
   getStreak() {
@@ -286,6 +320,11 @@ export class ShuffleProController {
       nx: info.nx,
       ny: info.ny,
       triggered: false,
+      tier: resolveTier(this.deps.isImmersive() ? 'jade' : 'frost', {
+        found: this.deps.getFound(),
+        random: this.deps.random,
+      }),
+      prewarmed: false,
     }
     this.press = press
     if (this.phase === 'idle') {
@@ -317,6 +356,7 @@ export class ShuffleProController {
     if (!press) return false
     this.press = null
     if (!press.triggered) {
+      this.cancelPressPrewarm(press)
       if (this.phase === 'armed') {
         this.phase = 'idle'
         this.emit()
@@ -326,6 +366,13 @@ export class ShuffleProController {
     }
     if (this.phase === 'windup' || this.phase === 'peak') this.release()
     return true
+  }
+
+  private cancelPressPrewarm(press: Press) {
+    if (!press.prewarmed) return
+    press.prewarmed = false
+    this.port?.cancelPrewarm()
+    this.deps.prewarmTier?.(null)
   }
 
   // True while a held press has started a run and still owns the globe.
@@ -387,6 +434,7 @@ export class ShuffleProController {
       this.teardown(false)
     }
     this.deps.prepare()
+    this.streakPrewarmed = false
 
     const now = this.deps.now()
     const reduced = this.deps.isReducedMotion()
@@ -409,7 +457,7 @@ export class ShuffleProController {
       peaked: false,
       targetId: options.targetId,
       reduced,
-      whoosh: reduced ? null : this.deps.createWhoosh(),
+      whoosh: reduced ? null : this.deps.createWhoosh(tier),
       sky,
       shocked: false,
       releasedAt: null,
@@ -558,6 +606,7 @@ export class ShuffleProController {
       this.presented = { movieId: run.targetId, tier: run.tier }
       this.phase = 'presented'
       this.deps.recordRun(run.tier)
+      this.deps.onCue?.('land', run.tier)
       // Everything that built up now settles behind the card.
       this.beginFade(run, SKY_HOLD_LEVEL, 900)
       run.sky.rim = 0.5
@@ -651,6 +700,11 @@ export class ShuffleProController {
       this.emit()
       return
     }
+    if (!press.prewarmed && now - press.startedAt >= HOLD_PREWARM_MS) {
+      press.prewarmed = true
+      this.port?.prewarm()
+      this.deps.prewarmTier?.(press.tier)
+    }
     if (
       shouldTriggerHold({
         elapsedMs: now - press.startedAt,
@@ -658,12 +712,7 @@ export class ShuffleProController {
         immersive: this.deps.isImmersive(),
       })
     ) {
-      const base: BaseTier = this.deps.isImmersive() ? 'jade' : 'frost'
-      const tier = resolveTier(base, {
-        found: this.deps.getFound(),
-        random: this.deps.random,
-      })
-      this.beginRun(tier, {
+      this.beginRun(press.tier, {
         automatic: false,
         targetId: null,
         dx: press.lastDx,
@@ -720,7 +769,7 @@ export class ShuffleProController {
       } else {
         sky.rim = 0.35 * reveal.color
       }
-      run.whoosh?.update(omega, run.profile.omegaMax)
+      run.whoosh?.update(omega, run.profile.omegaMax, reveal.sky)
       this.lastOmega = omega
       return
     }
@@ -781,6 +830,7 @@ export class ShuffleProController {
     run.sky.shockAge = 0
     run.sky.exposure = 0
     this.deps.vibrate([20, 40, 20])
+    this.deps.onCue?.('peak', run.tier)
     this.emit()
   }
 

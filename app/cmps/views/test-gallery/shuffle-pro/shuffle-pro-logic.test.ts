@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   EMPTY_STREAK,
+  HOLD_PREWARM_MS,
   JADE_PROFILE,
   STANDARD_PROFILE,
   type StreakEvent,
@@ -9,6 +10,7 @@ import {
   axisForDragDirection,
   cameraPullback,
   isBigSpin,
+  isNearTrigger,
   landingOmega,
   pickLandingTarget,
   precessedAxis,
@@ -385,5 +387,24 @@ describe('landing', () => {
     }
     expect(pickLandingTarget(['only'], 'only', () => 0)).toBe('only')
     expect(pickLandingTarget([], null, () => 0)).toBeNull()
+  })
+})
+
+describe('isNearTrigger', () => {
+  it('is true one action before a normal run could start', () => {
+    expect(isNearTrigger({ streak: 8, bigSpinRun: 0 }, false)).toBe(false)
+    expect(isNearTrigger({ streak: 9, bigSpinRun: 0 }, false)).toBe(true)
+    expect(isNearTrigger({ streak: 3, bigSpinRun: 4 }, false)).toBe(true)
+    expect(isNearTrigger({ streak: 3, bigSpinRun: 3 }, false)).toBe(false)
+  })
+
+  it('uses the immersive thresholds in immersive mode', () => {
+    expect(isNearTrigger({ streak: 5, bigSpinRun: 0 }, true)).toBe(true)
+    expect(isNearTrigger({ streak: 4, bigSpinRun: 0 }, true)).toBe(false)
+    expect(isNearTrigger({ streak: 1, bigSpinRun: 2 }, true)).toBe(true)
+  })
+
+  it('warms up well before a still hold could trigger', () => {
+    expect(HOLD_PREWARM_MS).toBeLessThan(3000)
   })
 })

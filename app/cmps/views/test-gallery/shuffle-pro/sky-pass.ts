@@ -600,39 +600,59 @@ void main() {
 
 // ---------------------------------------------------------------- program
 
-const compile = (gl: WebGL2RenderingContext, type: number, source: string) => {
-  const shader = gl.createShader(type)
-  if (!shader) return null
-  gl.shaderSource(shader, source)
-  gl.compileShader(shader)
-  if (gl.getShaderParameter(shader, gl.COMPILE_STATUS)) return shader
-  console.error(gl.getShaderInfoLog(shader))
-  gl.deleteShader(shader)
-  return null
+type KhrParallelShaderCompile = { COMPLETION_STATUS_KHR: number }
+
+type PendingProgram = {
+  program: WebGLProgram | null
+  vs: WebGLShader | null
+  fs: WebGLShader | null
 }
 
-const link = (
+type PendingLink = {
+  sky: PendingProgram
+  composite: PendingProgram
+  particles: PendingProgram
+}
+
+// Issues the compile and link without asking how it went, so the driver can
+// work on it off the main thread.
+const beginLink = (
   gl: WebGL2RenderingContext,
   vertexSource: string,
   fragmentSource: string,
   bindings: Record<string, number> = {},
-) => {
+): PendingProgram => {
   const program = gl.createProgram()
-  const vs = compile(gl, gl.VERTEX_SHADER, vertexSource)
-  const fs = compile(gl, gl.FRAGMENT_SHADER, fragmentSource)
-  if (!program || !vs || !fs) return null
+  const vs = gl.createShader(gl.VERTEX_SHADER)
+  const fs = gl.createShader(gl.FRAGMENT_SHADER)
+  if (!program || !vs || !fs) return { program, vs, fs }
+  gl.shaderSource(vs, vertexSource)
+  gl.shaderSource(fs, fragmentSource)
+  gl.compileShader(vs)
+  gl.compileShader(fs)
   gl.attachShader(program, vs)
   gl.attachShader(program, fs)
   for (const [name, location] of Object.entries(bindings)) {
     gl.bindAttribLocation(program, location, name)
   }
   gl.linkProgram(program)
-  gl.deleteShader(vs)
-  gl.deleteShader(fs)
-  if (gl.getProgramParameter(program, gl.LINK_STATUS)) return program
-  console.error(gl.getProgramInfoLog(program))
-  gl.deleteProgram(program)
-  return null
+  return { program, vs, fs }
+}
+
+// Reads the result of beginLink and frees the shaders.
+const finishLink = (
+  gl: WebGL2RenderingContext,
+  { program, vs, fs }: PendingProgram,
+) => {
+  let ok = false
+  if (program && vs && fs) {
+    ok = Boolean(gl.getProgramParameter(program, gl.LINK_STATUS))
+    if (!ok) console.error(gl.getProgramInfoLog(program))
+  }
+  if (vs) gl.deleteShader(vs)
+  if (fs) gl.deleteShader(fs)
+  if (program && !ok) gl.deleteProgram(program)
+  return ok ? program : null
 }
 
 type Uniforms = Record<string, WebGLUniformLocation | null>
@@ -674,20 +694,55 @@ export class SkyPass {
   private bufferWidth = 0
   private bufferHeight = 0
   private failed = false
+  private warmed = false
+  private prewarmTimer = 0
+  private linking: PendingLink | null = null
+  private parallelCompile: KhrParallelShaderCompile | null = null
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl
   }
 
+  private beginLinking() {
+    if (this.linking || this.skyProgram || this.failed) return
+    const gl = this.gl
+    this.linking = {
+      sky: beginLink(gl, FULLSCREEN_VERTEX, SKY_FRAGMENT),
+      composite: beginLink(gl, FULLSCREEN_VERTEX, COMPOSITE_FRAGMENT),
+      particles: beginLink(gl, PARTICLE_VERTEX, PARTICLE_FRAGMENT, {
+        aSeed: 0,
+      }),
+    }
+  }
+
+  // Whether the driver says every pending program is done compiling. Without
+  // the parallel-compile extension there is no way to ask, so the answer is
+  // yes and the status read is the only wait.
+  private linkingDone() {
+    const linking = this.linking
+    const ext = this.parallelCompile
+    if (!linking || !ext) return true
+    return [linking.sky, linking.composite, linking.particles].every(
+      ({ program }) =>
+        !program ||
+        this.gl.getProgramParameter(program, ext.COMPLETION_STATUS_KHR),
+    )
+  }
+
   private ensurePrograms() {
     if (this.failed || this.skyProgram) return !this.failed
+    this.beginLinking()
+    const linking = this.linking
+    if (!linking) return false
     const gl = this.gl
-    const sky = link(gl, FULLSCREEN_VERTEX, SKY_FRAGMENT)
-    const composite = link(gl, FULLSCREEN_VERTEX, COMPOSITE_FRAGMENT)
-    const particles = link(gl, PARTICLE_VERTEX, PARTICLE_FRAGMENT, {
-      aSeed: 0,
-    })
+    const sky = finishLink(gl, linking.sky)
+    const composite = finishLink(gl, linking.composite)
+    const particles = finishLink(gl, linking.particles)
+    this.linking = null
     if (!sky || !composite || !particles) {
+      for (const program of [sky, composite, particles]) {
+        if (program) gl.deleteProgram(program)
+      }
       this.failed = true
       return false
     }
@@ -761,6 +816,105 @@ export class SkyPass {
     gl.bindVertexArray(null)
     gl.bindBuffer(gl.ARRAY_BUFFER, null)
     return true
+  }
+
+  // Gets the programs ready before a run needs them, in small steps that never
+  // block a frame: the compile is issued up front, its status is only read
+  // once the driver reports it done, and one tiny draw primes the pipeline.
+  // Safe to call repeatedly; cancelPrewarm() stops it at any point.
+  prewarm() {
+    if (this.failed || this.warmed || this.prewarmTimer) return
+    if (this.gl.isContextLost()) return
+    this.parallelCompile ??= this.gl.getExtension('KHR_parallel_shader_compile')
+    this.beginLinking()
+    const step = () => {
+      this.prewarmTimer = 0
+      if (this.gl.isContextLost() || this.failed) return
+      if (this.linking) {
+        if (!this.linkingDone()) {
+          this.prewarmTimer = window.setTimeout(step, 24)
+          return
+        }
+        if (!this.ensurePrograms()) return
+        // Prime the pipeline on its own tick, away from the status reads.
+        this.prewarmTimer = window.setTimeout(step, 16)
+        return
+      }
+      this.primePipeline()
+      this.warmed = true
+    }
+    this.prewarmTimer = window.setTimeout(step, 24)
+  }
+
+  cancelPrewarm() {
+    if (!this.prewarmTimer) return
+    window.clearTimeout(this.prewarmTimer)
+    this.prewarmTimer = 0
+  }
+
+  // One 4x4 draw per program, so the first real frame doesn't pay for the
+  // driver finishing its lazy compile. Every piece of state it touches is set
+  // again by the engine before each frame.
+  private primePipeline() {
+    const gl = this.gl
+    if (!this.skyProgram || !this.particleProgram) return
+    const previousViewport = gl.getParameter(gl.VIEWPORT) as Int32Array
+    const texture = gl.createTexture()
+    const framebuffer = gl.createFramebuffer()
+    gl.bindTexture(gl.TEXTURE_2D, texture)
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA8,
+      4,
+      4,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      null,
+    )
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      texture,
+      0,
+    )
+    gl.viewport(0, 0, 4, 4)
+    gl.disable(gl.DEPTH_TEST)
+    gl.disable(gl.CULL_FACE)
+    gl.disable(gl.BLEND)
+    gl.bindVertexArray(this.emptyVao)
+    gl.useProgram(this.skyProgram)
+    gl.uniform1i(this.skyUniforms.uOctaves, 1)
+    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    gl.useProgram(this.particleProgram)
+    gl.bindVertexArray(this.particleVao)
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, 1)
+    gl.bindVertexArray(null)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.viewport(
+      previousViewport[0],
+      previousViewport[1],
+      previousViewport[2],
+      previousViewport[3],
+    )
+    gl.deleteFramebuffer(framebuffer)
+    gl.deleteTexture(texture)
+  }
+
+  // Gives the big half-resolution buffer back once no run needs it. The
+  // programs stay: three small objects that make the next run instant.
+  trim() {
+    const gl = this.gl
+    if (gl.isContextLost()) return
+    if (this.framebuffer) gl.deleteFramebuffer(this.framebuffer)
+    if (this.texture) gl.deleteTexture(this.texture)
+    this.framebuffer = null
+    this.texture = null
+    this.bufferWidth = 0
+    this.bufferHeight = 0
   }
 
   private ensureBuffer(width: number, height: number) {
@@ -934,6 +1088,7 @@ export class SkyPass {
   }
 
   dispose() {
+    this.cancelPrewarm()
     const gl = this.gl
     if (gl.isContextLost()) return
     if (this.skyProgram) gl.deleteProgram(this.skyProgram)

@@ -143,10 +143,26 @@
 
 /* ------------------------------------------------------------ premium frame */
 
+/* A premium pick turns the details card into a collectible: a border that
+   draws itself, an aurora in the path's colours, a poster that flips over and
+   catches the light, and a rarity plate in foil type. */
+
 @property --sp-angle {
   syntax: "<angle>";
   inherits: false;
   initial-value: 0deg;
+}
+
+@property --sp-draw {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@property --sp-idle {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 0%;
 }
 
 .warp-details-card[data-premium] {
@@ -155,12 +171,15 @@
   --sp-c1: #bfe9ff;
   --sp-c2: #7cc8ff;
   --sp-glow: 124 200 255;
-  --sp-eyebrow: #bfe9ff;
+  --sp-glow2: 176 150 255;
+  --sp-kicker: #bfe9ff;
+  --sp-name-a: #ffffff;
+  --sp-name-b: #8fd2ff;
   border-color: transparent;
   box-shadow:
-    0 0 0 1px rgb(var(--sp-glow) / 0.2),
-    0 0 46px rgb(var(--sp-glow) / 0.28),
-    0 0 130px rgb(var(--sp-glow) / 0.18),
+    0 0 0 1px rgb(var(--sp-glow) / 0.22),
+    0 0 46px rgb(var(--sp-glow) / 0.3),
+    0 0 140px rgb(var(--sp-glow) / 0.2),
     0 40px 140px rgb(0 0 0 / 0.72);
 }
 
@@ -169,7 +188,10 @@
   --sp-c1: #c9a7ff;
   --sp-c2: #9b6bff;
   --sp-glow: 155 107 255;
-  --sp-eyebrow: #c9a7ff;
+  --sp-glow2: 255 140 200;
+  --sp-kicker: #d9c2ff;
+  --sp-name-a: #ffffff;
+  --sp-name-b: #b78cff;
 }
 
 .warp-details-card[data-premium="jade"] {
@@ -177,7 +199,10 @@
   --sp-c1: #5fe3c5;
   --sp-c2: #1fa88c;
   --sp-glow: 31 168 140;
-  --sp-eyebrow: #5fe3c5;
+  --sp-glow2: 120 232 170;
+  --sp-kicker: #8df0d6;
+  --sp-name-a: #e6fff9;
+  --sp-name-b: #35c9a8;
 }
 
 .warp-details-card[data-premium="gold"] {
@@ -185,10 +210,14 @@
   --sp-c1: #f7d58b;
   --sp-c2: #e0a93b;
   --sp-glow: 224 169 59;
-  --sp-eyebrow: #f7d58b;
+  --sp-glow2: 255 120 80;
+  --sp-kicker: #f7d58b;
+  --sp-name-a: #fff6dc;
+  --sp-name-b: #e7b04a;
 }
 
-/* A 2px conic border that makes one revolution every 6s. */
+/* The steady border: 2px, one revolution every 6s, appearing once the
+   drawn-on border has finished its lap. */
 .warp-details-card[data-premium]::before {
   content: "";
   position: absolute;
@@ -213,10 +242,11 @@
     linear-gradient(#000 0 0) content-box exclude,
     linear-gradient(#000 0 0);
   pointer-events: none;
-  animation: sp-spin 6s linear infinite;
+  animation:
+    sp-fade-in 500ms 1000ms both,
+    sp-spin 6s linear infinite;
 }
 
-/* Frost: an iridescent, frosted-glass border with a cold sheen on the glass. */
 .warp-details-card[data-premium="frost"]::before {
   background: conic-gradient(
     from var(--sp-angle),
@@ -230,26 +260,6 @@
   );
 }
 
-.warp-details-card[data-premium="frost"] {
-  background-image: linear-gradient(
-    160deg,
-    rgb(190 233 255 / 0.1),
-    transparent 38%,
-    rgb(124 200 255 / 0.06)
-  );
-}
-
-/* Jade: a smouldering teal edge that breathes (on the sheen layer, so the
-   card keeps its own open animation). */
-.warp-details-card[data-premium="jade"] .sp-sheen::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  animation: sp-smoulder 3.2s ease-in-out infinite;
-}
-
-/* Gold: foil with ornate linings. */
 .warp-details-card[data-premium="gold"]::before {
   padding: 3px;
   background: conic-gradient(
@@ -263,47 +273,83 @@
   );
 }
 
+/* Gold gets a second, thin inner border, like the edge of a gilded card. */
 .warp-details-card[data-premium="gold"]::after {
   content: "";
   position: absolute;
-  inset: 8px;
+  inset: 9px;
   z-index: 6;
-  border: 1px solid rgb(242 196 109 / 0.5);
-  border-radius: calc(var(--warp-card-radius, 24px) - 6px);
+  border: 1px solid rgb(242 196 109 / 0.45);
+  border-radius: calc(30px - 7px);
   pointer-events: none;
+  animation: sp-fade-in 600ms 1100ms both;
 }
 
-.sp-gold-corner {
+/* Frost: cold glass over the whole card. */
+.warp-details-card[data-premium="frost"] {
+  background-image: linear-gradient(
+    160deg,
+    rgb(190 233 255 / 0.1),
+    transparent 38%,
+    rgb(124 200 255 / 0.06)
+  );
+}
+
+/* The border drawing itself around the card in the first second. */
+.sp-draw {
   position: absolute;
+  inset: 0;
   z-index: 7;
-  width: 52px;
-  height: 52px;
-  color: #f2c46d;
+  border-radius: inherit;
   pointer-events: none;
-  filter: drop-shadow(0 0 6px rgb(224 169 59 / 0.5));
+  -webkit-mask-image: conic-gradient(
+    from -90deg,
+    #000 var(--sp-draw),
+    transparent calc(var(--sp-draw) + 16deg)
+  );
+  mask-image: conic-gradient(
+    from -90deg,
+    #000 var(--sp-draw),
+    transparent calc(var(--sp-draw) + 16deg)
+  );
+  animation:
+    sp-draw 1000ms 80ms cubic-bezier(0.5, 0, 0.2, 1) both,
+    sp-fade-out 500ms 1100ms both;
 }
 
-.sp-gold-corner[data-corner="tl"] {
-  top: 4px;
-  left: 4px;
+.sp-draw-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 3px;
+  background: linear-gradient(135deg, var(--sp-c0), var(--sp-c1), var(--sp-c2), var(--sp-c0));
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  filter: drop-shadow(0 0 10px rgb(var(--sp-glow) / 0.9));
 }
 
-.sp-gold-corner[data-corner="tr"] {
-  top: 4px;
-  right: 4px;
-  transform: scaleX(-1);
+/* A slow aurora behind everything, in the path's two hues. */
+.sp-aurora {
+  position: absolute;
+  inset: -30%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(38% 34% at 24% 32%, rgb(var(--sp-glow) / 0.36), transparent 70%),
+    radial-gradient(32% 30% at 78% 70%, rgb(var(--sp-glow2) / 0.28), transparent 70%),
+    radial-gradient(28% 24% at 62% 22%, rgb(var(--sp-glow) / 0.16), transparent 70%);
+  animation:
+    sp-fade-in 1400ms 200ms both,
+    sp-aurora 20s ease-in-out infinite alternate;
 }
 
-.sp-gold-corner[data-corner="bl"] {
-  bottom: 4px;
-  left: 4px;
-  transform: scaleY(-1);
-}
-
-.sp-gold-corner[data-corner="br"] {
-  right: 4px;
-  bottom: 4px;
-  transform: scale(-1, -1);
+.warp-details-card[data-premium="jade"] .sp-aurora {
+  animation-duration: 1400ms, 14s;
 }
 
 /* One foil sweep across the whole card on open (twice for Gold). */
@@ -324,18 +370,16 @@
   background: linear-gradient(
     100deg,
     transparent,
-    rgb(255 255 255 / 0.22) 45%,
-    rgb(255 255 255 / 0.06) 55%,
+    rgb(255 255 255 / 0.2) 45%,
+    rgb(255 255 255 / 0.05) 55%,
     transparent
   );
   transform: skewX(-18deg) translateX(0);
-  animation: sp-sheen 900ms 260ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: sp-sheen 1000ms 900ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
 .warp-details-card[data-premium="gold"] .sp-sheen::before {
   animation-iteration-count: 2;
-  animation-duration: 900ms;
-  animation-delay: 260ms;
 }
 
 .sp-edge-particles {
@@ -354,25 +398,328 @@
   height: 100%;
 }
 
-/* The eyebrow sits in flow at the top of the copy column. */
-.sp-eyebrow {
-  margin: 0;
-  color: var(--sp-eyebrow, #bfe9ff);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+/* Corner ornaments, one design per path, mirrored into all four corners. */
+.sp-corner {
+  position: absolute;
+  z-index: 7;
+  width: 54px;
+  height: 54px;
+  color: var(--sp-c1);
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px rgb(var(--sp-glow) / 0.55));
+  animation: sp-fade-in 700ms 900ms both;
+}
+
+.sp-corner[data-corner="tl"] {
+  top: 5px;
+  left: 5px;
+}
+
+.sp-corner[data-corner="tr"] {
+  top: 5px;
+  right: 5px;
+  transform: scaleX(-1);
+}
+
+.sp-corner[data-corner="bl"] {
+  bottom: 5px;
+  left: 5px;
+  transform: scaleY(-1);
+}
+
+.sp-corner[data-corner="br"] {
+  right: 5px;
+  bottom: 5px;
+  transform: scale(-1, -1);
+}
+
+/* ------------------------------------------------------------ rarity plate */
+
+.sp-plate {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-right: 4px;
+}
+
+.sp-plate-gem {
+  display: block;
+  width: 46px;
+  height: 46px;
+  flex: none;
+  filter: drop-shadow(0 0 12px rgb(var(--sp-glow) / 0.75));
+  animation: sp-float 4.2s ease-in-out infinite;
+}
+
+.sp-plate-gem .sp-gem {
+  width: 100%;
+  height: 100%;
+}
+
+.sp-plate-text {
+  display: grid;
+  gap: 5px;
+}
+
+.sp-plate-kicker {
+  color: var(--sp-kicker);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.22em;
   line-height: 1;
   text-transform: uppercase;
 }
 
-.sp-eyebrow > span {
-  display: inline-block;
-  margin-right: 1px;
+/* The path's name in foil type, with a slow highlight crossing it. */
+.sp-plate-name {
+  display: block;
+  background: linear-gradient(
+    100deg,
+    var(--sp-name-b) 0%,
+    var(--sp-name-a) 40%,
+    var(--sp-name-b) 62%,
+    var(--sp-name-a) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-size: 30px;
+  font-weight: 950;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-transform: uppercase;
+  animation: sp-foil-text 5s linear infinite;
+}
+
+.sp-plate-pips {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+}
+
+.sp-pip {
+  width: 9px;
+  height: 9px;
+  border: 1px solid rgb(var(--sp-glow) / 0.5);
+  rotate: 45deg;
+}
+
+.sp-pip.is-lit {
+  border-color: transparent;
+  background: var(--sp-c1);
+  box-shadow: 0 0 8px rgb(var(--sp-glow) / 0.8);
+}
+
+.sp-pip.is-current {
+  background: var(--sp-c0);
+  animation: sp-pip-pulse 2.2s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------- the poster stage */
+
+.sp-stage {
+  perspective: 900px;
+}
+
+.sp-stage-card {
+  position: relative;
+  border-radius: 18px;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--sp-rx, 0deg)) rotateY(var(--sp-ry, 0deg));
+  transition: transform 200ms ease-out;
+  box-shadow:
+    0 0 0 1px rgb(var(--sp-glow) / 0.35),
+    0 0 36px rgb(var(--sp-glow) / 0.28),
+    0 26px 70px rgb(0 0 0 / 0.6);
+  animation: sp-flip 1100ms 140ms cubic-bezier(0.2, 0.9, 0.25, 1) backwards;
+}
+
+.sp-stage-card .warp-details-poster {
+  box-shadow: none;
+}
+
+.sp-stage-card[data-active="true"] {
+  transition-duration: 90ms;
+}
+
+/* Holographic foil: a banded gradient that slides with the pointer (and
+   drifts by itself when there is none), blended into the artwork. */
+.sp-foil {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  mix-blend-mode: color-dodge;
+  opacity: 0.34;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      115deg,
+      transparent 20%,
+      rgb(var(--sp-glow) / 0.6) 36%,
+      rgb(255 255 255 / 0.55) 46%,
+      rgb(var(--sp-glow2) / 0.6) 56%,
+      transparent 72%
+    )
+    0 0 / 260% 260%;
+  background-position: calc(var(--sp-mx, 50%) + var(--sp-idle)) var(--sp-my, 50%);
+  transition: opacity 200ms ease;
+  animation: sp-foil-idle 6s ease-in-out infinite alternate;
+}
+
+.sp-stage-card[data-active="true"] .sp-foil {
+  opacity: 0.62;
+}
+
+.sp-glare {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  mix-blend-mode: overlay;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at var(--sp-mx, 50%) var(--sp-my, 50%),
+    rgb(255 255 255 / 0.5),
+    transparent 46%
+  );
+  transition: opacity 200ms ease;
+}
+
+.sp-stage-card[data-active="true"] .sp-glare {
+  opacity: 0.85;
+}
+
+.sp-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgb(var(--sp-glow) / 0.5);
+  border-radius: 999px;
+  background: rgb(8 8 8 / 0.62);
+  padding: 4px 9px 4px 5px;
+  color: var(--sp-c0);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-transform: uppercase;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: sp-fade-in 500ms 1000ms both;
+}
+
+.sp-badge .sp-gem {
+  width: 15px;
+  height: 15px;
+}
+
+/* The back of the card, showing for the first half of the flip. */
+.sp-back {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 42%, rgb(var(--sp-glow) / 0.5), transparent 62%),
+    repeating-linear-gradient(45deg, rgb(255 255 255 / 0.05) 0 2px, transparent 2px 9px),
+    linear-gradient(160deg, #101418, #05070a);
+  animation: sp-back 1100ms 140ms ease-in both;
+}
+
+.sp-back .sp-gem {
+  width: 46%;
+  height: auto;
+  filter: drop-shadow(0 0 18px rgb(var(--sp-glow) / 0.9));
+}
+
+/* ----------------------------------------------------------- choreography */
+
+/* The copy settles in after the flip: plate first, then each line. */
+.warp-details-card[data-premium] .warp-details-copy-scroll > * {
+  animation: sp-rise 640ms calc(420ms + var(--sp-i, 0) * 70ms) cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.warp-details-card[data-premium] .warp-details-copy-scroll > :nth-child(2) {
+  --sp-i: 1;
+}
+
+.warp-details-card[data-premium] .warp-details-copy-scroll > :nth-child(3) {
+  --sp-i: 2;
+}
+
+.warp-details-card[data-premium] .warp-details-copy-scroll > :nth-child(4) {
+  --sp-i: 3;
+}
+
+.warp-details-card[data-premium] .warp-details-copy-scroll > :nth-child(5) {
+  --sp-i: 4;
+}
+
+.warp-details-card[data-premium] .warp-details-copy-scroll > :nth-child(6) {
+  --sp-i: 5;
+}
+
+.warp-details-card[data-premium] .warp-details-copy-scroll > :nth-child(7) {
+  --sp-i: 6;
+}
+
+.warp-details-card[data-premium] .warp-details-copy-scroll > :nth-child(8) {
+  --sp-i: 7;
+}
+
+/* The title carries the path's light. */
+.warp-details-card[data-premium] h2 {
+  text-shadow: 0 0 44px rgb(var(--sp-glow) / 0.4);
+}
+
+.warp-details-card[data-premium="gold"] h2 {
+  background: linear-gradient(100deg, #fff6dc, #f7d58b 45%, #e0a93b 75%, #fff3d1);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+}
+
+/* The glass of the premium card: a touch brighter than the standard card. */
+.warp-details-card[data-premium] .warp-details-ambient {
+  opacity: 0.5;
 }
 
 @keyframes sp-spin {
   to {
     --sp-angle: 360deg;
+  }
+}
+
+@keyframes sp-draw {
+  from {
+    --sp-draw: 0deg;
+  }
+  to {
+    --sp-draw: 376deg;
+  }
+}
+
+@keyframes sp-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sp-fade-out {
+  to {
+    opacity: 0;
   }
 }
 
@@ -385,42 +732,169 @@
   }
 }
 
-@keyframes sp-smoulder {
-  0%,
-  100% {
-    box-shadow:
-      inset 0 0 28px rgb(31 168 140 / 0.22),
-      inset 0 0 90px rgb(14 59 53 / 0.45);
+@keyframes sp-aurora {
+  from {
+    transform: translate3d(-3%, -2%, 0) rotate(0deg) scale(1);
   }
-  50% {
-    box-shadow:
-      inset 0 0 46px rgb(95 227 197 / 0.34),
-      inset 0 0 120px rgb(31 168 140 / 0.28);
+  to {
+    transform: translate3d(4%, 3%, 0) rotate(14deg) scale(1.08);
   }
 }
 
-/* Light theme: the card keeps its dark frame glow but the eyebrow needs a
-   deeper tone to stay readable on the warm surface. */
+@keyframes sp-flip {
+  from {
+    transform: rotateY(-100deg) scale(0.9);
+  }
+  55% {
+    transform: rotateY(10deg) scale(1.02);
+  }
+  78% {
+    transform: rotateY(-3deg) scale(1);
+  }
+  to {
+    transform: rotateY(0) scale(1);
+  }
+}
+
+@keyframes sp-back {
+  0%,
+  42% {
+    opacity: 1;
+  }
+  58%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes sp-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+@keyframes sp-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes sp-foil-text {
+  to {
+    background-position: -220% 0;
+  }
+}
+
+@keyframes sp-foil-idle {
+  from {
+    --sp-idle: -12%;
+  }
+  to {
+    --sp-idle: 12%;
+  }
+}
+
+@keyframes sp-pip-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgb(var(--sp-glow) / 0.7);
+  }
+  50% {
+    box-shadow: 0 0 14px rgb(var(--sp-glow) / 1);
+  }
+}
+
+/* Light theme: the card keeps its dark frame glow, but type and pips need
+   deeper tones to stay readable on the warm surface. */
 .warp-shell[data-theme="light"] .warp-details-card[data-premium] {
-  --sp-eyebrow: #1b6aa8;
+  --sp-kicker: #1b6aa8;
+  --sp-name-a: #3b8fd1;
+  --sp-name-b: #124c7c;
 }
 
 .warp-shell[data-theme="light"] .warp-details-card[data-premium="amethyst"] {
-  --sp-eyebrow: #6a3fc7;
+  --sp-kicker: #6a3fc7;
+  --sp-name-a: #8f62f0;
+  --sp-name-b: #4d2a9c;
 }
 
 .warp-shell[data-theme="light"] .warp-details-card[data-premium="jade"] {
-  --sp-eyebrow: #0f7a65;
+  --sp-kicker: #0f7a65;
+  --sp-name-a: #1fa88c;
+  --sp-name-b: #0a5646;
 }
 
 .warp-shell[data-theme="light"] .warp-details-card[data-premium="gold"] {
-  --sp-eyebrow: #9a6a10;
+  --sp-kicker: #9a6a10;
+  --sp-name-a: #d9a128;
+  --sp-name-b: #7a510a;
+}
+
+.warp-shell[data-theme="light"] .warp-details-card[data-premium="gold"] h2 {
+  background: linear-gradient(100deg, #7a510a, #c68c1e 45%, #e0a93b 75%, #9a6a10);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.warp-shell[data-theme="light"] .warp-details-card[data-premium] .sp-corner {
+  color: var(--sp-name-b);
+}
+
+@media (max-width: 900px) {
+  /* On the sheet layout the stage takes the poster's place: centred and as
+     wide as the poster, not the card. */
+  .sp-stage {
+    justify-self: center;
+    margin-top: 50px;
+  }
+
+  .sp-stage .warp-details-poster {
+    margin-top: 0;
+  }
+
+  .sp-stage-card {
+    width: fit-content;
+  }
+
+  .sp-plate-name {
+    font-size: 24px;
+  }
+
+  .sp-plate {
+    justify-content: center;
+  }
+
+  .sp-plate-pips {
+    display: none;
+  }
+
+  .sp-corner {
+    width: 40px;
+    height: 40px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .warp-details-card[data-premium]::before {
     animation: none;
     --sp-angle: 120deg;
+  }
+
+  .warp-details-card[data-premium] .warp-details-copy-scroll > *,
+  .sp-stage-card,
+  .sp-foil,
+  .sp-aurora,
+  .sp-corner,
+  .sp-badge,
+  .sp-plate-gem,
+  .sp-plate-name,
+  .sp-pip.is-current {
+    animation: none;
   }
 }
 
