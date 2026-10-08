@@ -3653,10 +3653,7 @@ const WarpChrome = ({
         onClick={onResetGallery}
       >
         <span className='sr-only'>Reset gallery</span>
-        <svg viewBox='0 0 64 78' aria-hidden='true'>
-          <path d='M33.5 4.5c8.2 1.4 17.8 14.4 21.3 28.1 3.7 14.1-.9 30.2-9.8 35.7-2.9 1.8-5.3-3.9-8.5-2.5-4.4 2-7 7.1-10.8 5.9-3.5-1.1-3.2-7.2-6.3-8.7-4.1-2-8.9 2.7-10.4-.6C4.7 53.8 5.7 35.6 11.5 23 16.6 11.8 25.3 3.1 33.5 4.5Z' />
-          <path d='M24.2 31.7c.5-4.1 3.3-7.2 7-7.7 5.2-.7 10.3 4.5 11.2 11.4' />
-        </svg>
+        <span className='warp-mark-img' aria-hidden='true' />
         <span className='warp-brand-name'>ScrollFlix</span>
       </button>
       <p className='warp-manifesto'>

@@ -11,7 +11,7 @@ const moduleLoadErrorPatterns = [
   'Failed to fetch dynamically imported module',
   'error loading dynamically imported module',
 ]
-const MODULE_LOAD_RELOAD_KEY = 'what-to-watch:module-load-reloaded'
+const MODULE_LOAD_RELOAD_KEY = 'scrollflix:module-load-reloaded'
 
 export class ErrorBoundary extends React.Component<
   React.PropsWithChildren,

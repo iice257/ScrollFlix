@@ -113,7 +113,7 @@ const refreshPosterPath = async (movieId) => {
     const response = await fetch(`${TMDB_API_BASE_URL}/movie/${movieId}`, {
       headers: {
         Authorization: `Bearer ${tmdbApiReadToken}`,
-        'User-Agent': 'What-to-Watch poster asset generator',
+        'User-Agent': 'ScrollFlix poster asset generator',
       },
       signal: controller.signal,
     })
@@ -176,7 +176,7 @@ const downloadPoster = async (record) => {
 
     try {
       const response = await fetch(sourceUrl, {
-        headers: { 'User-Agent': 'What-to-Watch poster asset generator' },
+        headers: { 'User-Agent': 'ScrollFlix poster asset generator' },
         signal: controller.signal,
       })
       if (
