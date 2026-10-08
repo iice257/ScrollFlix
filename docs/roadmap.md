@@ -1,5 +1,7 @@
 # What to Watch Roadmap
 
+> **Status (2026-10-07):** the Voroforce engine and the old app shell were removed in [#5](https://github.com/iice257/ScrollFlix/pull/5) (merge commit `16b4d9d`). This document predates that change and is kept as a historical planning note. References to Voroforce, `app/vf` and the old app describe code that is no longer on `main`; see the git history before that commit.
+
 This roadmap keeps the work split into two practical phases: first make the app fast, predictable, and easy to build; then add product features and polish.
 
 ## Phase 1: Foundation, Performance, And Lightweightness

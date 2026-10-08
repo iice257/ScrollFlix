@@ -1,5 +1,7 @@
 # What to Watch: Project Blueprint
 
+> **Status (2026-10-07):** the Voroforce engine and the old app shell were removed in [#5](https://github.com/iice257/ScrollFlix/pull/5) (merge commit `16b4d9d`). This document predates that change and is kept as a historical planning note. References to Voroforce, `app/vf` and the old app describe code that is no longer on `main`; see the git history before that commit.
+
 Second-pass audit date: 2026-07-10  
 Repository state reviewed: `main` at `a05fbf1` (`Add ScrollFlix WebGL fallback`)  
 Purpose: one build-ready source of truth for product scope, current implementation, architecture, risks, MVP acceptance criteria, and next actions.

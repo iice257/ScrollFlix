@@ -221,6 +221,6 @@ See `LICENSE` for the repository license.
 
 Additional licensing notes:
 
-- Some shader work is covered by Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported licensing.
+- Some shader work is covered by Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported licensing. The Voroforce engine that this mainly concerned was removed in [#5](https://github.com/iice257/ScrollFlix/pull/5); the exception stays in `LICENSE` for earlier revisions and any related WebGL components that remain.
 - Film data attribution follows the Open Data Commons Attribution License.
 

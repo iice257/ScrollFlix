@@ -1,5 +1,7 @@
 # Legacy Integration Roadmap
 
+> **Status (2026-10-07):** the Voroforce engine and the old app shell were removed in [#5](https://github.com/iice257/ScrollFlix/pull/5) (merge commit `16b4d9d`). This document predates that change and is kept as a historical planning note. References to Voroforce, `app/vf` and the old app describe code that is no longer on `main`; see the git history before that commit.
+
 This document controls the removal and reuse of the previous renderer and product shell. The current gallery, local poster pipeline, catalog JSON, and their uncommitted changes are protected baselines.
 
 ## Rules
