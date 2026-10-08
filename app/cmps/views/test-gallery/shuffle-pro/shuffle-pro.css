@@ -846,6 +846,21 @@
 }
 
 @media (max-width: 900px) {
+  /* On the sheet layout the stage takes the poster's place: centred and as
+     wide as the poster, not the card. */
+  .sp-stage {
+    justify-self: center;
+    margin-top: 50px;
+  }
+
+  .sp-stage .warp-details-poster {
+    margin-top: 0;
+  }
+
+  .sp-stage-card {
+    width: fit-content;
+  }
+
   .sp-plate-name {
     font-size: 24px;
   }

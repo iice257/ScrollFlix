@@ -111,3 +111,7 @@ Must not change or degrade: left-drag rotate, hold-to-drag (220 ms), click-to-op
   - the Shuffle Pro **peak chime**, tuned per path: glassy for Frost, bell for Amethyst, breathy for Jade, a rich chord for Gold;
   - the **landing thud**.
 - Nothing else about sound ships with the rebuild.
+
+## Status (2026-10-08)
+
+The Sequencing items shipped on branch `round-2`. The sound layer lives in `app/audio/`: a versioned settings store (`scrollflix.sound.v1`, with the old `wtw:sound:egg` carried over), an engine with one master bus and a cue limiter, procedural interface cues, and the Shuffle Pro whoosh, drone, per-path peak chime and landing thud. Interface sound is off by default (a "Sound off" link under the loading card turns it on); Easter egg sounds have their own switch and stay on. Settings are in the About drawer and the full About page. Music and the interview questions above are still open.

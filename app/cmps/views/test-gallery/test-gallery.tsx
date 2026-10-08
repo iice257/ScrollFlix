@@ -79,7 +79,7 @@ import {
   type SearchFacet,
   suggestFacets,
 } from './search-facets'
-import { shareLink } from './share/share-output'
+import { shareLink } from './share/share-link'
 import {
   ImmersiveCorner,
   ImmersiveEnterButton,

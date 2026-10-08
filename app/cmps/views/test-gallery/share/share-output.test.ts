@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  shareCaption,
-  shareFileName,
-  shareLink,
-  slugifyTitle,
-} from './share-output'
+import { shareLink } from './share-link'
+import { shareCaption, shareFileName, slugifyTitle } from './share-output'
 
 describe('share helpers', () => {
   it('slugifies titles for file names', () => {

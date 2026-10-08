@@ -2,7 +2,6 @@
 // short video clip recorded on the device, the native share sheet, a download
 // and a link. Nothing is uploaded anywhere.
 
-import { filmLinkId } from '../landing'
 import { TIER_LABELS, type Tier } from '../shuffle-pro/shuffle-pro-logic'
 import {
   type PreparedShare,
@@ -33,15 +32,6 @@ export const shareFileName = (
 
 export const shareCaption = (tier: Tier) =>
   `✦ Shuffle Pro${tier === 'jade' ? ' Max' : ''} · ${TIER_LABELS[tier]}`
-
-// A film's page: the app opens straight onto it.
-export const shareLink = (movieId: string, base = window.location.href) => {
-  const url = new URL(base)
-  url.search = ''
-  url.hash = ''
-  url.searchParams.set('film', filmLinkId(movieId))
-  return url.toString()
-}
 
 const loadPoster = (url: string) =>
   new Promise<HTMLImageElement | null>((resolve) => {
