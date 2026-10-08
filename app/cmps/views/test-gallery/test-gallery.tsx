@@ -4073,6 +4073,7 @@ type FilterPanelProps = FilterSectionsProps & {
 }
 
 const FilterPanel = ({
+  allActive,
   broadened,
   motionPhase,
   resultCount,
@@ -4083,7 +4084,10 @@ const FilterPanel = ({
     <div className='warp-filter-panel-heading'>
       <p>Add filters</p>
       <span>
-        {resultCount} {broadened ? 'broadened' : 'matches'}
+        {allActive
+          ? formatFilmCount(resultCount)
+          : resultCount.toLocaleString()}{' '}
+        {broadened ? 'broadened' : allActive ? 'movies' : 'matches'}
       </span>
     </div>
     {broadened ? (
@@ -4091,7 +4095,7 @@ const FilterPanel = ({
         Broadened from {strictResultCount} exact matches to keep the wall full.
       </p>
     ) : null}
-    <FilterSections {...sections} />
+    <FilterSections {...sections} allActive={allActive} />
   </aside>
 )
 
@@ -4123,7 +4127,11 @@ const FiltersView = ({
     </header>
     <div className='warp-filters-summary'>
       <span>{selectedFilterCount || 'No'} selected</span>
-      <span>{resultCount} matching movies</span>
+      <span>
+        {selectedFilterCount
+          ? `${resultCount.toLocaleString()} matching movies`
+          : `${formatFilmCount(resultCount)} movies`}
+      </span>
     </div>
     <div className='warp-filters-body'>
       <FilterSections {...sections} />
