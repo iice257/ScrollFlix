@@ -10,18 +10,25 @@ import {
   ChevronsDown,
   ChevronsUp,
   Dices,
+  Hand,
   Heart,
   Info,
+  Keyboard,
+  Languages,
+  type LucideIcon,
   Maximize2,
   Minimize2,
   Moon,
+  Mouse,
+  MousePointerClick,
+  MoveHorizontal,
   Play,
+  Pointer,
   Search,
   Share2,
+  Shuffle,
   SlidersHorizontal,
   Sun,
-  Volume2,
-  VolumeX,
   X,
 } from 'lucide-react'
 import {
@@ -29,6 +36,8 @@ import {
   Fragment,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
+  Suspense,
+  lazy,
   memo,
   startTransition,
   useCallback,
@@ -39,6 +48,16 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
+import { createPortal } from 'react-dom'
+import { playCue } from '../../../audio/sound-engine'
+import {
+  LoaderSoundToggle,
+  SoundSettingsPanel,
+} from '../../../audio/sound-settings-panel'
+import {
+  useAudioUnlockOnGesture,
+  useSoundEffects,
+} from '../../../audio/use-sound-effects'
 import { useMediaQuery } from '../../../hooks/use-media-query'
 import { cn } from '../../../utils/tw'
 import {
@@ -52,20 +71,26 @@ import {
   type InfiniteMovieMenuControl,
   type InfiniteMovieMenuItem,
 } from './infinite-movie-menu'
-import { pickLandingMovie } from './landing'
+import { matchesFilmLink, pickLandingMovie } from './landing'
 import { savedStore } from './saved-store'
+import {
+  type FacetCatalog,
+  type FacetSuggestion,
+  type SearchFacet,
+  suggestFacets,
+} from './search-facets'
+import { shareLink } from './share/share-output'
 import {
   ImmersiveCorner,
   ImmersiveEnterButton,
   ImmersiveExitPill,
 } from './shuffle-pro/immersive-controls'
-import { PremiumEyebrow, PremiumFrame } from './shuffle-pro/premium-frame'
 import {
-  deliverShareCard,
-  renderShareCard,
-  shareFileName,
-} from './shuffle-pro/share-card'
-import { eggSoundStore, unlockAudio } from './shuffle-pro/shuffle-pro-audio'
+  PosterStage,
+  PremiumFrame,
+  PremiumPlate,
+} from './shuffle-pro/premium-frame'
+import { unlockAudio } from './shuffle-pro/shuffle-pro-audio'
 import type { ShuffleProController } from './shuffle-pro/shuffle-pro-controller'
 import {
   SHUFFLE_PRO_DEBUG,
@@ -74,12 +99,14 @@ import {
 import { isBigSpin } from './shuffle-pro/shuffle-pro-logic'
 import type { Tier } from './shuffle-pro/shuffle-pro-logic'
 import { ShuffleProShelf } from './shuffle-pro/shuffle-pro-shelf'
+import { shuffleProStore } from './shuffle-pro/shuffle-pro-store'
 import { ShuffleSkipButton } from './shuffle-pro/shuffle-skip-button'
 import {
   pickOtherMovie,
   readReducedMotion,
   useShuffleProController,
 } from './shuffle-pro/use-shuffle-pro'
+import { useTitleTranslation } from './use-title-translation'
 
 type RawMovie = Record<string, unknown>
 
@@ -177,6 +204,10 @@ const DETAILS_EXPAND_DRAG_PX = 42
 const DETAILS_CLOSE_DRAG_PX = 68
 const DETAILS_COMPACT_DRAG_PX = 38
 const EXIT_ANIMATION_MS = 220
+// Loaded when someone first shares, so the artwork code stays out of the
+// initial bundle.
+const ShareSheet = lazy(() => import('./share/share-sheet'))
+
 const SPIN_HINT_STORAGE_KEY = 'wtw:spin-hint-seen'
 const FULLSCREEN_HINT_STORAGE_KEY = 'wtw:fullscreen-hint-seen'
 const THEME_STORAGE_KEY = 'wtw:theme'
@@ -1694,10 +1725,24 @@ export const TestGalleryApp = () => {
 
   // The first centred movie of a page load is random (and never "Marmaduke").
   // Chosen once, during render, so the globe's first build already faces it.
+  // A shared link (?film=<id>) lands on that film instead.
+  const linkedFilmRef = useRef<string | null | undefined>(undefined)
+  if (linkedFilmRef.current === undefined) {
+    try {
+      linkedFilmRef.current = new URLSearchParams(window.location.search).get(
+        'film',
+      )
+    } catch {
+      linkedFilmRef.current = null
+    }
+  }
   const landingIdRef = useRef<string | null>(null)
   if (landingIdRef.current === null && visibleMovies.length > 0) {
+    const linked = linkedFilmRef.current
     landingIdRef.current =
-      pickLandingMovie(visibleMovies, Math.random)?.id ?? null
+      (linked &&
+        visibleMovies.find((movie) => matchesFilmLink(movie, linked))?.id) ||
+      (pickLandingMovie(visibleMovies, Math.random)?.id ?? null)
   }
   const landingId = landingIdRef.current
   useEffect(() => {
@@ -1780,8 +1825,8 @@ export const TestGalleryApp = () => {
   const menuControlRef = useRef<InfiniteMovieMenuControl | null>(null)
   const [shuffleSpinning, setShuffleSpinning] = useState(false)
   const isSpinActive = shuffleProSnapshot.canSkip || shuffleSpinning
-  const isSpinActiveRef = useRef(isSpinActive)
-  isSpinActiveRef.current = isSpinActive
+  // True while Space is held down on the globe and the controller owns it.
+  const keyHoldRef = useRef(false)
   // The premium frame stays on the card until it has finished closing.
   const [premiumFrame, setPremiumFrame] = useState<{
     movieId: string
@@ -1811,6 +1856,29 @@ export const TestGalleryApp = () => {
   const sortPresence = useExitPresence(sortOpen && mode === 'list')
   const watchPresence = useExitPresence(Boolean(watchMovie), watchMovie)
   const detailsPresence = useExitPresence(Boolean(detailsMovie), detailsMovie)
+
+  useAudioUnlockOnGesture()
+  useSoundEffects({
+    detailsOpen: Boolean(detailsMovie),
+    aboutOpen,
+    savedOpen,
+    filterOpen,
+    sortOpen: sortOpen && mode === 'list',
+    watchOpen: Boolean(watchMovie),
+    mode,
+    theme,
+    savedCount: savedEntries.length,
+  })
+  // A normal shuffle ending: a soft thump. Shuffle Pro lands with its own.
+  const wasShuffleSpinning = useRef(false)
+  useEffect(() => {
+    if (wasShuffleSpinning.current && !shuffleSpinning) {
+      if (shuffleProController.getSnapshot().phase === 'idle') {
+        playCue('landing')
+      }
+    }
+    wasShuffleSpinning.current = shuffleSpinning
+  }, [shuffleSpinning, shuffleProController])
 
   const toggleGenre = useCallback((genre: string) => {
     setSelectedGenres((currentGenres) =>
@@ -1890,6 +1958,51 @@ export const TestGalleryApp = () => {
     [],
   )
 
+  // What the index search can turn into a filter or sort.
+  const facetCatalog = useMemo<FacetCatalog>(
+    () => ({
+      genres: genreSummaries.map((summary) => summary.genre),
+      moods: MOOD_FILTERS.map(({ id, label }) => ({ id, label })),
+      runtimes: MOVIE_RUNTIME_FILTERS.filter((filter) => !filter.disabled).map(
+        ({ id, label }) => ({ id, label }),
+      ),
+      sorts: SORT_OPTIONS,
+    }),
+    [genreSummaries],
+  )
+
+  const handleApplyFacet = useCallback((facet: SearchFacet) => {
+    switch (facet.kind) {
+      case 'genre':
+        setSelectedGenres((current) =>
+          current.includes(facet.genre) ? current : [...current, facet.genre],
+        )
+        break
+      case 'mood':
+        setSelectedMoodFilters((current) =>
+          current.includes(facet.id as MoodFilter)
+            ? current
+            : [...current, facet.id as MoodFilter],
+        )
+        break
+      case 'decade':
+      case 'year':
+        setSelectedYear({ kind: facet.kind, value: facet.value })
+        break
+      case 'runtime':
+        setSelectedRuntimeFilter(facet.id as RuntimeFilter)
+        break
+      case 'rating':
+        setRatingMin(facet.min)
+        break
+      case 'sort':
+        setSortRules((rules) =>
+          applySortDirection(rules, facet.key as ListGrouping, facet.direction),
+        )
+        break
+    }
+  }, [])
+
   const filterSectionProps: FilterSectionsProps = {
     allActive: selectedFilterCount === 0,
     contentFilter,
@@ -1917,6 +2030,23 @@ export const TestGalleryApp = () => {
     setAboutOpen(false)
     setSavedOpen(false)
   }, [])
+
+  // A shared link opens its film's card once the catalogue is in. The address
+  // is cleaned up so a refresh doesn't reopen it.
+  const linkedFilmHandled = useRef(false)
+  useEffect(() => {
+    if (linkedFilmHandled.current || !movies.length) return
+    linkedFilmHandled.current = true
+    const linked = linkedFilmRef.current
+    if (!linked) return
+    const movie = movies.find((candidate) => matchesFilmLink(candidate, linked))
+    if (movie) openMovie(movie)
+    try {
+      window.history.replaceState(null, '', window.location.pathname)
+    } catch {
+      // The address can't be changed here; leave it.
+    }
+  }, [movies, openMovie])
 
   // Opening a poster yourself breaks the Shuffle Pro streak.
   const handleOpenMovie = useCallback(
@@ -1962,6 +2092,7 @@ export const TestGalleryApp = () => {
       shuffleProController.startAutomatic(trigger, movieId)
       return
     }
+    playCue('shuffleStart')
     setSpinRequest({ itemId: movieId, nonce: performance.now() })
   }, [activeMovieId, detailsMovieId, mode, shuffleProController, visibleMovies])
 
@@ -2140,13 +2271,32 @@ export const TestGalleryApp = () => {
           event.ctrlKey || event.altKey || event.metaKey || event.shiftKey,
         activeElementKind: getActiveElementKind(),
       })
-      if (!allowed) return
+      if (!allowed) {
+        // A held Space must not scroll or click anything while it charges.
+        if (isSpace && event.repeat && keyHoldRef.current) {
+          event.preventDefault()
+        }
+        return
+      }
       event.preventDefault()
       if (action === 'shuffle') {
         promptFullscreenHint()
-        // While a spin is running, Space finishes it instead of shuffling.
-        if (isSpinActiveRef.current) handleSkip()
-        else handleShuffle()
+        unlockAudio()
+        // A Shuffle Pro run that is spinning: Space finishes it.
+        if (shuffleProController.getSnapshot().canSkip) {
+          handleSkip()
+          return
+        }
+        // On the globe, Space works like pressing the globe: a tap shuffles
+        // (counted toward the streak, even mid-spin) and holding it charges a
+        // Shuffle Pro run. Which one it was is only known on key up.
+        if (mode === 'wall' && !detailsMovieId) {
+          const session = shuffleProController.pressStart({ nx: 0.5, ny: 0.5 })
+          if (session === 'consumed') return
+          keyHoldRef.current = session !== null
+          if (session) return
+        }
+        handleShuffle()
       } else if (activeMovie) handleOpenMovie(activeMovie)
     }
 
@@ -2165,10 +2315,35 @@ export const TestGalleryApp = () => {
     initialGalleryReady,
     listMovies.length,
     mode,
+    shuffleProController,
     sortOpen,
     visibleMovies.length,
     watchMovieId,
   ])
+
+  // Key up decides what a Space press was: the end of a Shuffle Pro hold, or a
+  // plain tap that shuffles. Losing focus mid-hold just lets the hold go.
+  const handleShuffleRef = useRef(handleShuffle)
+  handleShuffleRef.current = handleShuffle
+  useEffect(() => {
+    const releaseKey = (shuffleOnTap: boolean) => {
+      if (!keyHoldRef.current) return
+      keyHoldRef.current = false
+      const ownedByShufflePro = shuffleProController.pressRelease()
+      if (!ownedByShufflePro && shuffleOnTap) handleShuffleRef.current()
+    }
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code !== 'Space' && event.key !== ' ') return
+      releaseKey(true)
+    }
+    const handleBlur = () => releaseKey(false)
+    window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('blur', handleBlur)
+    return () => {
+      window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('blur', handleBlur)
+    }
+  }, [shuffleProController])
 
   return (
     <main
@@ -2237,6 +2412,10 @@ export const TestGalleryApp = () => {
           randomRequest={listRandomNonce}
           searchQuery={listSearchQuery}
           searchResultCount={listMovies.length}
+          isFiltered={selectedFilterCount > 0}
+          totalCount={movies.length}
+          facetCatalog={facetCatalog}
+          onApplyFacet={handleApplyFacet}
           onOpenMovie={handleOpenMovie}
           onPickRandomMovie={handlePickRandomMovie}
           onSearchQueryChange={setListSearchQuery}
@@ -2527,27 +2706,30 @@ export const TestGalleryApp = () => {
           aria-hidden={initialGalleryReady ? 'true' : undefined}
           aria-live='polite'
         >
-          <span>
-            <strong>Building gallery</strong>
-            <i>
-              <b
-                style={
-                  {
-                    '--gallery-load-percent': `${galleryLoadPercent}%`,
-                  } as CSSProperties
-                }
-              />
-            </i>
-            <small>{galleryLoadPercent}%</small>
-            <button
-              type='button'
-              className='warp-preloader-skip'
-              onClick={() => setInitialGalleryReady(true)}
-            >
-              Skip first time load
-            </button>
-            <em>Images will load in the background</em>
-          </span>
+          <div className='warp-preloader-stack'>
+            <span>
+              <strong>Building gallery</strong>
+              <i>
+                <b
+                  style={
+                    {
+                      '--gallery-load-percent': `${galleryLoadPercent}%`,
+                    } as CSSProperties
+                  }
+                />
+              </i>
+              <small>{galleryLoadPercent}%</small>
+              <button
+                type='button'
+                className='warp-preloader-skip'
+                onClick={() => setInitialGalleryReady(true)}
+              >
+                Skip first time load
+              </button>
+              <em>Images will load in the background</em>
+            </span>
+            <LoaderSoundToggle />
+          </div>
         </output>
       ) : null}
 
@@ -2697,8 +2879,16 @@ const WarpWall = ({
     [movies],
   )
 
+  // A soft tick each time a new poster crosses the centre.
+  const lastTickId = useRef<string | null>(null)
   const handleActiveItemChange = useCallback(
-    (item: (typeof menuItems)[number]) => onSelectMovie(item.payload),
+    (item: (typeof menuItems)[number]) => {
+      if (lastTickId.current !== item.id) {
+        if (lastTickId.current !== null) playCue('tick')
+        lastTickId.current = item.id
+      }
+      onSelectMovie(item.payload)
+    },
     [onSelectMovie],
   )
 
@@ -2760,6 +2950,10 @@ type WarpListProps = {
   randomRequest: number
   searchQuery: string
   searchResultCount: number
+  isFiltered: boolean
+  totalCount: number
+  facetCatalog: FacetCatalog
+  onApplyFacet: (facet: SearchFacet) => void
   onOpenMovie: (movie: TestMovie) => void
   onPickRandomMovie: (movie: TestMovie) => void
   onSearchQueryChange: (searchQuery: string) => void
@@ -2997,6 +3191,10 @@ const WarpList = ({
   randomRequest,
   searchQuery,
   searchResultCount,
+  isFiltered,
+  totalCount,
+  facetCatalog,
+  onApplyFacet,
   onOpenMovie,
   onPickRandomMovie,
   onSearchQueryChange,
@@ -3029,6 +3227,17 @@ const WarpList = ({
     [onSelectMovie],
   )
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const [highlight, setHighlight] = useState(-1)
+  const suggestions = useMemo(
+    () => suggestFacets(searchQuery, facetCatalog),
+    [facetCatalog, searchQuery],
+  )
+  const showSuggestions = isSearchOpen && suggestions.length > 0
+  const applySuggestion = (suggestion: FacetSuggestion) => {
+    onApplyFacet(suggestion.facet)
+    onSearchQueryChange('')
+    setHighlight(-1)
+  }
 
   const groupedMovies = useMemo(
     () =>
@@ -3202,16 +3411,7 @@ const WarpList = ({
       onScroll={handleScroll}
     >
       <header className='warp-list-heading'>
-        <div className='warp-list-title'>
-          <h1>Movie Index</h1>
-          <p>
-            {loadState !== 'ready'
-              ? loadState
-              : searchQuery.trim()
-                ? `${searchResultCount.toLocaleString()} title matches`
-                : `${movies.length.toLocaleString()} movies to choose from`}
-          </p>
-        </div>
+        <h1 className='warp-list-title'>Movie Index</h1>
         <form
           className={cn(
             'warp-list-search',
@@ -3221,18 +3421,36 @@ const WarpList = ({
         >
           <Search aria-hidden='true' size={15} strokeWidth={2.6} />
           <label className='sr-only' htmlFor='warp-list-search'>
-            Search movie titles
+            Search titles, genres, moods, filters and sorts
           </label>
           <input
             ref={searchInputRef}
             id='warp-list-search'
             type='search'
             value={searchQuery}
-            placeholder='Search titles'
-            aria-label='Search movie titles'
+            placeholder='Search titles, genres, moods'
+            aria-label='Search titles, genres, moods, filters and sorts'
+            autoComplete='off'
             onChange={(event) => handleSearchQueryChange(event.target.value)}
             onFocus={() => setIsSearchOpen(true)}
             onKeyDown={(event) => {
+              if (showSuggestions && event.key === 'ArrowDown') {
+                event.preventDefault()
+                setHighlight((index) => (index + 1) % suggestions.length)
+                return
+              }
+              if (showSuggestions && event.key === 'ArrowUp') {
+                event.preventDefault()
+                setHighlight((index) =>
+                  index <= 0 ? suggestions.length - 1 : index - 1,
+                )
+                return
+              }
+              if (event.key === 'Enter' && showSuggestions && highlight >= 0) {
+                event.preventDefault()
+                applySuggestion(suggestions[highlight])
+                return
+              }
               if (event.key !== 'Escape') return
               if (searchQuery) {
                 handleSearchQueryChange('')
@@ -3245,20 +3463,50 @@ const WarpList = ({
             <button
               type='button'
               className='warp-list-search-clear'
-              aria-label='Clear title search'
+              aria-label='Clear search'
               onClick={clearSearch}
             >
               <X aria-hidden='true' size={14} strokeWidth={3} />
             </button>
           ) : null}
+          {showSuggestions ? (
+            <div
+              className='warp-list-suggest'
+              id='warp-list-suggest'
+              aria-label='Matching filters and sorts'
+            >
+              <p>Apply as a filter or sort</p>
+              {suggestions.map((suggestion, index) => (
+                <button
+                  type='button'
+                  key={suggestion.id}
+                  aria-current={index === highlight ? 'true' : undefined}
+                  className={cn(index === highlight && 'is-active')}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setHighlight(index)}
+                  onClick={() => applySuggestion(suggestion)}
+                >
+                  <span>{suggestion.group}</span>
+                  <strong>{suggestion.label}</strong>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </form>
+        <p className='warp-list-count'>
+          {loadState !== 'ready'
+            ? loadState
+            : searchQuery.trim() || isFiltered
+              ? `${searchResultCount.toLocaleString()} ${
+                  searchResultCount === 1 ? 'match' : 'matches'
+                }`
+              : `${formatFilmCount(totalCount)} movies`}
+        </p>
         <div className='warp-list-tools'>
           <button
             type='button'
             className='warp-list-search-toggle'
-            aria-label={
-              isSearchOpen ? 'Close title search' : 'Open title search'
-            }
+            aria-label={isSearchOpen ? 'Close search' : 'Open search'}
             aria-expanded={isSearchOpen}
             onClick={() => setIsSearchOpen((isOpen) => !isOpen)}
           >
@@ -3899,60 +4147,78 @@ type AboutDrawerProps = {
   onToggleMaximized: () => void
 }
 
+type ControlRow = {
+  label: string
+  action: string
+  icons: [id: string, icon: LucideIcon][]
+}
+
+const DESKTOP_CONTROLS: ControlRow[] = [
+  {
+    label: 'Click',
+    action: 'Open a poster',
+    icons: [['mouse-pointer-click', MousePointerClick]],
+  },
+  { label: 'Hold or drag', action: 'Spin the globe', icons: [['hand', Hand]] },
+  {
+    label: 'Scroll or use the arrow keys',
+    action: 'Spin without grabbing',
+    icons: [
+      ['mouse', Mouse],
+      ['keyboard', Keyboard],
+    ],
+  },
+  {
+    label: 'Shuffle',
+    action: 'Land on a random film',
+    icons: [['shuffle', Shuffle]],
+  },
+]
+
+const MOBILE_CONTROLS: ControlRow[] = [
+  { label: 'Tap', action: 'Open a poster', icons: [['pointer', Pointer]] },
+  { label: 'Hold or drag', action: 'Spin the globe', icons: [['hand', Hand]] },
+  {
+    label: 'Swipe',
+    action: 'Quick spin',
+    icons: [['move-horizontal', MoveHorizontal]],
+  },
+  {
+    label: 'Shuffle',
+    action: 'Land on a random film',
+    icons: [['shuffle', Shuffle]],
+  },
+]
+
+// Icons on the left, the same chips as the welcome tip; the label is still
+// there for hover and for screen readers.
+const ControlList = ({
+  rows,
+  className,
+}: {
+  rows: ControlRow[]
+  className: string
+}) => (
+  <ul className={cn('warp-about-controls', className)}>
+    {rows.map((row) => (
+      <li key={row.label}>
+        <span className='warp-about-keys' role='img' aria-label={row.label}>
+          {row.icons.map(([id, Icon]) => (
+            <kbd key={id} title={row.label}>
+              <Icon aria-hidden='true' />
+            </kbd>
+          ))}
+        </span>
+        <span>{row.action}</span>
+      </li>
+    ))}
+  </ul>
+)
+
 const AboutControls = () => (
   <div className='warp-about-control-sets'>
-    <ul className='warp-about-controls is-desktop-controls'>
-      <li>
-        <span className='warp-about-keys'>
-          <kbd>Click</kbd>
-        </span>
-        <span>Open a poster</span>
-      </li>
-      <li>
-        <span className='warp-about-keys'>
-          <kbd>Hold or drag</kbd>
-        </span>
-        <span>Spin the globe</span>
-      </li>
-      <li>
-        <span className='warp-about-keys'>
-          <kbd>Scroll or use arrow keys</kbd>
-        </span>
-        <span>Spin without grabbing</span>
-      </li>
-      <li>
-        <span className='warp-about-keys'>
-          <kbd>Shuffle</kbd>
-        </span>
-        <span>Land on a random film</span>
-      </li>
-    </ul>
-    <ul className='warp-about-controls is-mobile-controls'>
-      <li>
-        <span className='warp-about-keys'>
-          <kbd>Tap</kbd>
-        </span>
-        <span>Open a poster</span>
-      </li>
-      <li>
-        <span className='warp-about-keys'>
-          <kbd>Hold or drag</kbd>
-        </span>
-        <span>Spin the globe</span>
-      </li>
-      <li>
-        <span className='warp-about-keys'>
-          <kbd>Swipe</kbd>
-        </span>
-        <span>Quick spin</span>
-      </li>
-      <li>
-        <span className='warp-about-keys'>
-          <kbd>Shuffle</kbd>
-        </span>
-        <span>Land on a random film</span>
-      </li>
-    </ul>
+    <ControlList rows={DESKTOP_CONTROLS} className='is-desktop-controls' />
+    <ControlList rows={MOBILE_CONTROLS} className='is-mobile-controls' />
   </div>
 )
 
@@ -4036,37 +4302,35 @@ const AboutGlobeDiagram = () => (
   </svg>
 )
 
-// The easter egg's whoosh can be silenced; on by default.
-const EggSoundSetting = () => {
-  const enabled = useSyncExternalStore(
-    eggSoundStore.subscribe,
-    eggSoundStore.get,
-    eggSoundStore.get,
-  )
-  return (
-    <fieldset className='warp-about-setting'>
-      <legend>Easter egg sound</legend>
-      <div className='warp-theme-switch'>
-        {([true, false] as const).map((option) => (
-          <button
-            type='button'
-            key={String(option)}
-            aria-pressed={enabled === option}
-            className={cn(enabled === option && 'is-active')}
-            onClick={() => eggSoundStore.set(option)}
-          >
-            {option ? (
-              <Volume2 aria-hidden='true' />
-            ) : (
-              <VolumeX aria-hidden='true' />
-            )}
-            {option ? 'On' : 'Off'}
-          </button>
-        ))}
-      </div>
-    </fieldset>
-  )
-}
+const AppearanceSetting = ({
+  theme,
+  onThemeChange,
+}: {
+  theme: Theme
+  onThemeChange: (theme: Theme) => void
+}) => (
+  <fieldset className='warp-about-setting'>
+    <legend>Appearance</legend>
+    <div className='warp-theme-switch'>
+      {(['dark', 'light'] as const).map((option) => (
+        <button
+          type='button'
+          key={option}
+          aria-pressed={theme === option}
+          className={cn(theme === option && 'is-active')}
+          onClick={() => onThemeChange(option)}
+        >
+          {option === 'dark' ? (
+            <Moon aria-hidden='true' />
+          ) : (
+            <Sun aria-hidden='true' />
+          )}
+          {option === 'dark' ? 'Dark' : 'Light'}
+        </button>
+      ))}
+    </div>
+  </fieldset>
+)
 
 const AboutDrawer = ({
   theme,
@@ -4124,11 +4388,19 @@ const AboutDrawer = ({
         </section>
 
         <section className='warp-about-section'>
+          <h3>Settings</h3>
+          <div className='warp-about-settings'>
+            <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
+            <SoundSettingsPanel />
+          </div>
+        </section>
+
+        <section className='warp-about-section'>
           <h3>In the catalogue</h3>
           <dl className='warp-about-stats'>
             <div>
               <dt>Films in the index</dt>
-              <dd>{movieCount.toLocaleString()}</dd>
+              <dd>{formatFilmCount(movieCount)}</dd>
             </div>
             <div>
               <dt>Posters on the globe</dt>
@@ -4206,28 +4478,8 @@ const AboutDrawer = ({
       </header>
       <AboutControls />
       <ShuffleProShelf />
-      <fieldset className='warp-about-setting'>
-        <legend>Appearance</legend>
-        <div className='warp-theme-switch'>
-          {(['dark', 'light'] as const).map((option) => (
-            <button
-              type='button'
-              key={option}
-              aria-pressed={theme === option}
-              className={cn(theme === option && 'is-active')}
-              onClick={() => onThemeChange(option)}
-            >
-              {option === 'dark' ? (
-                <Moon aria-hidden='true' />
-              ) : (
-                <Sun aria-hidden='true' />
-              )}
-              {option === 'dark' ? 'Dark' : 'Light'}
-            </button>
-          ))}
-        </div>
-      </fieldset>
-      <EggSoundSetting />
+      <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
+      <SoundSettingsPanel categories={false} />
       <button
         type='button'
         className='warp-about-more'
@@ -4415,28 +4667,22 @@ const MovieDetailsCard = ({
   onNextSuggestion,
   onWatch,
 }: MovieDetailsCardProps) => {
-  const [isSharing, setIsSharing] = useState(false)
-  const shareMovie = async () => {
-    if (!premiumTier || isSharing) return
-    setIsSharing(true)
-    try {
-      const blob = await renderShareCard({
-        title: movie.title,
-        year: movie.year,
-        tier: premiumTier,
-        posterUrl: movie.posterDetailUrl ?? movie.posterUrl,
-      })
-      await deliverShareCard(
-        blob,
-        shareFileName(movie.title, premiumTier),
-        movie.title,
-      )
-    } catch {
-      // Sharing is best effort; nothing to surface if it fails.
-    } finally {
-      setIsSharing(false)
+  const [shareOpen, setShareOpen] = useState(false)
+  // Escape closes the share sheet first, then the card behind it.
+  useEffect(() => {
+    if (!shareOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      setShareOpen(false)
     }
-  }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [shareOpen])
+  // A different film means a different card: close the sheet.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the id is the trigger
+  useEffect(() => setShareOpen(false), [movie.id])
   const [reducedMotion] = useState(() => readReducedMotion(null))
   // Wide screens get a centred panel with everything visible; small screens
   // keep the draggable bottom sheet with a More/Less toggle.
@@ -4567,6 +4813,19 @@ const MovieDetailsCard = ({
       Re-shuffle
     </button>
   )
+  const posterImage = (
+    <div className='warp-details-poster'>
+      <MoviePoster loading='eager' movie={movie} size='detail' />
+    </div>
+  )
+  // A premium pick shows its poster as a collectible; the rest stay plain.
+  const poster = premiumTier ? (
+    <PosterStage tier={premiumTier} reducedMotion={reducedMotion}>
+      {posterImage}
+    </PosterStage>
+  ) : (
+    posterImage
+  )
   const detailsStyle = {
     '--details-drag-y': `${dragOffset}px`,
     // CSS images are fetched without CORS, so catalogue films use a size the
@@ -4578,6 +4837,29 @@ const MovieDetailsCard = ({
     )})`,
   } as CSSProperties
   const movieText = useMovieText(movie)
+  const titleTranslation = useTitleTranslation(movie.title)
+  const shareFound = useSyncExternalStore(
+    shuffleProStore.subscribe,
+    shuffleProStore.get,
+    shuffleProStore.get,
+  )
+  const shareInput = useMemo(
+    () => ({
+      movieId: movie.id,
+      title: movie.title,
+      year: hasYear ? movie.year : '',
+      detail: [
+        ratingValue === null ? '' : `★ ${formatRating(movie)}`,
+        runtimeLabel,
+      ]
+        .filter(Boolean)
+        .join('  ·  '),
+      tier: premiumTier,
+      posterUrl: movie.posterDetailUrl ?? movie.posterUrl,
+      foundTiers: (Object.keys(shareFound.found) as Tier[]).filter(Boolean),
+    }),
+    [movie, hasYear, ratingValue, runtimeLabel, premiumTier, shareFound.found],
+  )
   const similarMovies = useMemo(
     () => getSimilarMovies(movie, movies),
     [movie, movies],
@@ -4634,19 +4916,15 @@ const MovieDetailsCard = ({
           )}
           {isWide ? (
             <div className='warp-details-poster-col'>
-              <div className='warp-details-poster'>
-                <MoviePoster loading='eager' movie={movie} size='detail' />
-              </div>
+              {poster}
               {nextSuggestionButton}
             </div>
           ) : (
-            <div className='warp-details-poster'>
-              <MoviePoster loading='eager' movie={movie} size='detail' />
-            </div>
+            poster
           )}
           <div className='warp-details-copy'>
             <div className='warp-details-copy-scroll'>
-              {premiumTier ? <PremiumEyebrow tier={premiumTier} /> : null}
+              {premiumTier ? <PremiumPlate tier={premiumTier} /> : null}
               {stats.length ? (
                 <div className='warp-details-stats'>
                   {stats.map((stat, index) => (
@@ -4664,7 +4942,42 @@ const MovieDetailsCard = ({
                   ))}
                 </div>
               ) : null}
-              <h2>{movie.title}</h2>
+              <div className='warp-details-title-row'>
+                <h2>
+                  {titleTranslation.enabled && titleTranslation.english
+                    ? titleTranslation.english
+                    : movie.title}
+                </h2>
+                {titleTranslation.available ? (
+                  <button
+                    type='button'
+                    className={cn(
+                      'warp-details-translate',
+                      titleTranslation.enabled && 'is-on',
+                      titleTranslation.busy && 'is-busy',
+                    )}
+                    aria-pressed={titleTranslation.enabled}
+                    aria-label={
+                      titleTranslation.enabled
+                        ? 'Show the original title'
+                        : 'Show the English title'
+                    }
+                    title={
+                      titleTranslation.enabled
+                        ? 'Showing the English title. Click for the original.'
+                        : 'Show the English title'
+                    }
+                    onClick={titleTranslation.toggle}
+                  >
+                    <Languages aria-hidden='true' />
+                  </button>
+                ) : null}
+              </div>
+              {titleTranslation.enabled && titleTranslation.english ? (
+                <p className='warp-details-original-title'>
+                  Original title: {movie.title}
+                </p>
+              ) : null}
               {movieText?.tagline ? (
                 <p className='warp-details-tagline'>{movieText.tagline}</p>
               ) : null}
@@ -4704,17 +5017,15 @@ const MovieDetailsCard = ({
                 >
                   <Heart aria-hidden='true' />
                 </button>
-                {premiumTier ? (
-                  <button
-                    type='button'
-                    className='warp-details-heart warp-details-share'
-                    aria-label='Share this pick'
-                    disabled={isSharing}
-                    onClick={() => void shareMovie()}
-                  >
-                    <Share2 aria-hidden='true' />
-                  </button>
-                ) : null}
+                <button
+                  type='button'
+                  className='warp-details-heart warp-details-share'
+                  aria-label='Share this film'
+                  aria-haspopup='dialog'
+                  onClick={() => setShareOpen(true)}
+                >
+                  <Share2 aria-hidden='true' />
+                </button>
               </div>
               {showFullContent ? (
                 <div className='warp-details-expanded-content'>
@@ -4755,6 +5066,18 @@ const MovieDetailsCard = ({
               ) : null}
             </div>
           </div>
+          {shareOpen
+            ? createPortal(
+                <Suspense fallback={null}>
+                  <ShareSheet
+                    input={shareInput}
+                    link={shareLink(movie.id)}
+                    onClose={() => setShareOpen(false)}
+                  />
+                </Suspense>,
+                document.querySelector('.warp-shell') ?? document.body,
+              )
+            : null}
           {isWide ? null : (
             <button
               type='button'

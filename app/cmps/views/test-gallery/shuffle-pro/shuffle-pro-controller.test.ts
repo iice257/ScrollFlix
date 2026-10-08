@@ -42,6 +42,12 @@ const setup = (
       sky = state
       calls.push(state ? 'sky:on' : 'sky:off')
     },
+    prewarm: () => {
+      calls.push('prewarm')
+    },
+    cancelPrewarm: () => {
+      calls.push('cancelPrewarm')
+    },
     landOn: (id, onArrive) => {
       calls.push(`landOn:${id}`)
       landOnArrive = onArrive
@@ -203,6 +209,59 @@ describe('ShuffleProController: holding', () => {
     expect(h.getSky()?.intensity).toBeGreaterThan(0.9)
     h.advance(2000)
     expect(h.getOmega()).toBeGreaterThan(6.6)
+  })
+})
+
+describe('ShuffleProController: warming up', () => {
+  it('warms the effect up once a hold has lasted 1.5s, not before', () => {
+    const h = setup()
+    hold(h, 1400)
+    expect(h.calls).not.toContain('prewarm')
+    h.advance(200)
+    expect(h.calls.filter((call) => call === 'prewarm')).toHaveLength(1)
+  })
+
+  it('tells the page which tier the hold is heading for', () => {
+    const prewarmTier = vi.fn()
+    const h = setup(
+      { prewarmTier },
+      { found: { frost: 1, amethyst: 1, jade: 1 } },
+    )
+    hold(h, 1700)
+    expect(prewarmTier).toHaveBeenCalledWith('gold')
+  })
+
+  it('cancels the warm-up when the hold is let go early', () => {
+    const prewarmTier = vi.fn()
+    const h = setup({ prewarmTier })
+    hold(h, 2500)
+    h.controller.pressRelease()
+    expect(h.calls).toContain('cancelPrewarm')
+    expect(prewarmTier).toHaveBeenLastCalledWith(null)
+  })
+
+  it('does not warm anything up for a plain click', () => {
+    const h = setup()
+    hold(h, 120)
+    h.controller.pressRelease()
+    expect(h.calls).not.toContain('prewarm')
+    expect(h.calls).not.toContain('cancelPrewarm')
+  })
+
+  it('warms up one action before a streak would start a run, once', () => {
+    const h = setup()
+    for (let i = 0; i < 8; i += 1) h.controller.noteAction({ type: 'shuffle' })
+    expect(h.calls).not.toContain('prewarm')
+    h.controller.noteAction({ type: 'shuffle' })
+    h.controller.noteAction({ type: 'neutral' })
+    expect(h.calls.filter((call) => call === 'prewarm')).toHaveLength(1)
+  })
+
+  it('cancels a streak warm-up when the streak breaks', () => {
+    const h = setup()
+    for (let i = 0; i < 9; i += 1) h.controller.noteAction({ type: 'shuffle' })
+    h.controller.noteAction({ type: 'break' })
+    expect(h.calls).toContain('cancelPrewarm')
   })
 })
 

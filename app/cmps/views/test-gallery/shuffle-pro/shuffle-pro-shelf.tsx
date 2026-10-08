@@ -3,6 +3,7 @@ import { useId, useSyncExternalStore } from 'react'
 import { TIER_LABELS, type Tier, hasUnlockedGold } from './shuffle-pro-logic'
 import { shuffleProStore } from './shuffle-pro-store'
 import { PALETTES } from './sky-pass'
+import { GEM_BODY, GEM_FACETS, GEM_SHINE, GEM_TOP } from './tier-art'
 
 const SHELF_ORDER: Tier[] = ['frost', 'amethyst', 'jade', 'gold']
 
@@ -11,7 +12,7 @@ const css = ([r, g, b]: [number, number, number]) =>
 
 // A cut gem, filled with the path's colours once found and drawn as a dim
 // outline until then.
-const Gem = ({ tier, found }: { tier: Tier; found: boolean }) => {
+export const Gem = ({ tier, found }: { tier: Tier; found: boolean }) => {
   const id = useId()
   const palette = PALETTES[tier]
   return (
@@ -29,18 +30,14 @@ const Gem = ({ tier, found }: { tier: Tier; found: boolean }) => {
       </defs>
       <path
         className='sp-gem-body'
-        d='M14 7h20l10 12-20 22L4 19z'
+        d={GEM_BODY}
         style={{ fill: found ? `url(#${id}-a)` : 'none' }}
       />
       {found ? (
         <>
-          <path
-            d='M4 19h40L34 7H14z'
-            style={{ fill: `url(#${id}-b)` }}
-            opacity='0.55'
-          />
-          <path d='M24 19l-10-12M24 19l10-12M24 19v22M4 19l20 22M44 19L24 41' />
-          <path className='sp-gem-shine' d='M16 10l5 8' />
+          <path d={GEM_TOP} style={{ fill: `url(#${id}-b)` }} opacity='0.55' />
+          <path d={GEM_FACETS} />
+          <path className='sp-gem-shine' d={GEM_SHINE} />
         </>
       ) : null}
     </svg>

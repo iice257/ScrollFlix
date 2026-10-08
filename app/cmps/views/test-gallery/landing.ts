@@ -6,6 +6,13 @@ type WithId = { id: string }
 // Movie ids are `${index}-${tmdbId}`; a bare index has no TMDB id.
 const tmdbIdOf = (id: string) => id.slice(id.indexOf('-') + 1)
 
+// What a shared link carries for a film: its TMDB id, which stays the same
+// when the catalogue is reordered (the index part of the id does not).
+export const filmLinkId = (id: string) => (id.includes('-') ? tmdbIdOf(id) : id)
+
+export const matchesFilmLink = (movie: WithId, linked: string) =>
+  movie.id === linked || filmLinkId(movie.id) === linked
+
 // A random movie from the globe's visible set, for the first centred movie of
 // a page load. `random` is injected so this stays deterministic under test.
 export const pickLandingMovie = <T extends WithId>(

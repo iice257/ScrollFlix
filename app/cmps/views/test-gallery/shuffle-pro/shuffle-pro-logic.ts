@@ -98,6 +98,27 @@ export const reduceStreak = (
   return { state: trigger ? EMPTY_STREAK : next, trigger }
 }
 
+// One action away from a run starting by itself. The page warms the sky up
+// quietly at this point so the run starts without a hitch.
+export const isNearTrigger = (state: StreakState, immersive: boolean) => {
+  if (immersive) {
+    const rules = STREAK_RULES.immersive
+    return (
+      state.bigSpinRun >= rules.bigSpinRun - 1 ||
+      state.streak >= rules.streak - 1
+    )
+  }
+  const rules = STREAK_RULES.normal
+  return (
+    state.bigSpinRun >= rules.bigSpinRun - 1 ||
+    state.streak >= rules.streakRoll - 1
+  )
+}
+
+// A held press this long is clearly a hold, not a tap or a drag: start
+// warming the effect up.
+export const HOLD_PREWARM_MS = 1500
+
 // ---------------------------------------------------------------- gold
 
 export type FoundPaths = Partial<Record<Tier, unknown>>

@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { createWhoosh } from './shuffle-pro-audio'
+import {
+  createWhoosh,
+  playLandingThud,
+  playPeakChime,
+} from './shuffle-pro-audio'
 import {
   type ControllerSnapshot,
   ShuffleProController,
 } from './shuffle-pro-controller'
+import { cancelTierPreload, startTierPreload } from './shuffle-pro-preload'
 import { shuffleProStore } from './shuffle-pro-store'
 
 type Context = {
@@ -60,6 +65,14 @@ export const useShuffleProController = (context: Context) => {
         getFound: () => shuffleProStore.get().found,
         recordRun: (tier) => shuffleProStore.recordRun(tier),
         createWhoosh,
+        prewarmTier: (tier) => {
+          if (tier) startTierPreload(tier)
+          else cancelTierPreload()
+        },
+        onCue: (cue, tier) => {
+          if (cue === 'peak') playPeakChime(tier)
+          else playLandingThud(tier)
+        },
         pickTarget: () =>
           pickOtherMovie(
             contextRef.current.visibleMovies,
