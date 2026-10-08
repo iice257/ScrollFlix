@@ -802,17 +802,12 @@
     padding: 0;
   }
 
-  .warp-mark svg {
+  .warp-mark-img {
     flex: 0 0 auto;
     display: block;
-    width: 32px;
+    width: 56px;
     height: 52px;
-    fill: #000;
-    filter: drop-shadow(0 0 0 #fff) drop-shadow(0 0 1px #fff);
-    stroke: #fff;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-width: 3.2;
+    background: url('/mark-dark.svg') center / contain no-repeat;
   }
 
   .warp-brand-name {
@@ -4189,10 +4184,9 @@
       gap: 9px;
     }
 
-    .warp-mark svg {
-      width: 24px;
+    .warp-mark-img {
+      width: 41px;
       height: 38px;
-      stroke-width: 3.6;
     }
 
     .warp-brand-name {

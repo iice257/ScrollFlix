@@ -120,11 +120,6 @@
   color: rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"] .warp-mark svg {
-  fill: rgb(247 240 225);
-  stroke: rgb(33 26 16);
-}
-
 .warp-shell[data-theme="light"] .warp-brand-name {
   color: rgb(33 26 16);
 }
@@ -1199,8 +1194,8 @@
     linear-gradient(to bottom, rgb(244 235 216 / 0.4), transparent 22%, transparent 74%, rgb(236 222 192 / 0.6));
 }
 
-.warp-shell[data-theme="light"] .warp-mark svg {
-  fill: rgb(247 240 225);
+.warp-shell[data-theme="light"] .warp-mark-img {
+  background-image: url('/mark-light.svg');
 }
 
 /* Keep instructional tooltips on the same neutral charcoal surface in both themes. */

@@ -185,8 +185,8 @@ const stage = `
     linear-gradient(to bottom, rgb(244 235 216 / 0.4), transparent 22%, transparent 74%, rgb(236 222 192 / 0.6));
 }
 
-.warp-shell${THEME} .warp-mark svg {
-  fill: rgb(247 240 225);
+.warp-shell${THEME} .warp-mark-img {
+  background-image: url('/mark-light.svg');
 }
 
 /* Keep instructional tooltips on the same neutral charcoal surface in both themes. */
