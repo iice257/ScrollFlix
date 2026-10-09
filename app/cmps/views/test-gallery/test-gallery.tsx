@@ -73,6 +73,12 @@ import {
   type InfiniteMovieMenuItem,
 } from './infinite-movie-menu'
 import { matchesFilmLink, pickLandingMovie } from './landing'
+import { MoodFunnel, MoodLine, MoodNudge } from './moods/mood-entry'
+import {
+  type MoodFilter,
+  type MoodTimeId,
+  noteShuffleForNudge,
+} from './moods/mood-worlds'
 import { savedStore } from './saved-store'
 import {
   type FacetCatalog,
@@ -97,7 +103,7 @@ import {
   SHUFFLE_PRO_DEBUG,
   ShuffleProDebugPanel,
 } from './shuffle-pro/shuffle-pro-debug'
-import { isBigSpin } from './shuffle-pro/shuffle-pro-logic'
+import { isBigSpin, isNearTrigger } from './shuffle-pro/shuffle-pro-logic'
 import type { Tier } from './shuffle-pro/shuffle-pro-logic'
 import { ShuffleProShelf } from './shuffle-pro/shuffle-pro-shelf'
 import { shuffleProStore } from './shuffle-pro/shuffle-pro-store'
@@ -182,7 +188,6 @@ export type RuntimeFilter =
   | 'seriesBinge'
   | 'seriesLong'
   | 'seriesLongRun'
-type MoodFilter = 'fast' | 'dark' | 'funny' | 'romantic' | 'weird' | 'highRated'
 type GenreSummary = {
   count: number
   genre: string
@@ -208,6 +213,11 @@ const EXIT_ANIMATION_MS = 220
 // Loaded when someone first shares, so the artwork code stays out of the
 // initial bundle.
 const ShareSheet = lazy(() => import('./share/share-sheet'))
+// The mood page and its eight illustrated scenes load on the first visit or
+// when the browser is idle after the globe is up.
+const loadMoodPage = () => import('./moods/mood-page')
+const MoodPage = lazy(loadMoodPage)
+const MOOD_NUDGE_STORAGE_KEY = 'wtw:mood-nudge-seen'
 
 const SPIN_HINT_STORAGE_KEY = 'wtw:spin-hint-seen'
 const FULLSCREEN_HINT_STORAGE_KEY = 'wtw:fullscreen-hint-seen'
@@ -226,6 +236,30 @@ const readTheme = (): Theme => {
     return 'dark'
   }
 }
+
+// Something that should happen once per visit, not once per page load.
+const readSessionFlag = (key: string) => {
+  try {
+    return window.sessionStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+const writeSessionFlag = (key: string) => {
+  try {
+    window.sessionStorage.setItem(key, '1')
+  } catch {
+    // Storage can be unavailable (private mode, blocked site data).
+  }
+}
+
+const moodTimeFromFilter = (filter: RuntimeFilter | null): MoodTimeId =>
+  filter === 'movieUnder90' ||
+  filter === 'movie90to120' ||
+  filter === 'movieOver120'
+    ? filter
+    : 'any'
 
 const readSpinHintSeen = () => {
   try {
@@ -1511,6 +1545,11 @@ export const TestGalleryApp = () => {
   const [filterOpen, setFilterOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [savedOpen, setSavedOpen] = useState(false)
+  const [moodsOpen, setMoodsOpen] = useState(false)
+  const [moodNudge, setMoodNudge] = useState(false)
+  const [moodShuffleNonce, setMoodShuffleNonce] = useState(0)
+  const recentShufflesRef = useRef<number[]>([])
+  const moodNudgeSpentRef = useRef(readSessionFlag(MOOD_NUDGE_STORAGE_KEY))
   const [aboutMaximized, setAboutMaximized] = useState(false)
   const [initialGalleryReady, setInitialGalleryReady] = useState(false)
   const [galleryLoadPercent, setGalleryLoadPercent] = useState(0)
@@ -1851,6 +1890,7 @@ export const TestGalleryApp = () => {
   const filterPresence = useExitPresence(filterOpen)
   const aboutPresence = useExitPresence(aboutOpen)
   const savedPresence = useExitPresence(savedOpen)
+  const moodsPresence = useExitPresence(moodsOpen)
   const savedEntries = useSyncExternalStore(
     savedStore.subscribe,
     savedStore.get,
@@ -2084,6 +2124,44 @@ export const TestGalleryApp = () => {
     setFilterOpen(false)
   }, [])
 
+  const openMoods = useCallback(() => {
+    unlockAudio()
+    void loadMoodPage()
+    setMoodNudge(false)
+    moodNudgeSpentRef.current = true
+    writeSessionFlag(MOOD_NUDGE_STORAGE_KEY)
+    setDetailsMovieId(null)
+    setWatchMovieId(null)
+    setFilterOpen(false)
+    setAboutOpen(false)
+    setSavedOpen(false)
+    setSortOpen(false)
+    setMoodsOpen(true)
+  }, [])
+
+  const dismissMoodNudge = useCallback(() => setMoodNudge(false), [])
+
+  const countForMoods = useCallback(
+    (moods: MoodFilter[], time: MoodTimeId) =>
+      filterMoviesByDecisionFilters(movies, moods, time === 'any' ? null : time)
+        .strictCount,
+    [movies],
+  )
+
+  // A mood is a fresh start: it replaces the other filters, goes to the globe
+  // and shuffles once the wall has been rebuilt for it.
+  const handleMoodConfirm = useCallback(
+    (moods: MoodFilter[], time: MoodTimeId) => {
+      clearAllFilters()
+      setSelectedMoodFilters(moods)
+      setSelectedRuntimeFilter(time === 'any' ? null : time)
+      setMoodsOpen(false)
+      setMode('wall')
+      setMoodShuffleNonce((nonce) => nonce + 1)
+    },
+    [clearAllFilters],
+  )
+
   const handleShuffle = useCallback(() => {
     unlockAudio()
     if (mode === 'list') {
@@ -2103,9 +2181,29 @@ export const TestGalleryApp = () => {
       shuffleProController.startAutomatic(trigger, movieId)
       return
     }
+    // A few quick shuffles in a row, far from an Easter egg: offer the moods.
+    if (!moodNudgeSpentRef.current) {
+      const noted = noteShuffleForNudge(recentShufflesRef.current, Date.now())
+      recentShufflesRef.current = noted.recent
+      if (
+        noted.fire &&
+        !isNearTrigger(shuffleProController.getStreak(), immersive)
+      ) {
+        moodNudgeSpentRef.current = true
+        writeSessionFlag(MOOD_NUDGE_STORAGE_KEY)
+        setMoodNudge(true)
+      }
+    }
     playCue('shuffleStart')
     setSpinRequest({ itemId: movieId, nonce: performance.now() })
-  }, [activeMovieId, detailsMovieId, mode, shuffleProController, visibleMovies])
+  }, [
+    activeMovieId,
+    detailsMovieId,
+    immersive,
+    mode,
+    shuffleProController,
+    visibleMovies,
+  ])
 
   // Skip finishes whatever spin is running: a Shuffle Pro run or a normal one.
   const handleSkip = useCallback(() => {
@@ -2186,6 +2284,7 @@ export const TestGalleryApp = () => {
         watchMovieId ||
         aboutOpen ||
         savedOpen ||
+        moodsOpen ||
         filterOpen ||
         sortOpen ||
         shuffleProController.canAbort()
@@ -2202,6 +2301,7 @@ export const TestGalleryApp = () => {
     exitImmersive,
     filterOpen,
     immersive,
+    moodsOpen,
     savedOpen,
     shuffleProController,
     sortOpen,
@@ -2236,6 +2336,7 @@ export const TestGalleryApp = () => {
       !watchMovieId &&
       !aboutOpen &&
       !savedOpen &&
+      !moodsOpen &&
       !filterOpen &&
       !sortOpen
     )
@@ -2245,7 +2346,8 @@ export const TestGalleryApp = () => {
       if (event.key !== 'Escape') return
       // Close only the top-most layer: watch links, then details, then About,
       // then Saved, then panels.
-      if (watchMovieId) setWatchMovieId(null)
+      if (moodsOpen) setMoodsOpen(false)
+      else if (watchMovieId) setWatchMovieId(null)
       else if (detailsMovieId) setDetailsMovieId(null)
       else if (aboutOpen) setAboutOpen(false)
       else if (savedOpen) setSavedOpen(false)
@@ -2255,7 +2357,15 @@ export const TestGalleryApp = () => {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [aboutOpen, detailsMovieId, filterOpen, savedOpen, sortOpen, watchMovieId])
+  }, [
+    aboutOpen,
+    detailsMovieId,
+    filterOpen,
+    moodsOpen,
+    savedOpen,
+    sortOpen,
+    watchMovieId,
+  ])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -2268,7 +2378,12 @@ export const TestGalleryApp = () => {
         mode,
         galleryReady: initialGalleryReady,
         overlayOpen: Boolean(
-          watchMovieId || aboutOpen || savedOpen || filterOpen || sortOpen,
+          watchMovieId ||
+            aboutOpen ||
+            savedOpen ||
+            moodsOpen ||
+            filterOpen ||
+            sortOpen,
         ),
         detailsOpen: Boolean(detailsMovieId),
         hasTarget:
@@ -2322,6 +2437,7 @@ export const TestGalleryApp = () => {
     handleShuffle,
     handleSkip,
     promptFullscreenHint,
+    moodsOpen,
     savedOpen,
     initialGalleryReady,
     listMovies.length,
@@ -2331,6 +2447,22 @@ export const TestGalleryApp = () => {
     visibleMovies.length,
     watchMovieId,
   ])
+
+  // After a mood is confirmed the wall is rebuilt for it, then it shuffles.
+  const handledMoodShuffle = useRef(0)
+  useEffect(() => {
+    if (!moodShuffleNonce || handledMoodShuffle.current === moodShuffleNonce)
+      return
+    handledMoodShuffle.current = moodShuffleNonce
+    handleShuffleRef.current()
+  }, [moodShuffleNonce])
+
+  // Bring the mood page in quietly once the globe is up.
+  useEffect(() => {
+    if (!initialGalleryReady) return
+    const timer = window.setTimeout(() => void loadMoodPage(), 4000)
+    return () => window.clearTimeout(timer)
+  }, [initialGalleryReady])
 
   // Key up decides what a Space press was: the end of a Shuffle Pro hold, or a
   // plain tap that shuffles. Losing focus mid-hold just lets the hold go.
@@ -2437,6 +2569,7 @@ export const TestGalleryApp = () => {
       {mode === 'filters' ? (
         <FiltersView
           {...filterSectionProps}
+          onPickMood={openMoods}
           resultCount={filteredMovies.length}
           selectedFilterCount={selectedFilterCount}
         />
@@ -2550,6 +2683,7 @@ export const TestGalleryApp = () => {
                   </span>
                 </button>
               ) : null}
+              {initialGalleryReady ? <MoodLine onOpen={openMoods} /> : null}
             </>
           ) : null
         }
@@ -2710,6 +2844,29 @@ export const TestGalleryApp = () => {
             onRemove={(movie) => savedStore.remove(movie.id)}
           />
         </>
+      ) : null}
+
+      {moodNudge &&
+      mode === 'wall' &&
+      !detailsMovieId &&
+      !moodsOpen &&
+      !filterOpen &&
+      !aboutOpen &&
+      !savedOpen ? (
+        <MoodNudge onOpen={openMoods} onDismiss={dismissMoodNudge} />
+      ) : null}
+
+      {moodsPresence.isPresent ? (
+        <Suspense fallback={null}>
+          <MoodPage
+            motionPhase={moodsPresence.motionPhase}
+            initialMoods={selectedMoodFilters}
+            initialTime={moodTimeFromFilter(selectedRuntimeFilter)}
+            countFor={countForMoods}
+            onClose={() => setMoodsOpen(false)}
+            onConfirm={handleMoodConfirm}
+          />
+        </Suspense>
       ) : null}
 
       {mode === 'wall' ? (
@@ -4110,11 +4267,13 @@ const FilterPanel = ({
 )
 
 type FiltersViewProps = FilterSectionsProps & {
+  onPickMood: () => void
   resultCount: number
   selectedFilterCount: number
 }
 
 const FiltersView = ({
+  onPickMood,
   resultCount,
   selectedFilterCount,
   ...sections
@@ -4135,6 +4294,7 @@ const FiltersView = ({
         </button>
       ) : null}
     </header>
+    <MoodFunnel onOpen={onPickMood} />
     <div className='warp-filters-summary'>
       <span>{selectedFilterCount || 'No'} selected</span>
       <span>
