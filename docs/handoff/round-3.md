@@ -20,19 +20,19 @@ Status: done, partial, todo, cut.
 | # | Idea | Status |
 |---|------|--------|
 | 1 | Sound: per-path peak chime, landing thud, drone | done (round 2) |
-| 1b | Music for the Easter egg presentation, small interaction effects | todo |
+| 1b | Music for the Easter egg presentation, small interaction effects | done (round 3, not heard by ear; a few effects only: shuffle, landing, save, mood) |
 | 2 | Slow-motion beat when the card lands | todo |
 | 2 | Chosen poster flies out of the globe into the card | todo |
 | 2 | Gold "path to gold" reveal the first time it unlocks | todo |
 | 3 | Time-of-day sky | cut |
 | 3 | Weather: a very fast flick draws rain or snow across the globe | todo |
 | 3 | Constellations: Saved films light up and connect into a shape | todo |
-| 4 | "Tonight" mode: pick a mood and time budget, the run lands inside it | todo (lives inside the mood page) |
+| 4 | "Tonight" mode: pick a mood and time budget, the run lands inside it | done: the mood page |
 | 5 | Share card as a short clip | done (round 2) |
 | 5 | Pass the globe party mode | todo |
 | 6 | Cosmetic variants after finding a path N times | todo |
 | 6 | Stats page becomes a profile (found paths, saved list, streak history) | todo |
-| 6 | Favourites bias where the globe opens | todo (part of taste profile) |
+| 6 | Favourites bias where the globe opens | done: the first pick and every shuffle lean towards saved films' genres |
 | 7 | Tune the motion blur on a real flick | todo, needs a phone |
 | 7 | Test on a real phone for performance and haptics | todo, needs a phone |
 | 7 | Smarter preloader rule than waiting up to 25 s for slow posters | todo |
@@ -42,23 +42,23 @@ Status: done, partial, todo, cut.
 
 | Idea | Status |
 |------|--------|
-| Full-screen mood worlds, each with its own sky, palette, illustration, one-line promise | todo |
-| Picking a mood fades the globe into that world and lands on a film from it | todo |
-| Mix two moods | todo |
-| After a mood, ask how long they have and filter by runtime | todo |
-| Slim nudge after quick shuffles, never near an egg trigger | todo |
+| Full-screen mood worlds, each with its own sky, palette, illustration, one-line promise | done |
+| Picking a mood fades the globe into that world and lands on a film from it | done: closes the page, filters, shuffles |
+| Mix two moods | done |
+| After a mood, ask how long they have and filter by runtime | done |
+| Slim nudge after quick shuffles, never near an egg trigger | done: once per visit |
 
 ### From the second ideas list
 
 | Idea | Status |
 |------|--------|
-| Taste profile: Saved movies shift which moods and genres the globe leans toward | todo |
+| Taste profile: Saved movies shift which moods and genres the globe leans toward | done: shuffles lean (up to 3x), a "For you" tag on the mood page, a line in Saved |
 | Pass the globe | todo (same as above) |
 | Shareable run recap: paths found and streak | todo |
 | Rarity events: a one-time golden hour that raises Gold odds, announced by a quiet sky change | todo |
 | Constellations | todo (same as above) |
 | Weather | todo (same as above) |
-| Film-card trailers: a 3 second muted loop behind the poster on premium cards | todo |
+| Film-card trailers: a 3 second muted loop behind the poster on premium cards | blocked: the data has no video source and there is no API key |
 
 ### Round 2 items that stay open
 
