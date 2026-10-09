@@ -56,7 +56,8 @@ export type ShuffleProPort = {
   prewarm(): void
   cancelPrewarm(): void
   // Spin to the movie with the existing snap, then open its card.
-  landOn(itemId: string, onArrive: () => void): void
+  // beatMs holds the card back for a moment once the poster has landed.
+  landOn(itemId: string, onArrive: () => void, beatMs?: number): void
   // Skip: ease to the movie within `ms`, then open its card.
   settleTo(itemId: string, ms: number, onArrive: () => void): void
   cancelLanding(): void
@@ -159,6 +160,8 @@ type Press = {
 const SKY_HOLD_LEVEL = 0.6
 const SKIP_SETTLE_MS = 300
 const LANDING_WATCHDOG_MS = 2600
+// A premium landing holds for a beat on its poster before the card opens.
+export const LANDING_BEAT_MS = 380
 const CARD_CLOSE_FADE_MS = 600
 const NORMAL_FADE_MS = 400
 const PEAK_FLASH_MS = 250
@@ -820,8 +823,13 @@ export class ShuffleProController {
     ) {
       run.snapStarted = true
       const targetId = run.targetId
-      if (targetId) port.landOn(targetId, () => this.arrived(run))
-      else this.arrived(run)
+      if (targetId) {
+        port.landOn(
+          targetId,
+          () => this.arrived(run),
+          run.premium ? LANDING_BEAT_MS : 0,
+        )
+      } else this.arrived(run)
     }
   }
 

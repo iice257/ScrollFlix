@@ -21,8 +21,8 @@ Status: done, partial, todo, cut.
 |---|------|--------|
 | 1 | Sound: per-path peak chime, landing thud, drone | done (round 2) |
 | 1b | Music for the Easter egg presentation, small interaction effects | done (round 3, not heard by ear; a few effects only: shuffle, landing, save, mood) |
-| 2 | Slow-motion beat when the card lands | todo |
-| 2 | Chosen poster flies out of the globe into the card | todo |
+| 2 | Slow-motion beat when the card lands | partial: a 380 ms hold and a small push toward the poster before a premium card opens; no true slow motion, needs feel-testing |
+| 2 | Chosen poster flies out of the globe into the card | done for ordinary picks and taps; premium cards keep their own flip |
 | 2 | Gold "path to gold" reveal the first time it unlocks | todo |
 | 3 | Time-of-day sky | cut |
 | 3 | Weather: a very fast flick draws rain or snow across the globe | todo |

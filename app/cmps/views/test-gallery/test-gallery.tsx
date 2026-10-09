@@ -87,6 +87,7 @@ import {
   tasteWeight,
   topGenres,
 } from './moods/taste'
+import { PosterFlight, type ViewRect } from './poster-flight'
 import { savedStore } from './saved-store'
 import {
   type FacetCatalog,
@@ -2140,12 +2141,40 @@ export const TestGalleryApp = () => {
   )
 
   // A shuffle landing on its poster opens the card without breaking anything.
+  // A plain pick lifts its poster off the globe and into the card. Shuffle Pro
+  // runs have their own entrance, and people who asked for less motion get none.
+  const [posterFlight, setPosterFlight] = useState<{
+    movieId: string
+    from: ViewRect
+    image: string
+  } | null>(null)
+  const startPosterFlight = useCallback(
+    (movie: TestMovie) => {
+      if (
+        readReducedMotion(reducedMotionOverride.current) ||
+        shuffleProController.getSnapshot().phase !== 'idle'
+      ) {
+        return
+      }
+      const from = menuControlRef.current?.getPosterRect(movie.id)
+      if (!from) return
+      setPosterFlight({ movieId: movie.id, from, image: movie.posterUrl })
+    },
+    [reducedMotionOverride, shuffleProController],
+  )
+
+  // A stale flight must never replay when the same film opens another way.
+  useEffect(() => {
+    if (!detailsMovieId) setPosterFlight(null)
+  }, [detailsMovieId])
+
   const handleOpenFromGlobe = useCallback(
     (movie: TestMovie, source: 'tap' | 'shuffle') => {
+      startPosterFlight(movie)
       if (source === 'shuffle') openMovie(movie)
       else handleOpenMovie(movie)
     },
-    [handleOpenMovie, openMovie],
+    [handleOpenMovie, openMovie, startPosterFlight],
   )
 
   const handleOpenWatchLinks = useCallback((movie: TestMovie) => {
@@ -2887,6 +2916,15 @@ export const TestGalleryApp = () => {
             onRemove={(movie) => savedStore.remove(movie.id)}
           />
         </>
+      ) : null}
+
+      {posterFlight && detailsMovieId === posterFlight.movieId ? (
+        <PosterFlight
+          key={posterFlight.movieId}
+          from={posterFlight.from}
+          image={posterFlight.image}
+          onDone={() => setPosterFlight(null)}
+        />
       ) : null}
 
       {moodNudge &&

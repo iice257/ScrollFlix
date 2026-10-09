@@ -79,9 +79,18 @@ type InfiniteMovieMenuProps<T> = {
   controlRef?: { current: InfiniteMovieMenuControl | null }
 }
 
+export type PosterRect = {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 export type InfiniteMovieMenuControl = {
   // Finishes a Shuffle spin now, settling on its poster within 300ms.
   skipSpin: () => void
+  // Where a film's poster is on screen right now, or null if it isn't shown.
+  getPosterRect: (itemId: string) => PosterRect | null
 }
 
 type Vec2 = [number, number]
@@ -1910,6 +1919,54 @@ class InfiniteMovieEngine<T> {
     return { candidates, ellipse }
   }
 
+  // Where an item's poster is on screen right now (viewport pixels), for the
+  // poster that is closest to the viewer if the item appears more than once.
+  getPosterRect(itemId: string): PosterRect | null {
+    const rect = this.canvas.getBoundingClientRect()
+    if (!rect.width || !rect.height) return null
+    const viewProjection = multiplyMat4(
+      identityMat4(),
+      this.projectionMatrix,
+      this.viewMatrix,
+    )
+    const mvp = identityMat4()
+    const toScreen = (x: number, y: number): Vec2 | null => {
+      const clipX = mvp[0] * x + mvp[4] * y + mvp[12]
+      const clipY = mvp[1] * x + mvp[5] * y + mvp[13]
+      const clipW = mvp[3] * x + mvp[7] * y + mvp[15]
+      if (clipW <= 0.0001) return null
+      return [
+        rect.left + ((clipX / clipW + 1) / 2) * rect.width,
+        rect.top + ((1 - clipY / clipW) / 2) * rect.height,
+      ]
+    }
+    let best: { z: number; rect: PosterRect } | null = null
+    this.instanceMatrices.forEach((matrix, index) => {
+      const item = this.items[index % Math.max(1, this.items.length)]
+      if (!item || item.id !== itemId) return
+      const centerZ = matrix[14]
+      if (centerZ < this.sphereRadius * 0.15) return
+      if (best && best.z >= centerZ) return
+      multiplyMat4(mvp, viewProjection, matrix)
+      const center = toScreen(0, 0)
+      const right = toScreen(POSTER_HALF_WIDTH, 0)
+      const up = toScreen(0, POSTER_HALF_HEIGHT)
+      if (!center || !right || !up) return
+      const halfWidth = Math.hypot(right[0] - center[0], right[1] - center[1])
+      const halfHeight = Math.hypot(up[0] - center[0], up[1] - center[1])
+      best = {
+        z: centerZ,
+        rect: {
+          left: center[0] - halfWidth,
+          top: center[1] - halfHeight,
+          width: halfWidth * 2,
+          height: halfHeight * 2,
+        },
+      }
+    })
+    return (best as { rect: PosterRect } | null)?.rect ?? null
+  }
+
   // Resolves a click against a snapshot; same snapshot and point, same poster.
   pickFromSnapshot(
     snapshot: PickSnapshot,
@@ -2862,6 +2919,8 @@ export const InfiniteMovieMenu = <T,>({
     if (!canvas || !engineItems.length) return
 
     let engine: InfiniteMovieEngine<T> | null = null
+    // Holds a premium card back for a beat after its poster lands.
+    let beatTimer = 0
     const onResize = () => engine?.resize()
 
     try {
@@ -2914,15 +2973,27 @@ export const InfiniteMovieMenu = <T,>({
         setSkyState: (state) => engine?.setSkyState(state),
         prewarm: () => engine?.prewarmSky(),
         cancelPrewarm: () => engine?.cancelSkyPrewarm(),
-        landOn: (itemId, onArrive) => {
+        landOn: (itemId, onArrive, beatMs = 0) => {
           const item = findItem(itemId)
           if (!item) {
             onArrive()
             return
           }
           engine?.spinToItem(itemId, (index) => {
-            openShuffled(item, index)
+            if (beatMs <= 0) {
+              openShuffled(item, index)
+              onArrive()
+              return
+            }
+            // The poster has landed: let it hold for a beat, with a small push
+            // toward it, before the card opens.
             onArrive()
+            engine?.kickCamera(-0.9)
+            window.clearTimeout(beatTimer)
+            beatTimer = window.setTimeout(
+              () => openShuffled(item, index),
+              beatMs,
+            )
           })
         },
         settleTo: (itemId, ms, onArrive) => {
@@ -2936,7 +3007,10 @@ export const InfiniteMovieMenu = <T,>({
             onArrive()
           })
         },
-        cancelLanding: () => engine?.cancelSpin(),
+        cancelLanding: () => {
+          window.clearTimeout(beatTimer)
+          engine?.cancelSpin()
+        },
         setStatsEnabled: (enabled) => engine?.setStatsEnabled(enabled),
         getFrameStats: () => engine?.getFrameStats() ?? { average: 0, p95: 0 },
         getSkyStats: () =>
@@ -2969,6 +3043,7 @@ export const InfiniteMovieMenu = <T,>({
 
     return () => {
       window.removeEventListener('resize', onResize)
+      window.clearTimeout(beatTimer)
       if (portRef.current) shuffleProRef.current?.detachPort(portRef.current)
       portRef.current = null
       engineRef.current = null
@@ -3165,6 +3240,8 @@ export const InfiniteMovieMenu = <T,>({
         if (!spin || !engine) return
         engine.settleToItem(spin.item.id, 300, (index) => spin.arrive(index))
       },
+      getPosterRect: (itemId) =>
+        engineRef.current?.getPosterRect(itemId) ?? null,
     }
     return () => {
       controlRef.current = null
