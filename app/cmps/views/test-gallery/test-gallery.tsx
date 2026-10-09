@@ -68,6 +68,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '../../ui/tooltip'
+import { constellationSetting } from './constellation'
+import { ConstellationLayer } from './constellation-layer'
 import {
   InfiniteMovieMenu,
   type InfiniteMovieMenuControl,
@@ -1945,6 +1947,11 @@ export const TestGalleryApp = () => {
   })
   const menuControlRef = useRef<InfiniteMovieMenuControl | null>(null)
   const goldenHour = useGoldenHour()
+  const constellationsOn = useSyncExternalStore(
+    constellationSetting.subscribe,
+    constellationSetting.get,
+    constellationSetting.get,
+  )
   // Very fast flicks of the globe kick up rain or snow.
   const stormRef = useRef<WeatherStorm | null>(null)
   const registerStorm = useCallback((storm: WeatherStorm | null) => {
@@ -2673,6 +2680,18 @@ export const TestGalleryApp = () => {
         onSpinActiveChange={setShuffleSpinning}
         onGestureSettled={handleGestureSettled}
         onGlobePress={promptFullscreenHint}
+      />
+      <ConstellationLayer
+        controlRef={menuControlRef}
+        ids={savedEntries.map((entry) => entry.id)}
+        active={
+          constellationsOn &&
+          mode === 'wall' &&
+          initialGalleryReady &&
+          !detailsMovieId &&
+          !moodsOpen
+        }
+        light={theme === 'light'}
       />
 
       {mode === 'list' ? (
@@ -4659,6 +4678,38 @@ const AppearanceSetting = ({
   </fieldset>
 )
 
+// Joins the saved films on the globe into a shape of light.
+const ConstellationSetting = () => {
+  const on = useSyncExternalStore(
+    constellationSetting.subscribe,
+    constellationSetting.get,
+    constellationSetting.get,
+  )
+  return (
+    <fieldset className='warp-about-setting'>
+      <legend>Constellations</legend>
+      <div className='warp-theme-switch'>
+        {([true, false] as const).map((option) => (
+          <button
+            type='button'
+            key={String(option)}
+            aria-pressed={on === option}
+            className={cn(on === option && 'is-active')}
+            onClick={() => constellationSetting.set(option)}
+          >
+            {option ? (
+              <Sparkles aria-hidden='true' />
+            ) : (
+              <X aria-hidden='true' />
+            )}
+            {option ? 'On' : 'Off'}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
 const AboutDrawer = ({
   theme,
   movieCount,
@@ -4719,6 +4770,7 @@ const AboutDrawer = ({
           <h3>Settings</h3>
           <div className='warp-about-settings'>
             <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
+            <ConstellationSetting />
             <SoundSettingsPanel />
           </div>
         </section>
@@ -4807,6 +4859,7 @@ const AboutDrawer = ({
       <AboutControls />
       <ShuffleProShelf onShare={onShareRecap} />
       <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
+      <ConstellationSetting />
       <SoundSettingsPanel categories={false} />
       <button
         type='button'
