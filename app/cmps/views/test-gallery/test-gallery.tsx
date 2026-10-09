@@ -1909,17 +1909,7 @@ export const TestGalleryApp = () => {
   const detailsPresence = useExitPresence(Boolean(detailsMovie), detailsMovie)
 
   useAudioUnlockOnGesture()
-  useSoundEffects({
-    detailsOpen: Boolean(detailsMovie),
-    aboutOpen,
-    savedOpen,
-    filterOpen,
-    sortOpen: sortOpen && mode === 'list',
-    watchOpen: Boolean(watchMovie),
-    mode,
-    theme,
-    savedCount: savedEntries.length,
-  })
+  useSoundEffects({ savedCount: savedEntries.length })
   // A normal shuffle ending: a soft thump. Shuffle Pro lands with its own.
   const wasShuffleSpinning = useRef(false)
   useEffect(() => {
@@ -3049,16 +3039,8 @@ const WarpWall = ({
     [movies],
   )
 
-  // A soft tick each time a new poster crosses the centre.
-  const lastTickId = useRef<string | null>(null)
   const handleActiveItemChange = useCallback(
-    (item: (typeof menuItems)[number]) => {
-      if (lastTickId.current !== item.id) {
-        if (lastTickId.current !== null) playCue('tick')
-        lastTickId.current = item.id
-      }
-      onSelectMovie(item.payload)
-    },
+    (item: (typeof menuItems)[number]) => onSelectMovie(item.payload),
     [onSelectMovie],
   )
 

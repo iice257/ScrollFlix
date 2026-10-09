@@ -91,7 +91,7 @@ export type ControllerDeps = {
   // tier-specific assets can load in the background.
   prewarmTier?: (tier: Tier | null) => void
   // Sound cues: the peak is reached, the landing is done.
-  onCue?: (cue: 'peak' | 'land', tier: Tier) => void
+  onCue?: (cue: 'peak' | 'land' | 'end', tier: Tier) => void
 }
 
 export type ControllerSnapshot = {
@@ -582,6 +582,7 @@ export class ShuffleProController {
     port.setCameraPull(0, LANDING_PULL_FREQ, LANDING_PULL_ZETA)
     run.whoosh?.fadeOut(500)
     run.whoosh = null
+    this.deps.onCue?.('end', run.tier)
     this.beginFade(run, 0, NORMAL_FADE_MS)
     run.landingDone = true
     this.streak = EMPTY_STREAK
@@ -625,6 +626,7 @@ export class ShuffleProController {
     if (this.phase !== 'presented' || !run) return
     this.presented = null
     this.phase = 'aborting'
+    this.deps.onCue?.('end', run.tier)
     this.beginFade(run, 0, CARD_CLOSE_FADE_MS)
     this.emit()
   }
@@ -905,6 +907,7 @@ export class ShuffleProController {
     if (run) {
       run.whoosh?.stop()
       run.whoosh = null
+      this.deps.onCue?.('end', run.tier)
       port?.cancelLanding()
       port?.stopAutoSpin(LANDING_TAU_MS)
       port?.setCameraPull(0, LANDING_PULL_FREQ, LANDING_PULL_ZETA)

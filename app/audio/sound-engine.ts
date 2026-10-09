@@ -5,11 +5,10 @@
 // oscillators and noise. While sound is off the hot paths cost one boolean
 // read.
 //
-// Cue map (category -> cues):
-//   ui       open, close, confirm, action, nav, heart
-//   globe    tick
-//   shuffle  landing
-//   details  detailsOpen, detailsClose
+// Cue map (category -> cues). There are only a few on purpose: the site is
+// quiet apart from the Easter egg.
+//   shuffle  shuffleStart, landing
+//   ui       heart, moodPick, moodGo, confirm
 // The Shuffle Pro Easter egg voices live in shuffle-pro-audio.ts and are
 // gated by `eggs`, not by the master switch.
 
@@ -196,111 +195,38 @@ export const burst = (
 // ------------------------------------------------------------------- cues
 
 export type Cue =
-  | 'tick'
-  | 'open'
-  | 'close'
-  | 'confirm'
-  | 'action'
-  | 'nav'
-  | 'heart'
-  | 'landing'
   | 'shuffleStart'
-  | 'detailsOpen'
-  | 'detailsClose'
+  | 'landing'
+  | 'heart'
+  | 'moodPick'
+  | 'moodGo'
+  | 'confirm'
 
 export const CUE_CATEGORY: Record<Cue, SoundCategory> = {
-  tick: 'globe',
-  open: 'ui',
-  close: 'ui',
-  confirm: 'ui',
-  action: 'ui',
-  nav: 'ui',
-  heart: 'ui',
-  landing: 'shuffle',
   shuffleStart: 'shuffle',
-  detailsOpen: 'details',
-  detailsClose: 'details',
+  landing: 'shuffle',
+  heart: 'ui',
+  moodPick: 'ui',
+  moodGo: 'ui',
+  confirm: 'ui',
 }
 
 const CUE_MIN_INTERVAL_MS: Record<Cue, number> = {
-  tick: 55,
-  open: 90,
-  close: 90,
-  confirm: 90,
-  action: 60,
-  nav: 120,
-  heart: 120,
-  landing: 200,
   shuffleStart: 200,
-  detailsOpen: 140,
-  detailsClose: 140,
+  landing: 200,
+  heart: 120,
+  moodPick: 70,
+  moodGo: 300,
+  confirm: 90,
 }
 
 const MAX_VOICES = 8
 const limiter = createCueLimiter(CUE_MIN_INTERVAL_MS, MAX_VOICES)
 
-let tickStep = 0
-const TICK_PITCHES = [2900, 3300, 3100]
+// One pentatonic note per mood world, low to high.
+const MOOD_NOTES = [523.25, 587.33, 659.25, 783.99, 880, 1046.5]
 
 const VOICES: Record<Cue, (audio: AudioOut, strength: number) => void> = {
-  // A soft dry click as a poster crosses the centre; pitch rotates so a fast
-  // spin sounds like a ratchet, not a machine gun.
-  tick: (audio, strength) => {
-    tickStep = (tickStep + 1) % TICK_PITCHES.length
-    burst(audio, {
-      centerHz: TICK_PITCHES[tickStep],
-      q: 2.2,
-      decay: 0.022,
-      gain: 0.07 * (0.5 + 0.5 * strength),
-    })
-  },
-  // Opening a container rises, closing it falls: audibly related pair.
-  open: (audio) => {
-    pluck(audio, { freq: 440, toFreq: 700, decay: 0.16, gain: 0.07 })
-    pluck(audio, {
-      freq: 660,
-      toFreq: 1050,
-      decay: 0.14,
-      gain: 0.035,
-      start: 0.025,
-    })
-  },
-  close: (audio) => {
-    pluck(audio, { freq: 700, toFreq: 440, decay: 0.15, gain: 0.06 })
-  },
-  confirm: (audio) => {
-    pluck(audio, { freq: 659, decay: 0.16, gain: 0.07, type: 'triangle' })
-    pluck(audio, {
-      freq: 988,
-      decay: 0.22,
-      gain: 0.06,
-      start: 0.075,
-      type: 'triangle',
-    })
-  },
-  action: (audio) => {
-    pluck(audio, { freq: 620, toFreq: 520, decay: 0.07, gain: 0.07 })
-  },
-  nav: (audio) => {
-    burst(audio, {
-      centerHz: 700,
-      toHz: 2200,
-      q: 1.1,
-      attack: 0.03,
-      decay: 0.16,
-      gain: 0.07,
-    })
-  },
-  heart: (audio) => {
-    pluck(audio, { freq: 880, toFreq: 1320, decay: 0.12, gain: 0.08 })
-    pluck(audio, {
-      freq: 1760,
-      decay: 0.28,
-      gain: 0.035,
-      start: 0.06,
-      type: 'triangle',
-    })
-  },
   // A soft whoosh as the globe sets off for a random movie.
   shuffleStart: (audio) => {
     burst(audio, {
@@ -328,32 +254,51 @@ const VOICES: Record<Cue, (audio: AudioOut, strength: number) => void> = {
       gain: 0.1 * strength,
     })
   },
-  detailsOpen: (audio) => {
-    pluck(audio, { freq: 196, toFreq: 262, decay: 0.28, gain: 0.07 })
-    burst(audio, {
-      centerHz: 500,
-      toHz: 1600,
-      q: 0.8,
-      attack: 0.05,
-      decay: 0.2,
-      gain: 0.05,
+  heart: (audio) => {
+    pluck(audio, { freq: 880, toFreq: 1320, decay: 0.12, gain: 0.08 })
+    pluck(audio, {
+      freq: 1760,
+      decay: 0.28,
+      gain: 0.035,
+      start: 0.06,
+      type: 'triangle',
     })
   },
-  detailsClose: (audio) => {
-    pluck(audio, { freq: 262, toFreq: 180, decay: 0.2, gain: 0.05 })
+  // Choosing a mood world: a note whose pitch is the world's place in the row,
+  // so moving along the worlds plays a scale. Strength 0..1 picks the note.
+  moodPick: (audio, strength) => {
+    const hz = MOOD_NOTES[Math.round(strength * (MOOD_NOTES.length - 1))]
+    pluck(audio, { freq: hz, decay: 0.34, gain: 0.07, type: 'triangle' })
+    pluck(audio, { freq: hz * 2, decay: 0.22, gain: 0.025, start: 0.02 })
+  },
+  // Landing on a film from the mood page: a short rising chord.
+  moodGo: (audio) => {
+    for (const [index, hz] of [523.25, 659.25, 783.99, 1046.5].entries()) {
+      pluck(audio, {
+        freq: hz,
+        decay: 0.7,
+        gain: 0.055,
+        start: index * 0.06,
+        type: 'triangle',
+      })
+    }
+  },
+  confirm: (audio) => {
+    pluck(audio, { freq: 659, decay: 0.16, gain: 0.07, type: 'triangle' })
+    pluck(audio, {
+      freq: 988,
+      decay: 0.22,
+      gain: 0.06,
+      start: 0.075,
+      type: 'triangle',
+    })
   },
 }
-
-const reducedMotion = () =>
-  typeof window !== 'undefined' &&
-  Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
 
 // Plays one interface cue if sound is on for its category. Never throws.
 export const playCue = (cue: Cue, strength = 1) => {
   const settings = soundStore.get()
   if (!isCategoryOn(settings, CUE_CATEGORY[cue])) return
-  // Quiet the busiest category for people who asked for less motion.
-  if (cue === 'tick' && reducedMotion()) return
   const audio = getAudio()
   if (!audio) return
   if (!limiter.tryAcquire(cue, performance.now())) return

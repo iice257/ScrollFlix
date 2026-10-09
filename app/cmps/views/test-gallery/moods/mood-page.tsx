@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { playCue } from '../../../../audio/sound-engine'
 import { cn } from '../../../../utils/tw'
 import './mood-page.css'
 import { MoodScene } from './mood-art'
@@ -131,6 +132,9 @@ const MoodPage = ({
               onFocus={() => setOpenId(world.id)}
               onClick={() => {
                 setOpenId(world.id)
+                if (!isSelected) {
+                  playCue('moodPick', index / (MOOD_WORLDS.length - 1))
+                }
                 setSelected((current) => toggleMood(current, world.id))
               }}
             >
@@ -190,7 +194,10 @@ const MoodPage = ({
             type='button'
             className='mood-cta'
             disabled={!canGo}
-            onClick={() => onConfirm(selected, time)}
+            onClick={() => {
+              playCue('moodGo')
+              onConfirm(selected, time)
+            }}
           >
             <span>Land on a film</span>
             <ArrowRight aria-hidden='true' />

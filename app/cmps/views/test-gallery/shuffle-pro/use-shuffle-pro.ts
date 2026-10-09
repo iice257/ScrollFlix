@@ -8,6 +8,10 @@ import {
   type ControllerSnapshot,
   ShuffleProController,
 } from './shuffle-pro-controller'
+import {
+  startPresentationMusic,
+  stopPresentationMusic,
+} from './shuffle-pro-music'
 import { cancelTierPreload, startTierPreload } from './shuffle-pro-preload'
 import { shuffleProStore } from './shuffle-pro-store'
 
@@ -70,8 +74,11 @@ export const useShuffleProController = (context: Context) => {
           else cancelTierPreload()
         },
         onCue: (cue, tier) => {
-          if (cue === 'peak') playPeakChime(tier)
-          else playLandingThud(tier)
+          if (cue === 'peak') {
+            playPeakChime(tier)
+            startPresentationMusic(tier)
+          } else if (cue === 'land') playLandingThud(tier)
+          else stopPresentationMusic()
         },
         pickTarget: () =>
           pickOtherMovie(
