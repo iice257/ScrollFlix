@@ -81,6 +81,8 @@ export type ControllerDeps = {
   isImmersive: () => boolean
   isReducedMotion: () => boolean
   getFound: () => FoundPaths
+  // True while the golden hour is on and Gold is easier to find.
+  isGoldenHour?: () => boolean
   recordRun: (tier: Tier) => void
   createWhoosh: (tier: Tier) => Whoosh | null
   // A random visible movie that is not the one the globe is already on.
@@ -326,6 +328,7 @@ export class ShuffleProController {
       tier: resolveTier(this.deps.isImmersive() ? 'jade' : 'frost', {
         found: this.deps.getFound(),
         random: this.deps.random,
+        goldenHour: this.deps.isGoldenHour?.() ?? false,
       }),
       prewarmed: false,
     }
@@ -395,6 +398,7 @@ export class ShuffleProController {
         : resolveTier(base, {
             found: this.deps.getFound(),
             random: this.deps.random,
+            goldenHour: this.deps.isGoldenHour?.() ?? false,
           })
     this.beginRun(tier, {
       automatic: true,

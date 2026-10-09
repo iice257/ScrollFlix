@@ -97,6 +97,12 @@ import {
 } from './search-facets'
 import { shareLink } from './share/share-link'
 import {
+  GoldenHourNote,
+  GoldenHourWash,
+  useGoldenHour,
+  useGoldenHourScheduler,
+} from './shuffle-pro/golden-hour-layer'
+import {
   ImmersiveCorner,
   ImmersiveEnterButton,
   ImmersiveExitPill,
@@ -1915,6 +1921,8 @@ export const TestGalleryApp = () => {
     },
   })
   const menuControlRef = useRef<InfiniteMovieMenuControl | null>(null)
+  const goldenHour = useGoldenHour()
+  useGoldenHourScheduler(initialGalleryReady)
   const [shuffleSpinning, setShuffleSpinning] = useState(false)
   const isSpinActive = shuffleProSnapshot.canSkip || shuffleSpinning
   // True while Space is held down on the globe and the controller owns it.
@@ -2571,6 +2579,7 @@ export const TestGalleryApp = () => {
       data-mode={mode}
       data-theme={theme}
       data-immersive={immersive ? 'true' : 'false'}
+      data-golden={goldenHour ? 'true' : 'false'}
     >
       {immersive ? (
         <ImmersiveExitPill onExit={() => void exitImmersive()} />
@@ -2592,6 +2601,8 @@ export const TestGalleryApp = () => {
           reducedMotionOverride={reducedMotionOverride}
         />
       ) : null}
+      <GoldenHourWash />
+      <GoldenHourNote active={goldenHour} />
       {/* Stays mounted in other views so returning to the gallery is instant. */}
       <WarpWall
         activeMovieId={activeMovie?.id ?? null}

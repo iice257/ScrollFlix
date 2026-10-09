@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { pickWeighted } from '../moods/taste'
+import { goldenHourStore } from './golden-hour'
 import {
   createWhoosh,
   playLandingThud,
@@ -77,6 +78,7 @@ export const useShuffleProController = (context: Context) => {
         isImmersive: () => contextRef.current.immersive,
         isReducedMotion: () => readReducedMotion(reducedMotionOverride.current),
         getFound: () => shuffleProStore.get().found,
+        isGoldenHour: () => goldenHourStore.get(),
         recordRun: (tier) => shuffleProStore.recordRun(tier),
         createWhoosh,
         prewarmTier: (tier) => {
