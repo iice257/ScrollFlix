@@ -5699,6 +5699,32 @@
     color: #fff;
   }
 
+  .warp-saved-taste {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgb(255 255 255 / 0.06);
+    color: rgb(255 255 255 / 0.68);
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+
+  .warp-saved-taste svg {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+    color: #ffd23f;
+  }
+
+  .warp-saved-taste strong {
+    color: #fff;
+    font-weight: 800;
+  }
+
   .warp-saved-empty {
     margin: 0;
     color: rgb(255 255 255 / 0.62);

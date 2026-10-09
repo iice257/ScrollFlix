@@ -63,6 +63,16 @@ export const MOOD_WORLDS: MoodWorld[] = [
   },
 ]
 
+// The genres behind each mood. The rating-based world has none.
+export const MOOD_GENRES: Record<MoodFilter, string[]> = {
+  fast: ['Action', 'Adventure', 'Thriller'],
+  dark: ['Crime', 'Horror', 'Mystery', 'Thriller', 'War'],
+  funny: ['Animation', 'Comedy', 'Family'],
+  romantic: ['Romance'],
+  weird: ['Fantasy', 'Horror', 'Science Fiction'],
+  highRated: [],
+}
+
 export const MOOD_TIMES: Array<{
   id: MoodTimeId
   label: string

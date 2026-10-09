@@ -25,6 +25,8 @@ type MoodPageProps = {
   motionPhase: 'enter' | 'exit'
   initialMoods: MoodFilter[]
   initialTime: MoodTimeId
+  // The world the saved films lean towards, if they say anything yet.
+  tasteLead: MoodFilter | null
   // How many films a mix would show. Only used to say when nothing fits.
   countFor: (moods: MoodFilter[], time: MoodTimeId) => number
   onClose: () => void
@@ -39,6 +41,7 @@ const MoodPage = ({
   motionPhase,
   initialMoods,
   initialTime,
+  tasteLead,
   countFor,
   onClose,
   onConfirm,
@@ -46,7 +49,7 @@ const MoodPage = ({
   const [selected, setSelected] = useState<MoodFilter[]>(initialMoods)
   const [time, setTime] = useState<MoodTimeId>(initialTime)
   const [openId, setOpenId] = useState<MoodFilter>(
-    initialMoods[initialMoods.length - 1] ?? DEFAULT_OPEN,
+    initialMoods[initialMoods.length - 1] ?? tasteLead ?? DEFAULT_OPEN,
   )
   const stageRef = useRef<HTMLDivElement | null>(null)
   const frameRef = useRef(0)
@@ -154,6 +157,9 @@ const MoodPage = ({
                   {String(index + 1).padStart(2, '0')}
                 </span>
                 <span className='mood-name'>{world.name}</span>
+                {tasteLead === world.id ? (
+                  <span className='mood-for-you'>For you</span>
+                ) : null}
                 <span className='mood-promise'>{world.promise}</span>
               </span>
               <span className='mood-name-v' aria-hidden='true'>

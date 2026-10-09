@@ -28,6 +28,7 @@ import {
   Share2,
   Shuffle,
   SlidersHorizontal,
+  Sparkles,
   Sun,
   X,
 } from 'lucide-react'
@@ -75,10 +76,17 @@ import {
 import { matchesFilmLink, pickLandingMovie } from './landing'
 import { MoodFunnel, MoodLine, MoodNudge } from './moods/mood-entry'
 import {
+  MOOD_GENRES,
   type MoodFilter,
   type MoodTimeId,
   noteShuffleForNudge,
 } from './moods/mood-worlds'
+import {
+  buildTasteProfile,
+  leadingMood,
+  tasteWeight,
+  topGenres,
+} from './moods/taste'
 import { savedStore } from './saved-store'
 import {
   type FacetCatalog,
@@ -455,27 +463,27 @@ const MOOD_FILTERS: Array<{
   test?: (movie: TestMovie) => boolean
 }> = [
   {
-    genres: ['Action', 'Adventure', 'Thriller'],
+    genres: MOOD_GENRES.fast,
     id: 'fast',
     label: 'Fast',
   },
   {
-    genres: ['Crime', 'Horror', 'Mystery', 'Thriller', 'War'],
+    genres: MOOD_GENRES.dark,
     id: 'dark',
     label: 'Dark',
   },
   {
-    genres: ['Animation', 'Comedy', 'Family'],
+    genres: MOOD_GENRES.funny,
     id: 'funny',
     label: 'Funny',
   },
   {
-    genres: ['Romance'],
+    genres: MOOD_GENRES.romantic,
     id: 'romantic',
     label: 'Romantic',
   },
   {
-    genres: ['Fantasy', 'Horror', 'Science Fiction'],
+    genres: MOOD_GENRES.weird,
     id: 'weird',
     label: 'Weird',
   },
@@ -1773,6 +1781,37 @@ export const TestGalleryApp = () => {
     ),
   )
 
+  // What the saved films say about taste. With three or more saved, random
+  // picks lean a little towards films like them (never exclusively).
+  const tasteEntries = useSyncExternalStore(
+    savedStore.subscribe,
+    savedStore.get,
+    savedStore.get,
+  )
+  const tasteProfile = useMemo(() => {
+    if (tasteEntries.length < 3) return null
+    const byId = new Map(movies.map((movie) => [movie.id, movie]))
+    return buildTasteProfile(
+      tasteEntries.flatMap((entry) => byId.get(entry.id) ?? []),
+    )
+  }, [movies, tasteEntries])
+  const tasteWeights = useMemo(
+    () =>
+      tasteProfile
+        ? new Map(
+            movies.map((movie) => [movie.id, tasteWeight(movie, tasteProfile)]),
+          )
+        : null,
+    [movies, tasteProfile],
+  )
+  const weightOf = useMemo(
+    () =>
+      tasteWeights
+        ? (movie: { id: string }) => tasteWeights.get(movie.id) ?? 1
+        : undefined,
+    [tasteWeights],
+  )
+
   // The first centred movie of a page load is random (and never "Marmaduke").
   // Chosen once, during render, so the globe's first build already faces it.
   // A shared link (?film=<id>) lands on that film instead.
@@ -1792,7 +1831,8 @@ export const TestGalleryApp = () => {
     landingIdRef.current =
       (linked &&
         visibleMovies.find((movie) => matchesFilmLink(movie, linked))?.id) ||
-      (pickLandingMovie(visibleMovies, Math.random)?.id ?? null)
+      (pickLandingMovie(visibleMovies, Math.random, undefined, weightOf)?.id ??
+        null)
   }
   const landingId = landingIdRef.current
   useEffect(() => {
@@ -1863,6 +1903,7 @@ export const TestGalleryApp = () => {
     immersive,
     visibleMovies,
     currentId: activeMovieId,
+    weightOf,
     prepare: () => {
       setDetailsMovieId(null)
       setWatchMovieId(null)
@@ -2160,7 +2201,12 @@ export const TestGalleryApp = () => {
       setListRandomNonce((nonce) => nonce + 1)
       return
     }
-    const movieId = pickOtherMovie(visibleMovies, activeMovieId, Math.random)
+    const movieId = pickOtherMovie(
+      visibleMovies,
+      activeMovieId,
+      Math.random,
+      weightOf,
+    )
     if (!movieId) return
     // Streak rules decide whether this shuffle becomes a Shuffle Pro run.
     const trigger = shuffleProController.noteAction({ type: 'shuffle' })
@@ -2193,6 +2239,7 @@ export const TestGalleryApp = () => {
     mode,
     shuffleProController,
     visibleMovies,
+    weightOf,
   ])
 
   // Skip finishes whatever spin is running: a Shuffle Pro run or a normal one.
@@ -2209,10 +2256,15 @@ export const TestGalleryApp = () => {
         isBigSpin(totalRad) ? { type: 'bigSpin' } : { type: 'neutral' },
       )
       if (!trigger) return
-      const movieId = pickOtherMovie(visibleMovies, activeMovieId, Math.random)
+      const movieId = pickOtherMovie(
+        visibleMovies,
+        activeMovieId,
+        Math.random,
+        weightOf,
+      )
       if (movieId) shuffleProController.startAutomatic(trigger, movieId)
     },
-    [activeMovieId, shuffleProController, visibleMovies],
+    [activeMovieId, shuffleProController, visibleMovies, weightOf],
   )
 
   // Anything that isn't a shuffle ends the streak: filters, sort, search,
@@ -2829,6 +2881,7 @@ export const TestGalleryApp = () => {
           <SavedDrawer
             motionPhase={savedPresence.motionPhase}
             movies={savedMovies}
+            taste={topGenres(tasteProfile)}
             onClose={() => setSavedOpen(false)}
             onOpenMovie={handleOpenMovie}
             onRemove={(movie) => savedStore.remove(movie.id)}
@@ -2852,6 +2905,7 @@ export const TestGalleryApp = () => {
             motionPhase={moodsPresence.motionPhase}
             initialMoods={selectedMoodFilters}
             initialTime={moodTimeFromFilter(selectedRuntimeFilter)}
+            tasteLead={leadingMood(tasteProfile)}
             countFor={countForMoods}
             onClose={() => setMoodsOpen(false)}
             onConfirm={handleMoodConfirm}
@@ -4654,6 +4708,8 @@ const AboutDrawer = ({
 type SavedDrawerProps = {
   motionPhase: MotionPhase
   movies: TestMovie[]
+  // The genres the saved films lean on, once there are enough to say.
+  taste: string[]
   onClose: () => void
   onOpenMovie: (movie: TestMovie) => void
   onRemove: (movie: TestMovie) => void
@@ -4663,6 +4719,7 @@ type SavedDrawerProps = {
 const SavedDrawer = ({
   motionPhase,
   movies,
+  taste,
   onClose,
   onOpenMovie,
   onRemove,
@@ -4690,6 +4747,14 @@ const SavedDrawer = ({
         <X aria-hidden='true' />
       </button>
     </header>
+    {taste.length ? (
+      <p className='warp-saved-taste'>
+        <Sparkles aria-hidden='true' />
+        <span>
+          Your shuffles lean towards <strong>{taste.join(' and ')}</strong>.
+        </span>
+      </p>
+    ) : null}
     {movies.length ? (
       <ul className='warp-saved-list'>
         {movies.map((movie) => (

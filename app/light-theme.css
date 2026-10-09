@@ -1355,6 +1355,19 @@
   color: rgb(33 26 16);
 }
 
+.warp-shell[data-theme="light"] .warp-saved-taste {
+  background: rgb(33 26 16 / 0.06);
+  color: rgb(33 26 16 / 0.68);
+}
+
+.warp-shell[data-theme="light"] .warp-saved-taste svg {
+  color: rgb(255 210 63);
+}
+
+.warp-shell[data-theme="light"] .warp-saved-taste strong {
+  color: rgb(33 26 16);
+}
+
 .warp-shell[data-theme="light"] .warp-saved-empty {
   color: rgb(33 26 16 / 0.62);
 }

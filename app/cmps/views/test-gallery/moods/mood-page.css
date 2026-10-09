@@ -263,6 +263,18 @@
   text-wrap: balance;
 }
 
+.mood-for-you {
+  justify-self: start;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--panel-accent);
+  color: #0a0a0a;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 .mood-promise {
   max-width: 28ch;
   color: rgb(255 255 255 / 0.8);
