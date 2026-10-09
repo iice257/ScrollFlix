@@ -19,34 +19,13 @@ const useChangeCue = <T>(
   }, [value])
 }
 
-const openClose = (next: boolean): Cue => (next ? 'open' : 'close')
-
 type SoundEffectsState = {
-  detailsOpen: boolean
-  aboutOpen: boolean
-  savedOpen: boolean
-  filterOpen: boolean
-  sortOpen: boolean
-  watchOpen: boolean
-  mode: string
-  theme: string
   savedCount: number
 }
 
-// Maps page state to interface sounds. Each one is a no-op unless sound is on
-// and its category allowed; the engine does the gating.
+// Maps page state to the few interface sounds. Each one is a no-op unless
+// sound is on and its category allowed; the engine does the gating.
 export const useSoundEffects = (state: SoundEffectsState) => {
-  useChangeCue(
-    state.detailsOpen,
-    (open): Cue => (open ? 'detailsOpen' : 'detailsClose'),
-  )
-  useChangeCue(state.aboutOpen, openClose)
-  useChangeCue(state.savedOpen, openClose)
-  useChangeCue(state.filterOpen, openClose)
-  useChangeCue(state.sortOpen, openClose)
-  useChangeCue(state.watchOpen, openClose)
-  useChangeCue(state.mode, () => 'nav')
-  useChangeCue(state.theme, () => 'action')
   useChangeCue(state.savedCount, (next, previous): Cue | null =>
     next > previous ? 'heart' : null,
   )

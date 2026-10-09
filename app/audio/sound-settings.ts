@@ -1,22 +1,21 @@
 // Sound settings: one small versioned object in localStorage.
 //
 // Everything is off by default except the Easter egg sounds: the master
-// switch gates the interface sounds (ticks, panels, cards), while `eggs`
-// gates the Shuffle Pro whoosh, chime and landing on their own. Nothing
+// switch gates the few small interface sounds (shuffle, landing, saving a
+// film, picking a mood), while `eggs` gates the Shuffle Pro whoosh, chime,
+// landing and music on their own. Nothing
 // touches Web Audio from here; this module is plain data.
 
 export const SOUND_STORAGE_KEY = 'scrollflix.sound.v1'
 // The pre-v1 switch for the whoosh alone ('0' = off, anything else = on).
 export const LEGACY_EGG_SOUND_KEY = 'wtw:sound:egg'
 
-export const SOUND_CATEGORIES = ['ui', 'globe', 'shuffle', 'details'] as const
+export const SOUND_CATEGORIES = ['shuffle', 'ui'] as const
 export type SoundCategory = (typeof SOUND_CATEGORIES)[number]
 
 export const SOUND_CATEGORY_LABELS: Record<SoundCategory, string> = {
-  ui: 'Buttons and panels',
-  globe: 'Globe ticks',
-  shuffle: 'Shuffle',
-  details: 'Movie cards',
+  shuffle: 'Shuffle and landing',
+  ui: 'Saves and moods',
 }
 
 export type SoundSettings = {
@@ -33,7 +32,7 @@ export const DEFAULT_SOUND_SETTINGS: SoundSettings = {
   enabled: false,
   volume: 0.6,
   eggs: true,
-  categories: { ui: true, globe: true, shuffle: true, details: true },
+  categories: { shuffle: true, ui: true },
 }
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value))

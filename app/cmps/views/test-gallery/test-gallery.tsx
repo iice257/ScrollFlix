@@ -28,6 +28,7 @@ import {
   Share2,
   Shuffle,
   SlidersHorizontal,
+  Sparkles,
   Sun,
   X,
 } from 'lucide-react'
@@ -67,12 +68,28 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '../../ui/tooltip'
+import { constellationSetting } from './constellation'
+import { ConstellationLayer } from './constellation-layer'
 import {
   InfiniteMovieMenu,
   type InfiniteMovieMenuControl,
   type InfiniteMovieMenuItem,
 } from './infinite-movie-menu'
 import { matchesFilmLink, pickLandingMovie } from './landing'
+import { MoodFunnel, MoodLine, MoodNudge } from './moods/mood-entry'
+import {
+  MOOD_GENRES,
+  type MoodFilter,
+  type MoodTimeId,
+  noteShuffleForNudge,
+} from './moods/mood-worlds'
+import {
+  buildTasteProfile,
+  leadingMood,
+  tasteWeight,
+  topGenres,
+} from './moods/taste'
+import { PosterFlight, type ViewRect } from './poster-flight'
 import { savedStore } from './saved-store'
 import {
   type FacetCatalog,
@@ -81,6 +98,12 @@ import {
   suggestFacets,
 } from './search-facets'
 import { shareLink } from './share/share-link'
+import {
+  GoldenHourNote,
+  GoldenHourWash,
+  useGoldenHour,
+  useGoldenHourScheduler,
+} from './shuffle-pro/golden-hour-layer'
 import {
   ImmersiveCorner,
   ImmersiveEnterButton,
@@ -97,7 +120,7 @@ import {
   SHUFFLE_PRO_DEBUG,
   ShuffleProDebugPanel,
 } from './shuffle-pro/shuffle-pro-debug'
-import { isBigSpin } from './shuffle-pro/shuffle-pro-logic'
+import { isBigSpin, isNearTrigger } from './shuffle-pro/shuffle-pro-logic'
 import type { Tier } from './shuffle-pro/shuffle-pro-logic'
 import { ShuffleProShelf } from './shuffle-pro/shuffle-pro-shelf'
 import { shuffleProStore } from './shuffle-pro/shuffle-pro-store'
@@ -108,6 +131,7 @@ import {
   useShuffleProController,
 } from './shuffle-pro/use-shuffle-pro'
 import { useTitleTranslation } from './use-title-translation'
+import { WeatherLayer, type WeatherStorm } from './weather-layer'
 
 type RawMovie = Record<string, unknown>
 
@@ -182,7 +206,6 @@ export type RuntimeFilter =
   | 'seriesBinge'
   | 'seriesLong'
   | 'seriesLongRun'
-type MoodFilter = 'fast' | 'dark' | 'funny' | 'romantic' | 'weird' | 'highRated'
 type GenreSummary = {
   count: number
   genre: string
@@ -208,6 +231,11 @@ const EXIT_ANIMATION_MS = 220
 // Loaded when someone first shares, so the artwork code stays out of the
 // initial bundle.
 const ShareSheet = lazy(() => import('./share/share-sheet'))
+// The mood page and its eight illustrated scenes load on the first visit or
+// when the browser is idle after the globe is up.
+const loadMoodPage = () => import('./moods/mood-page')
+const MoodPage = lazy(loadMoodPage)
+const MOOD_NUDGE_STORAGE_KEY = 'wtw:mood-nudge-seen'
 
 const SPIN_HINT_STORAGE_KEY = 'wtw:spin-hint-seen'
 const FULLSCREEN_HINT_STORAGE_KEY = 'wtw:fullscreen-hint-seen'
@@ -226,6 +254,30 @@ const readTheme = (): Theme => {
     return 'dark'
   }
 }
+
+// Something that should happen once per visit, not once per page load.
+const readSessionFlag = (key: string) => {
+  try {
+    return window.sessionStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+const writeSessionFlag = (key: string) => {
+  try {
+    window.sessionStorage.setItem(key, '1')
+  } catch {
+    // Storage can be unavailable (private mode, blocked site data).
+  }
+}
+
+const moodTimeFromFilter = (filter: RuntimeFilter | null): MoodTimeId =>
+  filter === 'movieUnder90' ||
+  filter === 'movie90to120' ||
+  filter === 'movieOver120'
+    ? filter
+    : 'any'
 
 const readSpinHintSeen = () => {
   try {
@@ -421,27 +473,27 @@ const MOOD_FILTERS: Array<{
   test?: (movie: TestMovie) => boolean
 }> = [
   {
-    genres: ['Action', 'Adventure', 'Thriller'],
+    genres: MOOD_GENRES.fast,
     id: 'fast',
     label: 'Fast',
   },
   {
-    genres: ['Crime', 'Horror', 'Mystery', 'Thriller', 'War'],
+    genres: MOOD_GENRES.dark,
     id: 'dark',
     label: 'Dark',
   },
   {
-    genres: ['Animation', 'Comedy', 'Family'],
+    genres: MOOD_GENRES.funny,
     id: 'funny',
     label: 'Funny',
   },
   {
-    genres: ['Romance'],
+    genres: MOOD_GENRES.romantic,
     id: 'romantic',
     label: 'Romantic',
   },
   {
-    genres: ['Fantasy', 'Horror', 'Science Fiction'],
+    genres: MOOD_GENRES.weird,
     id: 'weird',
     label: 'Weird',
   },
@@ -1511,6 +1563,13 @@ export const TestGalleryApp = () => {
   const [filterOpen, setFilterOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [savedOpen, setSavedOpen] = useState(false)
+  const [moodsOpen, setMoodsOpen] = useState(false)
+  // The run recap's share sheet, opened from the Easter egg shelf.
+  const [recapOpen, setRecapOpen] = useState(false)
+  const [moodNudge, setMoodNudge] = useState(false)
+  const [moodShuffleNonce, setMoodShuffleNonce] = useState(0)
+  const recentShufflesRef = useRef<number[]>([])
+  const moodNudgeSpentRef = useRef(readSessionFlag(MOOD_NUDGE_STORAGE_KEY))
   const [aboutMaximized, setAboutMaximized] = useState(false)
   const [initialGalleryReady, setInitialGalleryReady] = useState(false)
   const [galleryLoadPercent, setGalleryLoadPercent] = useState(0)
@@ -1734,6 +1793,57 @@ export const TestGalleryApp = () => {
     ),
   )
 
+  // What the saved films say about taste. With three or more saved, random
+  // picks lean a little towards films like them (never exclusively).
+  const tasteEntries = useSyncExternalStore(
+    savedStore.subscribe,
+    savedStore.get,
+    savedStore.get,
+  )
+  const tasteProfile = useMemo(() => {
+    if (tasteEntries.length < 3) return null
+    const byId = new Map(movies.map((movie) => [movie.id, movie]))
+    return buildTasteProfile(
+      tasteEntries.flatMap((entry) => byId.get(entry.id) ?? []),
+    )
+  }, [movies, tasteEntries])
+  const tasteWeights = useMemo(
+    () =>
+      tasteProfile
+        ? new Map(
+            movies.map((movie) => [movie.id, tasteWeight(movie, tasteProfile)]),
+          )
+        : null,
+    [movies, tasteProfile],
+  )
+  const shuffleProData = useSyncExternalStore(
+    shuffleProStore.subscribe,
+    shuffleProStore.get,
+    shuffleProStore.get,
+  )
+  const recapScene = useMemo(
+    () => ({
+      found: Object.fromEntries(
+        Object.entries(shuffleProData.found).map(([tier, entry]) => [
+          tier,
+          { count: entry?.count ?? 0 },
+        ]),
+      ),
+      totalRuns: shuffleProData.totalRuns,
+      bestStreak: shuffleProData.bestStreak,
+      savedCount: tasteEntries.length,
+      taste: topGenres(tasteProfile),
+    }),
+    [shuffleProData, tasteEntries.length, tasteProfile],
+  )
+  const weightOf = useMemo(
+    () =>
+      tasteWeights
+        ? (movie: { id: string }) => tasteWeights.get(movie.id) ?? 1
+        : undefined,
+    [tasteWeights],
+  )
+
   // The first centred movie of a page load is random (and never "Marmaduke").
   // Chosen once, during render, so the globe's first build already faces it.
   // A shared link (?film=<id>) lands on that film instead.
@@ -1753,7 +1863,8 @@ export const TestGalleryApp = () => {
     landingIdRef.current =
       (linked &&
         visibleMovies.find((movie) => matchesFilmLink(movie, linked))?.id) ||
-      (pickLandingMovie(visibleMovies, Math.random)?.id ?? null)
+      (pickLandingMovie(visibleMovies, Math.random, undefined, weightOf)?.id ??
+        null)
   }
   const landingId = landingIdRef.current
   useEffect(() => {
@@ -1824,6 +1935,7 @@ export const TestGalleryApp = () => {
     immersive,
     visibleMovies,
     currentId: activeMovieId,
+    weightOf,
     prepare: () => {
       setDetailsMovieId(null)
       setWatchMovieId(null)
@@ -1834,6 +1946,25 @@ export const TestGalleryApp = () => {
     },
   })
   const menuControlRef = useRef<InfiniteMovieMenuControl | null>(null)
+  const goldenHour = useGoldenHour()
+  const constellationsOn = useSyncExternalStore(
+    constellationSetting.subscribe,
+    constellationSetting.get,
+    constellationSetting.get,
+  )
+  // Very fast flicks of the globe kick up rain or snow.
+  const stormRef = useRef<WeatherStorm | null>(null)
+  const registerStorm = useCallback((storm: WeatherStorm | null) => {
+    stormRef.current = storm
+  }, [])
+  useEffect(() => {
+    const control = menuControlRef.current
+    control?.setOnFlick((speed, direction) =>
+      stormRef.current?.(speed, direction),
+    )
+    return () => control?.setOnFlick(null)
+  }, [])
+  useGoldenHourScheduler(initialGalleryReady)
   const [shuffleSpinning, setShuffleSpinning] = useState(false)
   const isSpinActive = shuffleProSnapshot.canSkip || shuffleSpinning
   // True while Space is held down on the globe and the controller owns it.
@@ -1851,6 +1982,7 @@ export const TestGalleryApp = () => {
   const filterPresence = useExitPresence(filterOpen)
   const aboutPresence = useExitPresence(aboutOpen)
   const savedPresence = useExitPresence(savedOpen)
+  const moodsPresence = useExitPresence(moodsOpen)
   const savedEntries = useSyncExternalStore(
     savedStore.subscribe,
     savedStore.get,
@@ -1869,17 +2001,7 @@ export const TestGalleryApp = () => {
   const detailsPresence = useExitPresence(Boolean(detailsMovie), detailsMovie)
 
   useAudioUnlockOnGesture()
-  useSoundEffects({
-    detailsOpen: Boolean(detailsMovie),
-    aboutOpen,
-    savedOpen,
-    filterOpen,
-    sortOpen: sortOpen && mode === 'list',
-    watchOpen: Boolean(watchMovie),
-    mode,
-    theme,
-    savedCount: savedEntries.length,
-  })
+  useSoundEffects({ savedCount: savedEntries.length })
   // A normal shuffle ending: a soft thump. Shuffle Pro lands with its own.
   const wasShuffleSpinning = useRef(false)
   useEffect(() => {
@@ -2069,12 +2191,53 @@ export const TestGalleryApp = () => {
   )
 
   // A shuffle landing on its poster opens the card without breaking anything.
+  // A plain pick lifts its poster off the globe and into the card. Shuffle Pro
+  // runs have their own entrance, and people who asked for less motion get none.
+  const [posterFlight, setPosterFlight] = useState<{
+    movieId: string
+    from: ViewRect
+    image: string
+  } | null>(null)
+  const startPosterFlight = useCallback(
+    (movie: TestMovie) => {
+      if (
+        readReducedMotion(reducedMotionOverride.current) ||
+        shuffleProController.getSnapshot().phase !== 'idle'
+      ) {
+        return
+      }
+      const from = menuControlRef.current?.getPosterRect(movie.id)
+      if (!from) return
+      setPosterFlight({ movieId: movie.id, from, image: movie.posterUrl })
+    },
+    [reducedMotionOverride, shuffleProController],
+  )
+
+  // Escape closes the recap's share sheet before anything behind it.
+  useEffect(() => {
+    if (!recapOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      setRecapOpen(false)
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [recapOpen])
+
+  // A stale flight must never replay when the same film opens another way.
+  useEffect(() => {
+    if (!detailsMovieId) setPosterFlight(null)
+  }, [detailsMovieId])
+
   const handleOpenFromGlobe = useCallback(
     (movie: TestMovie, source: 'tap' | 'shuffle') => {
+      startPosterFlight(movie)
       if (source === 'shuffle') openMovie(movie)
       else handleOpenMovie(movie)
     },
-    [handleOpenMovie, openMovie],
+    [handleOpenMovie, openMovie, startPosterFlight],
   )
 
   const handleOpenWatchLinks = useCallback((movie: TestMovie) => {
@@ -2084,6 +2247,44 @@ export const TestGalleryApp = () => {
     setFilterOpen(false)
   }, [])
 
+  const openMoods = useCallback(() => {
+    unlockAudio()
+    void loadMoodPage()
+    setMoodNudge(false)
+    moodNudgeSpentRef.current = true
+    writeSessionFlag(MOOD_NUDGE_STORAGE_KEY)
+    setDetailsMovieId(null)
+    setWatchMovieId(null)
+    setFilterOpen(false)
+    setAboutOpen(false)
+    setSavedOpen(false)
+    setSortOpen(false)
+    setMoodsOpen(true)
+  }, [])
+
+  const dismissMoodNudge = useCallback(() => setMoodNudge(false), [])
+
+  const countForMoods = useCallback(
+    (moods: MoodFilter[], time: MoodTimeId) =>
+      filterMoviesByDecisionFilters(movies, moods, time === 'any' ? null : time)
+        .strictCount,
+    [movies],
+  )
+
+  // A mood is a fresh start: it replaces the other filters, goes to the globe
+  // and shuffles once the wall has been rebuilt for it.
+  const handleMoodConfirm = useCallback(
+    (moods: MoodFilter[], time: MoodTimeId) => {
+      clearAllFilters()
+      setSelectedMoodFilters(moods)
+      setSelectedRuntimeFilter(time === 'any' ? null : time)
+      setMoodsOpen(false)
+      setMode('wall')
+      setMoodShuffleNonce((nonce) => nonce + 1)
+    },
+    [clearAllFilters],
+  )
+
   const handleShuffle = useCallback(() => {
     unlockAudio()
     if (mode === 'list') {
@@ -2092,7 +2293,12 @@ export const TestGalleryApp = () => {
       setListRandomNonce((nonce) => nonce + 1)
       return
     }
-    const movieId = pickOtherMovie(visibleMovies, activeMovieId, Math.random)
+    const movieId = pickOtherMovie(
+      visibleMovies,
+      activeMovieId,
+      Math.random,
+      weightOf,
+    )
     if (!movieId) return
     // Streak rules decide whether this shuffle becomes a Shuffle Pro run.
     const trigger = shuffleProController.noteAction({ type: 'shuffle' })
@@ -2103,9 +2309,30 @@ export const TestGalleryApp = () => {
       shuffleProController.startAutomatic(trigger, movieId)
       return
     }
+    // A few quick shuffles in a row, far from an Easter egg: offer the moods.
+    if (!moodNudgeSpentRef.current) {
+      const noted = noteShuffleForNudge(recentShufflesRef.current, Date.now())
+      recentShufflesRef.current = noted.recent
+      if (
+        noted.fire &&
+        !isNearTrigger(shuffleProController.getStreak(), immersive)
+      ) {
+        moodNudgeSpentRef.current = true
+        writeSessionFlag(MOOD_NUDGE_STORAGE_KEY)
+        setMoodNudge(true)
+      }
+    }
     playCue('shuffleStart')
     setSpinRequest({ itemId: movieId, nonce: performance.now() })
-  }, [activeMovieId, detailsMovieId, mode, shuffleProController, visibleMovies])
+  }, [
+    activeMovieId,
+    detailsMovieId,
+    immersive,
+    mode,
+    shuffleProController,
+    visibleMovies,
+    weightOf,
+  ])
 
   // Skip finishes whatever spin is running: a Shuffle Pro run or a normal one.
   const handleSkip = useCallback(() => {
@@ -2121,10 +2348,15 @@ export const TestGalleryApp = () => {
         isBigSpin(totalRad) ? { type: 'bigSpin' } : { type: 'neutral' },
       )
       if (!trigger) return
-      const movieId = pickOtherMovie(visibleMovies, activeMovieId, Math.random)
+      const movieId = pickOtherMovie(
+        visibleMovies,
+        activeMovieId,
+        Math.random,
+        weightOf,
+      )
       if (movieId) shuffleProController.startAutomatic(trigger, movieId)
     },
-    [activeMovieId, shuffleProController, visibleMovies],
+    [activeMovieId, shuffleProController, visibleMovies, weightOf],
   )
 
   // Anything that isn't a shuffle ends the streak: filters, sort, search,
@@ -2186,6 +2418,7 @@ export const TestGalleryApp = () => {
         watchMovieId ||
         aboutOpen ||
         savedOpen ||
+        moodsOpen ||
         filterOpen ||
         sortOpen ||
         shuffleProController.canAbort()
@@ -2202,6 +2435,7 @@ export const TestGalleryApp = () => {
     exitImmersive,
     filterOpen,
     immersive,
+    moodsOpen,
     savedOpen,
     shuffleProController,
     sortOpen,
@@ -2236,6 +2470,7 @@ export const TestGalleryApp = () => {
       !watchMovieId &&
       !aboutOpen &&
       !savedOpen &&
+      !moodsOpen &&
       !filterOpen &&
       !sortOpen
     )
@@ -2245,7 +2480,8 @@ export const TestGalleryApp = () => {
       if (event.key !== 'Escape') return
       // Close only the top-most layer: watch links, then details, then About,
       // then Saved, then panels.
-      if (watchMovieId) setWatchMovieId(null)
+      if (moodsOpen) setMoodsOpen(false)
+      else if (watchMovieId) setWatchMovieId(null)
       else if (detailsMovieId) setDetailsMovieId(null)
       else if (aboutOpen) setAboutOpen(false)
       else if (savedOpen) setSavedOpen(false)
@@ -2255,7 +2491,15 @@ export const TestGalleryApp = () => {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [aboutOpen, detailsMovieId, filterOpen, savedOpen, sortOpen, watchMovieId])
+  }, [
+    aboutOpen,
+    detailsMovieId,
+    filterOpen,
+    moodsOpen,
+    savedOpen,
+    sortOpen,
+    watchMovieId,
+  ])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -2268,7 +2512,12 @@ export const TestGalleryApp = () => {
         mode,
         galleryReady: initialGalleryReady,
         overlayOpen: Boolean(
-          watchMovieId || aboutOpen || savedOpen || filterOpen || sortOpen,
+          watchMovieId ||
+            aboutOpen ||
+            savedOpen ||
+            moodsOpen ||
+            filterOpen ||
+            sortOpen,
         ),
         detailsOpen: Boolean(detailsMovieId),
         hasTarget:
@@ -2322,6 +2571,7 @@ export const TestGalleryApp = () => {
     handleShuffle,
     handleSkip,
     promptFullscreenHint,
+    moodsOpen,
     savedOpen,
     initialGalleryReady,
     listMovies.length,
@@ -2331,6 +2581,22 @@ export const TestGalleryApp = () => {
     visibleMovies.length,
     watchMovieId,
   ])
+
+  // After a mood is confirmed the wall is rebuilt for it, then it shuffles.
+  const handledMoodShuffle = useRef(0)
+  useEffect(() => {
+    if (!moodShuffleNonce || handledMoodShuffle.current === moodShuffleNonce)
+      return
+    handledMoodShuffle.current = moodShuffleNonce
+    handleShuffleRef.current()
+  }, [moodShuffleNonce])
+
+  // Bring the mood page in quietly once the globe is up.
+  useEffect(() => {
+    if (!initialGalleryReady) return
+    const timer = window.setTimeout(() => void loadMoodPage(), 4000)
+    return () => window.clearTimeout(timer)
+  }, [initialGalleryReady])
 
   // Key up decides what a Space press was: the end of a Shuffle Pro hold, or a
   // plain tap that shuffles. Losing focus mid-hold just lets the hold go.
@@ -2368,6 +2634,7 @@ export const TestGalleryApp = () => {
       data-mode={mode}
       data-theme={theme}
       data-immersive={immersive ? 'true' : 'false'}
+      data-golden={goldenHour ? 'true' : 'false'}
     >
       {immersive ? (
         <ImmersiveExitPill onExit={() => void exitImmersive()} />
@@ -2389,6 +2656,9 @@ export const TestGalleryApp = () => {
           reducedMotionOverride={reducedMotionOverride}
         />
       ) : null}
+      <WeatherLayer register={registerStorm} />
+      <GoldenHourWash />
+      <GoldenHourNote active={goldenHour} />
       {/* Stays mounted in other views so returning to the gallery is instant. */}
       <WarpWall
         activeMovieId={activeMovie?.id ?? null}
@@ -2410,6 +2680,18 @@ export const TestGalleryApp = () => {
         onSpinActiveChange={setShuffleSpinning}
         onGestureSettled={handleGestureSettled}
         onGlobePress={promptFullscreenHint}
+      />
+      <ConstellationLayer
+        controlRef={menuControlRef}
+        ids={savedEntries.map((entry) => entry.id)}
+        active={
+          constellationsOn &&
+          mode === 'wall' &&
+          initialGalleryReady &&
+          !detailsMovieId &&
+          !moodsOpen
+        }
+        light={theme === 'light'}
       />
 
       {mode === 'list' ? (
@@ -2437,6 +2719,7 @@ export const TestGalleryApp = () => {
       {mode === 'filters' ? (
         <FiltersView
           {...filterSectionProps}
+          onPickMood={openMoods}
           resultCount={filteredMovies.length}
           selectedFilterCount={selectedFilterCount}
         />
@@ -2550,6 +2833,7 @@ export const TestGalleryApp = () => {
                   </span>
                 </button>
               ) : null}
+              {initialGalleryReady ? <MoodLine onOpen={openMoods} /> : null}
             </>
           ) : null
         }
@@ -2705,11 +2989,58 @@ export const TestGalleryApp = () => {
           <SavedDrawer
             motionPhase={savedPresence.motionPhase}
             movies={savedMovies}
+            taste={topGenres(tasteProfile)}
             onClose={() => setSavedOpen(false)}
             onOpenMovie={handleOpenMovie}
             onRemove={(movie) => savedStore.remove(movie.id)}
           />
         </>
+      ) : null}
+
+      {recapOpen
+        ? createPortal(
+            <Suspense fallback={null}>
+              <ShareSheet
+                recap={recapScene}
+                link={window.location.origin}
+                onClose={() => setRecapOpen(false)}
+              />
+            </Suspense>,
+            shellRef.current ?? document.body,
+          )
+        : null}
+
+      {posterFlight && detailsMovieId === posterFlight.movieId ? (
+        <PosterFlight
+          key={posterFlight.movieId}
+          from={posterFlight.from}
+          image={posterFlight.image}
+          onDone={() => setPosterFlight(null)}
+        />
+      ) : null}
+
+      {moodNudge &&
+      mode === 'wall' &&
+      !detailsMovieId &&
+      !moodsOpen &&
+      !filterOpen &&
+      !aboutOpen &&
+      !savedOpen ? (
+        <MoodNudge onOpen={openMoods} onDismiss={dismissMoodNudge} />
+      ) : null}
+
+      {moodsPresence.isPresent ? (
+        <Suspense fallback={null}>
+          <MoodPage
+            motionPhase={moodsPresence.motionPhase}
+            initialMoods={selectedMoodFilters}
+            initialTime={moodTimeFromFilter(selectedRuntimeFilter)}
+            tasteLead={leadingMood(tasteProfile)}
+            countFor={countForMoods}
+            onClose={() => setMoodsOpen(false)}
+            onConfirm={handleMoodConfirm}
+          />
+        </Suspense>
       ) : null}
 
       {mode === 'wall' ? (
@@ -2791,6 +3122,7 @@ export const TestGalleryApp = () => {
           maximized={aboutMaximized}
           motionPhase={aboutPresence.motionPhase}
           onClose={() => setAboutOpen(false)}
+          onShareRecap={() => setRecapOpen(true)}
           onToggleMaximized={() =>
             setAboutMaximized((isMaximized) => !isMaximized)
           }
@@ -2892,16 +3224,8 @@ const WarpWall = ({
     [movies],
   )
 
-  // A soft tick each time a new poster crosses the centre.
-  const lastTickId = useRef<string | null>(null)
   const handleActiveItemChange = useCallback(
-    (item: (typeof menuItems)[number]) => {
-      if (lastTickId.current !== item.id) {
-        if (lastTickId.current !== null) playCue('tick')
-        lastTickId.current = item.id
-      }
-      onSelectMovie(item.payload)
-    },
+    (item: (typeof menuItems)[number]) => onSelectMovie(item.payload),
     [onSelectMovie],
   )
 
@@ -4110,11 +4434,13 @@ const FilterPanel = ({
 )
 
 type FiltersViewProps = FilterSectionsProps & {
+  onPickMood: () => void
   resultCount: number
   selectedFilterCount: number
 }
 
 const FiltersView = ({
+  onPickMood,
   resultCount,
   selectedFilterCount,
   ...sections
@@ -4135,6 +4461,7 @@ const FiltersView = ({
         </button>
       ) : null}
     </header>
+    <MoodFunnel onOpen={onPickMood} />
     <div className='warp-filters-summary'>
       <span>{selectedFilterCount || 'No'} selected</span>
       <span>
@@ -4162,6 +4489,7 @@ type AboutDrawerProps = {
   maximized: boolean
   motionPhase: MotionPhase
   onClose: () => void
+  onShareRecap: () => void
   onToggleMaximized: () => void
 }
 
@@ -4350,6 +4678,38 @@ const AppearanceSetting = ({
   </fieldset>
 )
 
+// Joins the saved films on the globe into a shape of light.
+const ConstellationSetting = () => {
+  const on = useSyncExternalStore(
+    constellationSetting.subscribe,
+    constellationSetting.get,
+    constellationSetting.get,
+  )
+  return (
+    <fieldset className='warp-about-setting'>
+      <legend>Constellations</legend>
+      <div className='warp-theme-switch'>
+        {([true, false] as const).map((option) => (
+          <button
+            type='button'
+            key={String(option)}
+            aria-pressed={on === option}
+            className={cn(on === option && 'is-active')}
+            onClick={() => constellationSetting.set(option)}
+          >
+            {option ? (
+              <Sparkles aria-hidden='true' />
+            ) : (
+              <X aria-hidden='true' />
+            )}
+            {option ? 'On' : 'Off'}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
 const AboutDrawer = ({
   theme,
   movieCount,
@@ -4359,6 +4719,7 @@ const AboutDrawer = ({
   maximized,
   motionPhase,
   onClose,
+  onShareRecap,
   onToggleMaximized,
 }: AboutDrawerProps) =>
   maximized ? (
@@ -4409,6 +4770,7 @@ const AboutDrawer = ({
           <h3>Settings</h3>
           <div className='warp-about-settings'>
             <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
+            <ConstellationSetting />
             <SoundSettingsPanel />
           </div>
         </section>
@@ -4434,7 +4796,7 @@ const AboutDrawer = ({
             <br />
             See if you can find the easter egg.
           </p>
-          <ShuffleProShelf title={false} />
+          <ShuffleProShelf title={false} onShare={onShareRecap} />
         </section>
 
         <section className='warp-about-section'>
@@ -4495,8 +4857,9 @@ const AboutDrawer = ({
         </button>
       </header>
       <AboutControls />
-      <ShuffleProShelf />
+      <ShuffleProShelf onShare={onShareRecap} />
       <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
+      <ConstellationSetting />
       <SoundSettingsPanel categories={false} />
       <button
         type='button'
@@ -4512,6 +4875,8 @@ const AboutDrawer = ({
 type SavedDrawerProps = {
   motionPhase: MotionPhase
   movies: TestMovie[]
+  // The genres the saved films lean on, once there are enough to say.
+  taste: string[]
   onClose: () => void
   onOpenMovie: (movie: TestMovie) => void
   onRemove: (movie: TestMovie) => void
@@ -4521,6 +4886,7 @@ type SavedDrawerProps = {
 const SavedDrawer = ({
   motionPhase,
   movies,
+  taste,
   onClose,
   onOpenMovie,
   onRemove,
@@ -4548,6 +4914,14 @@ const SavedDrawer = ({
         <X aria-hidden='true' />
       </button>
     </header>
+    {taste.length ? (
+      <p className='warp-saved-taste'>
+        <Sparkles aria-hidden='true' />
+        <span>
+          Your shuffles lean towards <strong>{taste.join(' and ')}</strong>.
+        </span>
+      </p>
+    ) : null}
     {movies.length ? (
       <ul className='warp-saved-list'>
         {movies.map((movie) => (

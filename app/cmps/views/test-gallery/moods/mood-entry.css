@@ -1,0 +1,374 @@
+/* Ways into the mood page: the line on Home, the slot on the Filters page and
+   the small pop-up after a few quick shuffles. */
+
+.mood-dots {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.mood-dots i {
+  display: block;
+  width: 10px;
+  height: 10px;
+  margin-left: -3px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px rgb(10 10 10 / 0.9);
+}
+
+.mood-dots i:first-child {
+  margin-left: 0;
+}
+
+/* ------------------------------------------------------------------ line */
+
+.mood-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  pointer-events: auto;
+  animation: mood-line-in 520ms 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes mood-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.mood-line-text {
+  color: rgb(255 255 255 / 0.86);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-shadow: 0 1px 14px rgb(0 0 0 / 0.55);
+}
+
+.mood-line-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px 0 11px;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  border-radius: 999px;
+  background: rgb(18 18 18 / 0.78);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.mood-line-button svg {
+  width: 15px;
+  height: 15px;
+  transition: translate 180ms ease;
+}
+
+.mood-line-button:hover,
+.mood-line-button:focus-visible {
+  outline: none;
+  border-color: rgb(255 255 255 / 0.4);
+  background: rgb(36 36 36 / 0.92);
+}
+
+.mood-line-button:hover svg {
+  translate: 3px 0;
+}
+
+.mood-line-button:active {
+  transform: scale(0.97);
+}
+
+.warp-shell[data-filter-open="true"] .mood-line,
+.warp-shell[data-details-open="true"] .mood-line {
+  display: none;
+}
+
+.warp-shell[data-theme="light"] .mood-line-text {
+  color: rgb(41 34 24 / 0.86);
+  text-shadow: none;
+}
+
+@media (max-width: 900px) {
+  .mood-line {
+    gap: 8px;
+  }
+
+  .mood-line-text {
+    font-size: 12px;
+  }
+
+  .mood-line-button {
+    height: 32px;
+    font-size: 12px;
+  }
+}
+
+/* The saved and info buttons sit in the bottom corners of a phone, so the
+   line keeps to what fits between them. */
+@media (max-width: 480px) {
+  .mood-line-button {
+    padding: 0 13px;
+  }
+
+  .mood-line-button .mood-dots,
+  .mood-line-button svg {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------- funnel */
+
+.mood-funnel {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 22px;
+  padding: 16px 18px 16px 20px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 22px;
+  background:
+    radial-gradient(90% 220% at 0% 0%, rgb(167 139 250 / 0.16), transparent 60%),
+    radial-gradient(90% 220% at 100% 100%, rgb(255 107 157 / 0.14), transparent 60%),
+    rgb(255 255 255 / 0.04);
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+
+.mood-funnel:hover,
+.mood-funnel:focus-visible {
+  outline: none;
+  border-color: rgb(255 255 255 / 0.34);
+}
+
+.mood-funnel:active {
+  transform: scale(0.995);
+}
+
+.mood-funnel .mood-dots i {
+  width: 14px;
+  height: 14px;
+  box-shadow: 0 0 0 2px #0c0c0c;
+}
+
+.mood-funnel-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 3px;
+}
+
+.mood-funnel-copy strong {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.mood-funnel-copy small {
+  color: rgb(255 255 255 / 0.56);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.mood-funnel-go {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: #fff;
+  color: #0a0a0a;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.mood-funnel-go svg {
+  width: 15px;
+  height: 15px;
+  transition: translate 180ms ease;
+}
+
+.mood-funnel:hover .mood-funnel-go svg {
+  translate: 3px 0;
+}
+
+.warp-shell[data-theme="light"] .mood-funnel {
+  border-color: rgb(41 34 24 / 0.16);
+  background:
+    radial-gradient(90% 220% at 0% 0%, rgb(167 139 250 / 0.18), transparent 60%),
+    radial-gradient(90% 220% at 100% 100%, rgb(255 107 157 / 0.16), transparent 60%),
+    rgb(255 255 255 / 0.55);
+  color: rgb(41 34 24);
+}
+
+.warp-shell[data-theme="light"] .mood-funnel-copy small {
+  color: rgb(41 34 24 / 0.62);
+}
+
+.warp-shell[data-theme="light"] .mood-funnel-go {
+  background: rgb(41 34 24);
+  color: #fff;
+}
+
+.warp-shell[data-theme="light"] .mood-funnel .mood-dots i {
+  box-shadow: 0 0 0 2px rgb(247 240 225);
+}
+
+@media (max-width: 900px) {
+  .mood-funnel {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .mood-funnel-copy {
+    flex-basis: calc(100% - 60px);
+  }
+
+  .mood-funnel-go {
+    width: 100%;
+    justify-content: center;
+    height: 42px;
+  }
+}
+
+/* ----------------------------------------------------------------- nudge */
+
+.mood-nudge {
+  position: fixed;
+  top: max(84px, calc(env(safe-area-inset-top) + 68px));
+  left: 50%;
+  z-index: 58;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 24px);
+  padding: 8px 8px 8px 16px;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  border-radius: 999px;
+  background: rgb(14 14 16 / 0.92);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  translate: -50% 0;
+  animation: mood-nudge-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes mood-nudge-in {
+  from {
+    opacity: 0;
+    translate: -50% -14px;
+  }
+}
+
+.mood-nudge-text {
+  color: rgb(255 255 255 / 0.84);
+}
+
+.mood-nudge-go {
+  height: 34px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  color: #0a0a0a;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 160ms ease;
+}
+
+.mood-nudge-go:hover {
+  transform: scale(1.04);
+}
+
+.mood-nudge-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgb(255 255 255 / 0.6);
+  cursor: pointer;
+}
+
+.mood-nudge-close:hover {
+  background: rgb(255 255 255 / 0.12);
+  color: #fff;
+}
+
+.mood-nudge-close svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* A thin line running down shows how long the pop-up has left. */
+.mood-nudge-timer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #ff7a2f, #ff6b9d, #a78bfa, #5eead4);
+  transform-origin: left;
+  animation: mood-nudge-timer 9s linear both;
+}
+
+@keyframes mood-nudge-timer {
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.mood-nudge-go:focus-visible,
+.mood-nudge-close:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+  .mood-nudge-text {
+    display: none;
+  }
+
+  .mood-nudge {
+    padding-left: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mood-line,
+  .mood-nudge,
+  .mood-nudge-timer {
+    animation: none;
+  }
+}

@@ -265,6 +265,37 @@ describe('resolveTier', () => {
     expect(resolveTier('jade', { found, random: never })).toBe('gold')
   })
 
+  it('gives Gold a chance during the golden hour, even before it is unlocked', () => {
+    expect(
+      resolveTier('frost', {
+        found: {},
+        random: () => 0.19,
+        goldenHour: true,
+      }),
+    ).toBe('gold')
+    expect(
+      resolveTier('frost', {
+        found: {},
+        random: () => 0.2,
+        goldenHour: true,
+      }),
+    ).toBe('frost')
+    // Not during a normal hour.
+    expect(resolveTier('frost', { found: {}, random: () => 0.01 })).toBe(
+      'frost',
+    )
+  })
+
+  it('raises the odds to one in two once Gold has been found', () => {
+    const found = { frost: 1, amethyst: 1, jade: 1, gold: 1 }
+    expect(
+      resolveTier('jade', { found, random: () => 0.49, goldenHour: true }),
+    ).toBe('gold')
+    expect(
+      resolveTier('jade', { found, random: () => 0.5, goldenHour: true }),
+    ).toBe('jade')
+  })
+
   it('upgrades with a 10% chance after Gold has been found', () => {
     const found = { frost: 1, amethyst: 1, jade: 1, gold: 1 }
     expect(resolveTier('frost', { found, random: () => 0.099 })).toBe('gold')

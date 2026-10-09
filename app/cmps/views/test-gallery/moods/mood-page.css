@@ -1,0 +1,810 @@
+/* The mood page: a night stage of six illustrated worlds. It is dark in both
+   themes on purpose, like the premium card, so the scenes keep their glow. */
+
+.mood-page {
+  --mood-accent: #fff;
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: clamp(14px, 2.4vh, 26px);
+  padding: max(clamp(18px, 3vh, 34px), env(safe-area-inset-top)) 0
+    max(clamp(16px, 2.6vh, 28px), env(safe-area-inset-bottom));
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgb(255 255 255 / 0.07), transparent 60%),
+    #050506;
+  color: #fff;
+  animation: mood-page-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.mood-page[data-motion="exit"] {
+  animation: mood-page-out 200ms ease-in both;
+  pointer-events: none;
+}
+
+@keyframes mood-page-in {
+  from {
+    opacity: 0;
+    transform: scale(1.015);
+  }
+}
+
+@keyframes mood-page-out {
+  to {
+    opacity: 0;
+    transform: scale(1.01);
+  }
+}
+
+.mood-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-inline: max(clamp(20px, 3vw, 44px), env(safe-area-inset-left))
+    max(clamp(20px, 3vw, 44px), env(safe-area-inset-right));
+}
+
+.mood-kicker {
+  margin: 0 0 8px;
+  color: var(--mood-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  transition: color 400ms ease;
+}
+
+.mood-head h1 {
+  margin: 0;
+  font-size: clamp(32px, 5.4vw, 76px);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 0.95;
+}
+
+.mood-sub {
+  margin: 12px 0 0;
+  max-width: 46ch;
+  color: rgb(255 255 255 / 0.62);
+  font-size: clamp(13px, 1.1vw, 16px);
+  line-height: 1.45;
+}
+
+.mood-close {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.06);
+  color: #fff;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.mood-close:hover {
+  background: rgb(255 255 255 / 0.16);
+}
+
+.mood-close:active {
+  transform: scale(0.94);
+}
+
+.mood-close svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ---------------------------------------------------------------- stage */
+
+.mood-stage {
+  --mx: 0;
+  --my: 0;
+  display: flex;
+  min-height: 0;
+  gap: 10px;
+  padding-inline: max(clamp(16px, 3vw, 44px), env(safe-area-inset-left))
+    max(clamp(16px, 3vw, 44px), env(safe-area-inset-right));
+}
+
+.mood-panel {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 26px;
+  background: #000;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  isolation: isolate;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+  transition:
+    flex-grow 700ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 280ms ease,
+    transform 200ms ease;
+  animation: mood-panel-in 640ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 60ms + 120ms);
+}
+
+@keyframes mood-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+  }
+}
+
+.mood-panel.is-open {
+  flex-grow: 3.6;
+}
+
+.mood-panel.is-selected {
+  box-shadow:
+    inset 0 0 0 2px var(--panel-accent),
+    0 0 46px -6px var(--panel-accent);
+}
+
+.mood-panel:active {
+  transform: scale(0.992);
+}
+
+.mood-panel:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -5px;
+}
+
+.mood-scene {
+  position: absolute;
+  inset: -4%;
+  width: 108%;
+  height: 108%;
+  z-index: -2;
+}
+
+.mood-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(to top, rgb(0 0 0 / 0.82) 0%, rgb(0 0 0 / 0.18) 42%, transparent 66%),
+    linear-gradient(to bottom, rgb(0 0 0 / 0.28), transparent 22%);
+  transition: opacity 400ms ease;
+}
+
+.mood-panel:not(.is-open) .mood-scrim {
+  opacity: 0.6;
+}
+
+/* Depth layers lean with the pointer, the nearest the most. */
+.mood-scene .ms-far,
+.mood-scene .ms-mid,
+.mood-scene .ms-near {
+  transition: translate 260ms ease-out;
+}
+
+.mood-scene .ms-far {
+  translate: calc(var(--mx) * -6px) calc(var(--my) * -4px);
+}
+
+.mood-scene .ms-mid {
+  translate: calc(var(--mx) * -14px) calc(var(--my) * -9px);
+}
+
+.mood-scene .ms-near {
+  translate: calc(var(--mx) * -26px) calc(var(--my) * -16px);
+}
+
+.mood-tick {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1.5px solid rgb(255 255 255 / 0.5);
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.28);
+  color: #0a0a0a;
+  font-size: 14px;
+  transition:
+    background 200ms ease,
+    border-color 200ms ease,
+    transform 260ms cubic-bezier(0.3, 1.6, 0.5, 1);
+  backdrop-filter: blur(6px);
+}
+
+.mood-tick b {
+  font-weight: 800;
+}
+
+.mood-tick svg {
+  width: 17px;
+  height: 17px;
+}
+
+.mood-panel.is-selected .mood-tick {
+  border-color: var(--panel-accent);
+  background: var(--panel-accent);
+  transform: scale(1.08);
+}
+
+.mood-label {
+  position: absolute;
+  inset: auto 0 0;
+  display: grid;
+  gap: 8px;
+  padding: clamp(18px, 2vw, 30px);
+  transition:
+    opacity 340ms ease 120ms,
+    translate 520ms cubic-bezier(0.2, 0.8, 0.2, 1) 80ms;
+}
+
+.mood-index {
+  color: var(--panel-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  font-variant-numeric: tabular-nums;
+}
+
+.mood-name {
+  font-size: clamp(24px, 2.7vw, 44px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  text-wrap: balance;
+}
+
+.mood-for-you {
+  justify-self: start;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--panel-accent);
+  color: #0a0a0a;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.mood-promise {
+  max-width: 28ch;
+  color: rgb(255 255 255 / 0.8);
+  font-size: clamp(13px, 1vw, 15px);
+  line-height: 1.4;
+}
+
+.mood-name-v {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  translate: -50% 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  writing-mode: vertical-rl;
+  rotate: 180deg;
+  opacity: 0;
+  transition: opacity 300ms ease;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------------ foot */
+
+.mood-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-inline: max(clamp(20px, 3vw, 44px), env(safe-area-inset-left))
+    max(clamp(20px, 3vw, 44px), env(safe-area-inset-right));
+}
+
+.mood-times {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.mood-times legend {
+  margin-bottom: 10px;
+  padding: 0;
+  color: rgb(255 255 255 / 0.55);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.mood-times > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mood-time {
+  display: grid;
+  gap: 1px;
+  padding: 9px 16px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 0.05);
+  color: rgb(255 255 255 / 0.86);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease;
+}
+
+.mood-time span {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.mood-time small {
+  color: rgb(255 255 255 / 0.5);
+  font-size: 11px;
+}
+
+.mood-time:hover {
+  background: rgb(255 255 255 / 0.12);
+}
+
+.mood-time.is-active {
+  border-color: #fff;
+  background: #fff;
+  color: #0a0a0a;
+}
+
+.mood-time.is-active small {
+  color: rgb(10 10 10 / 0.6);
+}
+
+.mood-go {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.mood-blend {
+  max-width: 34ch;
+  color: rgb(255 255 255 / 0.7);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.mood-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 0 26px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--mood-accent);
+  color: #0a0a0a;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 10px 36px -8px var(--mood-accent);
+  transition:
+    background 400ms ease,
+    box-shadow 400ms ease,
+    transform 160ms ease,
+    opacity 200ms ease;
+}
+
+.mood-cta svg {
+  width: 20px;
+  height: 20px;
+  transition: translate 200ms ease;
+}
+
+.mood-cta:hover:not(:disabled) svg {
+  translate: 4px 0;
+}
+
+.mood-cta:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.mood-cta:disabled {
+  background: rgb(255 255 255 / 0.16);
+  color: rgb(255 255 255 / 0.5);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.mood-cta:focus-visible,
+.mood-time:focus-visible,
+.mood-close:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+/* --------------------------------------------------------------- desktop */
+
+@media (min-width: 901px) {
+  .mood-panel:not(.is-open) .mood-label {
+    opacity: 0;
+    translate: 0 14px;
+    transition-delay: 0s;
+  }
+
+  .mood-panel:not(.is-open) .mood-name-v {
+    opacity: 0.92;
+    transition-delay: 160ms;
+  }
+
+  .mood-panel:not(.is-open) .mood-tick {
+    top: 14px;
+    right: 50%;
+    translate: 50% 0;
+  }
+
+  /* Only the world being looked at keeps animating. */
+  .mood-panel:not(.is-open) .mood-scene * {
+    animation-play-state: paused;
+  }
+}
+
+/* ----------------------------------------------------------------- phone */
+
+@media (max-width: 900px) {
+  .mood-page {
+    gap: 14px;
+  }
+
+  .mood-head h1 {
+    font-size: clamp(30px, 9vw, 44px);
+  }
+
+  .mood-sub {
+    font-size: 13px;
+  }
+
+  .mood-close {
+    width: 42px;
+    height: 42px;
+  }
+
+  .mood-stage {
+    gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scroll-padding-inline: 20px;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+
+  .mood-stage::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mood-panel {
+    flex: 0 0 min(78vw, 360px);
+    scroll-snap-align: center;
+    border-radius: 24px;
+  }
+
+  .mood-panel.is-open {
+    flex-grow: 0;
+  }
+
+  .mood-foot {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .mood-times > div {
+    flex-wrap: nowrap;
+    margin-inline: -20px;
+    padding-inline: 20px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .mood-time {
+    flex: 0 0 auto;
+  }
+
+  .mood-go {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .mood-blend {
+    max-width: none;
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .mood-cta {
+    justify-content: center;
+    min-height: 56px;
+  }
+}
+
+/* ------------------------------------------------------- scene animation */
+
+@media (prefers-reduced-motion: no-preference) {
+  .mood-scene .ms-streak {
+    stroke-dasharray: 26 340;
+    animation: ms-dash 1.5s linear infinite;
+  }
+
+  .mood-scene .ms-trail {
+    stroke-dasharray: 70 320;
+    animation: ms-dash 1.9s linear infinite;
+  }
+
+  .mood-scene .ms-trail.is-late {
+    animation-delay: -0.9s;
+  }
+
+  .mood-scene .ms-twinkle {
+    animation: ms-twinkle 3.2s ease-in-out infinite alternate;
+  }
+
+  .mood-scene .ms-twinkle.is-spark {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation-name: ms-spark;
+  }
+
+  .mood-scene .ms-fog-a {
+    animation: ms-drift 15s ease-in-out infinite alternate;
+  }
+
+  .mood-scene .ms-fog-b {
+    animation: ms-drift 19s ease-in-out infinite alternate-reverse;
+  }
+
+  .mood-scene .ms-flicker {
+    animation: ms-flicker 3.4s steps(1, end) infinite;
+  }
+
+  .mood-scene .ms-bob {
+    animation: ms-bob 4.2s ease-in-out infinite alternate;
+  }
+
+  .mood-scene .ms-blink {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: ms-blink 4.6s ease-in-out infinite;
+  }
+
+  .mood-scene .ms-fall,
+  .mood-scene .ms-petal {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: ms-fall linear infinite;
+  }
+
+  .mood-scene .ms-petal {
+    animation-name: ms-petal;
+  }
+
+  .mood-scene .ms-ring-a {
+    animation: ms-ring 6s ease-in-out infinite alternate;
+  }
+
+  .mood-scene .ms-ring-b {
+    animation: ms-ring 6s ease-in-out infinite alternate-reverse;
+  }
+
+  .mood-scene .ms-orbit {
+    transform-box: view-box;
+    transform-origin: 200px 252px;
+    animation: ms-spin 26s linear infinite;
+  }
+
+  .mood-scene .ms-orbit.is-reverse {
+    animation-duration: 34s;
+    animation-direction: reverse;
+  }
+
+  .mood-scene .ms-float {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: ms-float 5.5s ease-in-out infinite alternate;
+  }
+
+  .mood-scene .ms-sunburst {
+    transform-box: view-box;
+    transform-origin: 200px 280px;
+    animation: ms-spin 90s linear infinite;
+  }
+
+  .mood-scene .ms-star {
+    transform-box: view-box;
+    transform-origin: 200px 290px;
+    animation: ms-pulse 3.4s ease-in-out infinite alternate;
+  }
+}
+
+.mood-scene .ms-iris {
+  translate: calc(var(--mx) * 22px) calc(var(--my) * 12px);
+  transition: translate 140ms ease-out;
+}
+
+@keyframes ms-dash {
+  from {
+    stroke-dashoffset: 366;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes ms-twinkle {
+  from {
+    opacity: 0.2;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ms-spark {
+  from {
+    opacity: 0.15;
+    scale: 0.6;
+  }
+
+  to {
+    opacity: 1;
+    scale: 1.25;
+  }
+}
+
+@keyframes ms-drift {
+  from {
+    translate: -34px 0;
+  }
+
+  to {
+    translate: 34px 0;
+  }
+}
+
+@keyframes ms-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  22% {
+    opacity: 0.78;
+  }
+
+  47% {
+    opacity: 0.95;
+  }
+
+  73% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes ms-bob {
+  from {
+    translate: 0 -7px;
+  }
+
+  to {
+    translate: 0 7px;
+  }
+}
+
+@keyframes ms-blink {
+  0%,
+  90%,
+  100% {
+    scale: 1 1;
+  }
+
+  94% {
+    scale: 1 0.08;
+  }
+}
+
+@keyframes ms-fall {
+  from {
+    translate: 0 -40px;
+    rotate: 0deg;
+  }
+
+  to {
+    translate: 0 680px;
+    rotate: var(--spin, 360deg);
+  }
+}
+
+@keyframes ms-petal {
+  from {
+    translate: 0 -30px;
+    rotate: 0deg;
+  }
+
+  50% {
+    translate: var(--sway, 30px) 320px;
+    rotate: 180deg;
+  }
+
+  to {
+    translate: calc(var(--sway, 30px) * -1) 680px;
+    rotate: 360deg;
+  }
+}
+
+@keyframes ms-ring {
+  from {
+    translate: -12px 0;
+  }
+
+  to {
+    translate: 12px 0;
+  }
+}
+
+@keyframes ms-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@keyframes ms-float {
+  from {
+    translate: 0 -10px;
+    rotate: -8deg;
+  }
+
+  to {
+    translate: 0 10px;
+    rotate: 8deg;
+  }
+}
+
+@keyframes ms-pulse {
+  from {
+    scale: 1;
+  }
+
+  to {
+    scale: 1.045;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mood-page,
+  .mood-panel {
+    animation: none;
+  }
+
+  .mood-panel,
+  .mood-label,
+  .mood-name-v {
+    transition-duration: 1ms;
+  }
+}
