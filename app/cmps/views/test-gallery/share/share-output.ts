@@ -3,15 +3,14 @@
 // and a link. Nothing is uploaded anywhere.
 
 import { TIER_LABELS, type Tier } from '../shuffle-pro/shuffle-pro-logic'
+import { type RecapScene, drawRecap, prepareRecap } from './recap-art'
 import {
-  type PreparedShare,
   SHARE_CLIP_SECONDS,
   SHARE_HEIGHT,
   SHARE_WIDTH,
   type ShareScene,
   type ShareSource,
   drawShare,
-  drawShareFinal,
   prepareShare,
 } from './share-art'
 
@@ -57,13 +56,21 @@ const loadFonts = async () => {
 
 export type ShareInput = Omit<ShareScene, 'poster'> & { posterUrl: string }
 
+// Anything that can be drawn at a moment in time: a pick, or a run recap. The
+// image is the moment at the end of the clip.
+export type ShareRenderable = {
+  draw: (ctx: CanvasRenderingContext2D, t: number) => void
+}
+
 const canvasToBlob = (canvas: HTMLCanvasElement, type = 'image/png') =>
   new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type))
 
 // Everything the sheet needs: the prepared artwork and a fresh poster. If the
 // poster taints the canvas (no CORS), the artwork falls back to the path's
 // colours in its place.
-export const prepareShareArt = async (input: ShareInput) => {
+export const prepareShareArt = async (
+  input: ShareInput,
+): Promise<ShareRenderable> => {
   await loadFonts()
   const poster: ShareSource | null = await loadPoster(input.posterUrl)
   const scene: ShareScene = { ...input, poster }
@@ -81,17 +88,27 @@ export const prepareShareArt = async (input: ShareInput) => {
   } catch {
     prepared = prepareShare({ ...scene, poster: null })
   }
-  return prepared
+  const final = prepared
+  return { draw: (ctx, t) => drawShare(ctx, final, t) }
+}
+
+// The run recap's artwork: no poster to load, only the fonts.
+export const prepareRecapArt = async (
+  scene: RecapScene,
+): Promise<ShareRenderable> => {
+  await loadFonts()
+  const prepared = prepareRecap(scene)
+  return { draw: (ctx, t) => drawRecap(ctx, prepared, t) }
 }
 
 // The still image: the finished frame at full size.
-export const renderShareImage = async (prepared: PreparedShare) => {
+export const renderShareImage = async (art: ShareRenderable) => {
   const canvas = document.createElement('canvas')
   canvas.width = SHARE_WIDTH
   canvas.height = SHARE_HEIGHT
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas is unavailable')
-  drawShareFinal(ctx, prepared)
+  art.draw(ctx, SHARE_CLIP_SECONDS)
   const blob = await canvasToBlob(canvas)
   canvas.width = 0
   if (!blob) throw new Error('Could not render the share image')
@@ -149,7 +166,7 @@ const nextFrame = (callback: (now: number) => void) => {
 // Records the artwork playing, in real time, to a video blob. Aborting stops
 // the recorder, releases the stream and rejects; nothing is left running.
 export const recordShareClip = (
-  prepared: PreparedShare,
+  art: ShareRenderable,
   options: {
     onProgress?: (fraction: number) => void
     signal?: AbortSignal
@@ -223,7 +240,7 @@ export const recordShareClip = (
       if (finished) return
       const t = (now - startedAt) / 1000
       ctx.setTransform(CLIP_SCALE, 0, 0, CLIP_SCALE, 0, 0)
-      drawShare(ctx, prepared, Math.min(t, SHARE_CLIP_SECONDS))
+      art.draw(ctx, Math.min(t, SHARE_CLIP_SECONDS))
       options.onProgress?.(Math.min(1, t / SHARE_CLIP_SECONDS))
       if (t >= SHARE_CLIP_SECONDS + 0.15) {
         // One last frame is already drawn; let the recorder flush.

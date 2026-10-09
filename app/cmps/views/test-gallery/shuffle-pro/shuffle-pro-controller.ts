@@ -81,6 +81,8 @@ export type ControllerDeps = {
   isImmersive: () => boolean
   isReducedMotion: () => boolean
   getFound: () => FoundPaths
+  // The streak count after each shuffle, for the best-streak record.
+  onStreak?: (streak: number) => void
   // True while the golden hour is on and Gold is easier to find.
   isGoldenHour?: () => boolean
   recordRun: (tier: Tier) => void
@@ -267,8 +269,11 @@ export class ShuffleProController {
       immersive: this.deps.isImmersive(),
       random: this.deps.random,
     })
+    const before = this.streak
     this.streak = result.state
     this.syncStreakPrewarm(result.state, event.type)
+    const reached = result.trigger ? before.streak + 1 : result.state.streak
+    if (reached > 0) this.deps.onStreak?.(reached)
     return result.trigger
   }
 

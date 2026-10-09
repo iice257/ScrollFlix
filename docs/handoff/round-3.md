@@ -25,7 +25,7 @@ Status: done, partial, todo, cut.
 | 2 | Chosen poster flies out of the globe into the card | done for ordinary picks and taps; premium cards keep their own flip |
 | 2 | Gold "path to gold" reveal the first time it unlocks | todo |
 | 3 | Time-of-day sky | cut |
-| 3 | Weather: a very fast flick draws rain or snow across the globe | todo |
+| 3 | Weather: a very fast flick draws rain or snow across the globe | done: needs a hard flick; feel not tuned on a real device |
 | 3 | Constellations: Saved films light up and connect into a shape | todo |
 | 4 | "Tonight" mode: pick a mood and time budget, the run lands inside it | done: the mood page |
 | 5 | Share card as a short clip | done (round 2) |
@@ -54,10 +54,10 @@ Status: done, partial, todo, cut.
 |------|--------|
 | Taste profile: Saved movies shift which moods and genres the globe leans toward | done: shuffles lean (up to 3x), a "For you" tag on the mood page, a line in Saved |
 | Pass the globe | todo (same as above) |
-| Shareable run recap: paths found and streak | todo |
-| Rarity events: a one-time golden hour that raises Gold odds, announced by a quiet sky change | todo |
+| Shareable run recap: paths found and streak | done: "Share your run" on the Easter egg shelf (image or clip); best streak is now remembered |
+| Rarity events: a one-time golden hour that raises Gold odds, announced by a quiet sky change | done: ~30% of visits, once a day, 2.5 minutes, `?golden-hour` to test |
 | Constellations | todo (same as above) |
-| Weather | todo (same as above) |
+| Weather | done (same as above) |
 | Film-card trailers: a 3 second muted loop behind the poster on premium cards | blocked: the data has no video source and there is no API key |
 
 ### Round 2 items that stay open

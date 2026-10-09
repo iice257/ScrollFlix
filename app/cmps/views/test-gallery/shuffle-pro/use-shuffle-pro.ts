@@ -80,6 +80,7 @@ export const useShuffleProController = (context: Context) => {
         getFound: () => shuffleProStore.get().found,
         isGoldenHour: () => goldenHourStore.get(),
         recordRun: (tier) => shuffleProStore.recordRun(tier),
+        onStreak: (streak) => shuffleProStore.recordStreak(streak),
         createWhoosh,
         prewarmTier: (tier) => {
           if (tier) startTierPreload(tier)

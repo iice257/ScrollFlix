@@ -1579,7 +1579,7 @@
   .warp-share-layer {
     position: fixed;
     inset: 0;
-    z-index: 96;
+    z-index: 130;
     display: grid;
     place-items: center;
     padding: 24px;

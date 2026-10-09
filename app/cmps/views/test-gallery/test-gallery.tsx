@@ -1562,6 +1562,8 @@ export const TestGalleryApp = () => {
   const [aboutOpen, setAboutOpen] = useState(false)
   const [savedOpen, setSavedOpen] = useState(false)
   const [moodsOpen, setMoodsOpen] = useState(false)
+  // The run recap's share sheet, opened from the Easter egg shelf.
+  const [recapOpen, setRecapOpen] = useState(false)
   const [moodNudge, setMoodNudge] = useState(false)
   const [moodShuffleNonce, setMoodShuffleNonce] = useState(0)
   const recentShufflesRef = useRef<number[]>([])
@@ -1811,6 +1813,26 @@ export const TestGalleryApp = () => {
           )
         : null,
     [movies, tasteProfile],
+  )
+  const shuffleProData = useSyncExternalStore(
+    shuffleProStore.subscribe,
+    shuffleProStore.get,
+    shuffleProStore.get,
+  )
+  const recapScene = useMemo(
+    () => ({
+      found: Object.fromEntries(
+        Object.entries(shuffleProData.found).map(([tier, entry]) => [
+          tier,
+          { count: entry?.count ?? 0 },
+        ]),
+      ),
+      totalRuns: shuffleProData.totalRuns,
+      bestStreak: shuffleProData.bestStreak,
+      savedCount: tasteEntries.length,
+      taste: topGenres(tasteProfile),
+    }),
+    [shuffleProData, tasteEntries.length, tasteProfile],
   )
   const weightOf = useMemo(
     () =>
@@ -2183,6 +2205,19 @@ export const TestGalleryApp = () => {
     },
     [reducedMotionOverride, shuffleProController],
   )
+
+  // Escape closes the recap's share sheet before anything behind it.
+  useEffect(() => {
+    if (!recapOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      setRecapOpen(false)
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [recapOpen])
 
   // A stale flight must never replay when the same film opens another way.
   useEffect(() => {
@@ -2943,6 +2978,19 @@ export const TestGalleryApp = () => {
         </>
       ) : null}
 
+      {recapOpen
+        ? createPortal(
+            <Suspense fallback={null}>
+              <ShareSheet
+                recap={recapScene}
+                link={window.location.origin}
+                onClose={() => setRecapOpen(false)}
+              />
+            </Suspense>,
+            shellRef.current ?? document.body,
+          )
+        : null}
+
       {posterFlight && detailsMovieId === posterFlight.movieId ? (
         <PosterFlight
           key={posterFlight.movieId}
@@ -3055,6 +3103,7 @@ export const TestGalleryApp = () => {
           maximized={aboutMaximized}
           motionPhase={aboutPresence.motionPhase}
           onClose={() => setAboutOpen(false)}
+          onShareRecap={() => setRecapOpen(true)}
           onToggleMaximized={() =>
             setAboutMaximized((isMaximized) => !isMaximized)
           }
@@ -4421,6 +4470,7 @@ type AboutDrawerProps = {
   maximized: boolean
   motionPhase: MotionPhase
   onClose: () => void
+  onShareRecap: () => void
   onToggleMaximized: () => void
 }
 
@@ -4618,6 +4668,7 @@ const AboutDrawer = ({
   maximized,
   motionPhase,
   onClose,
+  onShareRecap,
   onToggleMaximized,
 }: AboutDrawerProps) =>
   maximized ? (
@@ -4693,7 +4744,7 @@ const AboutDrawer = ({
             <br />
             See if you can find the easter egg.
           </p>
-          <ShuffleProShelf title={false} />
+          <ShuffleProShelf title={false} onShare={onShareRecap} />
         </section>
 
         <section className='warp-about-section'>
@@ -4754,7 +4805,7 @@ const AboutDrawer = ({
         </button>
       </header>
       <AboutControls />
-      <ShuffleProShelf />
+      <ShuffleProShelf onShare={onShareRecap} />
       <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
       <SoundSettingsPanel categories={false} />
       <button
