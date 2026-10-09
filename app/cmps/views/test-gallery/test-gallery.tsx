@@ -129,6 +129,7 @@ import {
   useShuffleProController,
 } from './shuffle-pro/use-shuffle-pro'
 import { useTitleTranslation } from './use-title-translation'
+import { WeatherLayer, type WeatherStorm } from './weather-layer'
 
 type RawMovie = Record<string, unknown>
 
@@ -1922,6 +1923,18 @@ export const TestGalleryApp = () => {
   })
   const menuControlRef = useRef<InfiniteMovieMenuControl | null>(null)
   const goldenHour = useGoldenHour()
+  // Very fast flicks of the globe kick up rain or snow.
+  const stormRef = useRef<WeatherStorm | null>(null)
+  const registerStorm = useCallback((storm: WeatherStorm | null) => {
+    stormRef.current = storm
+  }, [])
+  useEffect(() => {
+    const control = menuControlRef.current
+    control?.setOnFlick((speed, direction) =>
+      stormRef.current?.(speed, direction),
+    )
+    return () => control?.setOnFlick(null)
+  }, [])
   useGoldenHourScheduler(initialGalleryReady)
   const [shuffleSpinning, setShuffleSpinning] = useState(false)
   const isSpinActive = shuffleProSnapshot.canSkip || shuffleSpinning
@@ -2601,6 +2614,7 @@ export const TestGalleryApp = () => {
           reducedMotionOverride={reducedMotionOverride}
         />
       ) : null}
+      <WeatherLayer register={registerStorm} />
       <GoldenHourWash />
       <GoldenHourNote active={goldenHour} />
       {/* Stays mounted in other views so returning to the gallery is instant. */}

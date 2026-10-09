@@ -91,6 +91,10 @@ export type InfiniteMovieMenuControl = {
   skipSpin: () => void
   // Where a film's poster is on screen right now, or null if it isn't shown.
   getPosterRect: (itemId: string) => PosterRect | null
+  // Called with the speed (rad/s) and direction (-1 or 1) of a very fast flick.
+  setOnFlick: (
+    listener: ((speed: number, direction: number) => void) | null,
+  ) => void
 }
 
 type Vec2 = [number, number]
@@ -126,6 +130,9 @@ const DETAIL_CLOSE_EASE_MS = 460
 // Directional motion blur: angular speed (rad/s) where it starts and reaches
 // full strength, and the longest smear as a fraction of a poster's height.
 const MOTION_BLUR_THRESHOLD = 2.2
+// Fast enough, from a drag, to kick up weather (see weather-logic.ts).
+const FLICK_WEATHER_SPEED = 5.4
+const FLICK_WEATHER_COOLDOWN_MS = 350
 const MOTION_BLUR_CAP = 6.5
 const MOTION_BLUR_MAX_SMEAR = 0.012
 // Rotation velocity (turns per frame) below which a drag gesture has rested.
@@ -1393,6 +1400,9 @@ class InfiniteMovieEngine<T> {
   private frameTimeCount = 0
   private statsEnabled = false
   onSpinActive: ((active: boolean) => void) | null = null
+  // Told when the globe is turning very fast because it was flicked.
+  onFlick: ((speed: number, direction: number) => void) | null = null
+  private lastFlickAt = 0
 
   private readonly handleContextLost = (event: Event) => {
     event.preventDefault()
@@ -1507,9 +1517,21 @@ class InfiniteMovieEngine<T> {
     this.time = time
     this.frames += deltaTime / TARGET_FRAME_DURATION
     if (this.animate(deltaTime)) this.render()
+    this.checkFlick(time)
     this.frameId = window.requestAnimationFrame((nextTime) =>
       this.run(nextTime),
     )
+  }
+
+  // A drag let go of at speed keeps turning; past a high speed that is a flick.
+  // Shuffle and Shuffle Pro spins turn the globe fast too, but are not flicks.
+  private checkFlick(now: number) {
+    if (!this.onFlick || this.spinTarget || this.control.autoSpin) return
+    if (now - this.lastFlickAt < FLICK_WEATHER_COOLDOWN_MS) return
+    const speed = this.angularSpeed()
+    if (speed < FLICK_WEATHER_SPEED) return
+    this.lastFlickAt = now
+    this.onFlick(speed, this.control.rotationAxis[1] >= 0 ? 1 : -1)
   }
 
   // Stops the frame loop while the gallery is hidden (e.g. in list mode) so the
@@ -2830,6 +2852,9 @@ export const InfiniteMovieMenu = <T,>({
 }: InfiniteMovieMenuProps<T>) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const engineRef = useRef<InfiniteMovieEngine<T> | null>(null)
+  const flickListenerRef = useRef<
+    ((speed: number, direction: number) => void) | null
+  >(null)
   const activeItemRef = useRef<InfiniteMovieMenuItem<T> | null>(null)
   // Kept in a ref so a new callback identity never rebuilds the WebGL engine.
   const onMovingChangeRef = useRef(onMovingChange)
@@ -2948,6 +2973,8 @@ export const InfiniteMovieMenu = <T,>({
       )
       engineRef.current = engine
       engine.onSpinActive = (active) => onSpinActiveChangeRef.current?.(active)
+      engine.onFlick = (speed, direction) =>
+        flickListenerRef.current?.(speed, direction)
       engine.setGestureSettledHandler((total) =>
         onGestureSettledRef.current?.(total),
       )
@@ -3242,6 +3269,9 @@ export const InfiniteMovieMenu = <T,>({
       },
       getPosterRect: (itemId) =>
         engineRef.current?.getPosterRect(itemId) ?? null,
+      setOnFlick: (listener) => {
+        flickListenerRef.current = listener
+      },
     }
     return () => {
       controlRef.current = null
