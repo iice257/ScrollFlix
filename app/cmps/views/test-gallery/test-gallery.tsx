@@ -59,6 +59,7 @@ import {
   useSoundEffects,
 } from '../../../audio/use-sound-effects'
 import { useMediaQuery } from '../../../hooks/use-media-query'
+import { isIOS, syncBrowserChrome } from '../../../utils/platform'
 import { cn } from '../../../utils/tw'
 import {
   Tooltip,
@@ -234,7 +235,12 @@ const readSpinHintSeen = () => {
   }
 }
 
+// iPhone has no real full screen, and the in-page stand-in is held back until
+// there is a design for it, so the button and its hint are not offered there.
+const FULLSCREEN_OFFERED = !isIOS()
+
 const readFullscreenHintSeen = () => {
+  if (!FULLSCREEN_OFFERED) return true
   try {
     return window.localStorage.getItem(FULLSCREEN_HINT_STORAGE_KEY) === '1'
   } catch {
@@ -1579,6 +1585,11 @@ export const TestGalleryApp = () => {
     }
   }, [])
 
+  // The browser's own bars take the theme's colour.
+  useEffect(() => {
+    syncBrowserChrome(theme)
+  }, [theme])
+
   const changeTheme = useCallback((nextTheme: Theme) => {
     setTheme(nextTheme)
     try {
@@ -2437,10 +2448,12 @@ export const TestGalleryApp = () => {
         mode={mode}
         topActions={
           mode === 'wall' ? (
-            <ImmersiveEnterButton
-              onEnter={() => void enterImmersive()}
-              hint={showFullscreenHint}
-            />
+            FULLSCREEN_OFFERED ? (
+              <ImmersiveEnterButton
+                onEnter={() => void enterImmersive()}
+                hint={showFullscreenHint}
+              />
+            ) : null
           ) : null
         }
         movieCount={movies.length}

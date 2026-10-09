@@ -782,7 +782,7 @@
 
   .warp-topbar {
     position: fixed;
-    inset: 24px 24px auto;
+    inset: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) auto max(24px, env(safe-area-inset-left));
     z-index: 30;
     display: grid;
     grid-template-columns: minmax(180px, 0.55fr) minmax(260px, 1fr) minmax(112px, 0.36fr) auto;
@@ -1984,7 +1984,7 @@
   .warp-dock {
     position: fixed;
     left: 50%;
-    bottom: 28px;
+    bottom: max(28px, env(safe-area-inset-bottom));
     z-index: 54;
     display: flex;
     width: max-content;
@@ -4807,7 +4807,7 @@
     }
 
     .warp-topbar {
-      inset: 16px 16px auto;
+      inset: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) auto max(16px, env(safe-area-inset-left));
       display: flex;
       align-items: center;
       gap: 10px;
@@ -5056,7 +5056,7 @@
     }
 
     .warp-dock {
-      bottom: 18px;
+      bottom: max(18px, env(safe-area-inset-bottom));
       max-width: calc(100vw - 24px);
       gap: 10px;
     }
