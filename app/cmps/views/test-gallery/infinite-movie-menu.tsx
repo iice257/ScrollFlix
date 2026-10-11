@@ -79,9 +79,30 @@ type InfiniteMovieMenuProps<T> = {
   controlRef?: { current: InfiniteMovieMenuControl | null }
 }
 
+export type PosterRect = {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+export type PosterPoint = PosterRect & { id: string; depth: number }
+
 export type InfiniteMovieMenuControl = {
   // Finishes a Shuffle spin now, settling on its poster within 300ms.
   skipSpin: () => void
+  // Where a film's poster is on screen right now, or null if it isn't shown.
+  getPosterRect: (itemId: string) => PosterRect | null
+  // Where each of these films' posters is on screen, for those facing the
+  // viewer. Cheap: one pass over the globe.
+  getPosterPoints: (ids: ReadonlySet<string>) => PosterPoint[]
+  // Called after every frame the globe actually draws (it only draws when
+  // something moved).
+  setOnFrame: (listener: (() => void) | null) => void
+  // Called with the speed (rad/s) and direction (-1 or 1) of a very fast flick.
+  setOnFlick: (
+    listener: ((speed: number, direction: number) => void) | null,
+  ) => void
 }
 
 type Vec2 = [number, number]
@@ -117,6 +138,9 @@ const DETAIL_CLOSE_EASE_MS = 460
 // Directional motion blur: angular speed (rad/s) where it starts and reaches
 // full strength, and the longest smear as a fraction of a poster's height.
 const MOTION_BLUR_THRESHOLD = 2.2
+// Fast enough, from a drag, to kick up weather (see weather-logic.ts).
+const FLICK_WEATHER_SPEED = 5.4
+const FLICK_WEATHER_COOLDOWN_MS = 350
 const MOTION_BLUR_CAP = 6.5
 const MOTION_BLUR_MAX_SMEAR = 0.012
 // Rotation velocity (turns per frame) below which a drag gesture has rested.
@@ -252,6 +276,12 @@ const INITIAL_TEXTURE_LOAD_CONCURRENCY = 24
 // net so a stalled request can never hold the page hostage.
 const POSTER_SETTLE_RETRY_DELAYS_MS = [800, 2400]
 const GLOBE_READY_SAFETY_NET_MS = 25000
+// Open early: when this share of the posters has settled and this long has
+// passed, or at the later time with a smaller share.
+const GLOBE_READY_EARLY_FRACTION = 0.92
+const GLOBE_READY_EARLY_MIN_MS = 4000
+const GLOBE_READY_LATE_FRACTION = 0.75
+const GLOBE_READY_LATE_MS = 9000
 // Longest stretch of texture uploads before handing the thread back.
 const UPLOAD_SLICE_MS = 8
 
@@ -1384,6 +1414,11 @@ class InfiniteMovieEngine<T> {
   private frameTimeCount = 0
   private statsEnabled = false
   onSpinActive: ((active: boolean) => void) | null = null
+  // Told when the globe is turning very fast because it was flicked.
+  onFlick: ((speed: number, direction: number) => void) | null = null
+  // Told after every frame that was drawn.
+  onFrame: (() => void) | null = null
+  private lastFlickAt = 0
 
   private readonly handleContextLost = (event: Event) => {
     event.preventDefault()
@@ -1497,10 +1532,25 @@ class InfiniteMovieEngine<T> {
     }
     this.time = time
     this.frames += deltaTime / TARGET_FRAME_DURATION
-    if (this.animate(deltaTime)) this.render()
+    if (this.animate(deltaTime)) {
+      this.render()
+      this.onFrame?.()
+    }
+    this.checkFlick(time)
     this.frameId = window.requestAnimationFrame((nextTime) =>
       this.run(nextTime),
     )
+  }
+
+  // A drag let go of at speed keeps turning; past a high speed that is a flick.
+  // Shuffle and Shuffle Pro spins turn the globe fast too, but are not flicks.
+  private checkFlick(now: number) {
+    if (!this.onFlick || this.spinTarget || this.control.autoSpin) return
+    if (now - this.lastFlickAt < FLICK_WEATHER_COOLDOWN_MS) return
+    const speed = this.angularSpeed()
+    if (speed < FLICK_WEATHER_SPEED) return
+    this.lastFlickAt = now
+    this.onFlick(speed, this.control.rotationAxis[1] >= 0 ? 1 : -1)
   }
 
   // Stops the frame loop while the gallery is hidden (e.g. in list mode) so the
@@ -1910,6 +1960,100 @@ class InfiniteMovieEngine<T> {
     return { candidates, ellipse }
   }
 
+  // Where an item's poster is on screen right now (viewport pixels), for the
+  // poster that is closest to the viewer if the item appears more than once.
+  getPosterRect(itemId: string): PosterRect | null {
+    const rect = this.canvas.getBoundingClientRect()
+    if (!rect.width || !rect.height) return null
+    const viewProjection = multiplyMat4(
+      identityMat4(),
+      this.projectionMatrix,
+      this.viewMatrix,
+    )
+    const mvp = identityMat4()
+    const toScreen = (x: number, y: number): Vec2 | null => {
+      const clipX = mvp[0] * x + mvp[4] * y + mvp[12]
+      const clipY = mvp[1] * x + mvp[5] * y + mvp[13]
+      const clipW = mvp[3] * x + mvp[7] * y + mvp[15]
+      if (clipW <= 0.0001) return null
+      return [
+        rect.left + ((clipX / clipW + 1) / 2) * rect.width,
+        rect.top + ((1 - clipY / clipW) / 2) * rect.height,
+      ]
+    }
+    let best: { z: number; rect: PosterRect } | null = null
+    this.instanceMatrices.forEach((matrix, index) => {
+      const item = this.items[index % Math.max(1, this.items.length)]
+      if (!item || item.id !== itemId) return
+      const centerZ = matrix[14]
+      if (centerZ < this.sphereRadius * 0.15) return
+      if (best && best.z >= centerZ) return
+      multiplyMat4(mvp, viewProjection, matrix)
+      const center = toScreen(0, 0)
+      const right = toScreen(POSTER_HALF_WIDTH, 0)
+      const up = toScreen(0, POSTER_HALF_HEIGHT)
+      if (!center || !right || !up) return
+      const halfWidth = Math.hypot(right[0] - center[0], right[1] - center[1])
+      const halfHeight = Math.hypot(up[0] - center[0], up[1] - center[1])
+      best = {
+        z: centerZ,
+        rect: {
+          left: center[0] - halfWidth,
+          top: center[1] - halfHeight,
+          width: halfWidth * 2,
+          height: halfHeight * 2,
+        },
+      }
+    })
+    return (best as { rect: PosterRect } | null)?.rect ?? null
+  }
+
+  getPosterPoints(ids: ReadonlySet<string>): PosterPoint[] {
+    const rect = this.canvas.getBoundingClientRect()
+    if (!ids.size || !rect.width || !rect.height) return []
+    const viewProjection = multiplyMat4(
+      identityMat4(),
+      this.projectionMatrix,
+      this.viewMatrix,
+    )
+    const mvp = identityMat4()
+    const toScreen = (x: number, y: number): Vec2 | null => {
+      const clipX = mvp[0] * x + mvp[4] * y + mvp[12]
+      const clipY = mvp[1] * x + mvp[5] * y + mvp[13]
+      const clipW = mvp[3] * x + mvp[7] * y + mvp[15]
+      if (clipW <= 0.0001) return null
+      return [
+        rect.left + ((clipX / clipW + 1) / 2) * rect.width,
+        rect.top + ((1 - clipY / clipW) / 2) * rect.height,
+      ]
+    }
+    const found = new Map<string, PosterPoint>()
+    this.instanceMatrices.forEach((matrix, index) => {
+      const item = this.items[index % Math.max(1, this.items.length)]
+      if (!item || !ids.has(item.id)) return
+      const centerZ = matrix[14]
+      if (centerZ < this.sphereRadius * 0.15) return
+      const previous = found.get(item.id)
+      if (previous && previous.depth >= centerZ) return
+      multiplyMat4(mvp, viewProjection, matrix)
+      const center = toScreen(0, 0)
+      const right = toScreen(POSTER_HALF_WIDTH, 0)
+      const up = toScreen(0, POSTER_HALF_HEIGHT)
+      if (!center || !right || !up) return
+      const halfWidth = Math.hypot(right[0] - center[0], right[1] - center[1])
+      const halfHeight = Math.hypot(up[0] - center[0], up[1] - center[1])
+      found.set(item.id, {
+        id: item.id,
+        depth: centerZ,
+        left: center[0] - halfWidth,
+        top: center[1] - halfHeight,
+        width: halfWidth * 2,
+        height: halfHeight * 2,
+      })
+    })
+    return [...found.values()]
+  }
+
   // Resolves a click against a snapshot; same snapshot and point, same poster.
   pickFromSnapshot(
     snapshot: PickSnapshot,
@@ -2096,11 +2240,27 @@ class InfiniteMovieEngine<T> {
       this.reportProgress(100)
     }
     const safetyNet = window.setTimeout(markReady, GLOBE_READY_SAFETY_NET_MS)
-    this.cleanupCallbacks.push(() => window.clearTimeout(safetyNet))
+    // Slow posters shouldn't hold everyone back: once most have settled the
+    // globe opens, and the rest fill in as they arrive.
+    const startedAt = performance.now()
+    const mostlyThere = window.setTimeout(() => {
+      if (settled / total >= GLOBE_READY_LATE_FRACTION) markReady()
+    }, GLOBE_READY_LATE_MS)
+    this.cleanupCallbacks.push(() => {
+      window.clearTimeout(safetyNet)
+      window.clearTimeout(mostlyThere)
+    })
     const countSettled = () => {
       settled += 1
       if (ready) return
       if (settled >= total) {
+        window.requestAnimationFrame(markReady)
+        return
+      }
+      if (
+        settled / total >= GLOBE_READY_EARLY_FRACTION &&
+        performance.now() - startedAt >= GLOBE_READY_EARLY_MIN_MS
+      ) {
         window.requestAnimationFrame(markReady)
         return
       }
@@ -2773,6 +2933,10 @@ export const InfiniteMovieMenu = <T,>({
 }: InfiniteMovieMenuProps<T>) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const engineRef = useRef<InfiniteMovieEngine<T> | null>(null)
+  const frameListenerRef = useRef<(() => void) | null>(null)
+  const flickListenerRef = useRef<
+    ((speed: number, direction: number) => void) | null
+  >(null)
   const activeItemRef = useRef<InfiniteMovieMenuItem<T> | null>(null)
   // Kept in a ref so a new callback identity never rebuilds the WebGL engine.
   const onMovingChangeRef = useRef(onMovingChange)
@@ -2862,6 +3026,8 @@ export const InfiniteMovieMenu = <T,>({
     if (!canvas || !engineItems.length) return
 
     let engine: InfiniteMovieEngine<T> | null = null
+    // Holds a premium card back for a beat after its poster lands.
+    let beatTimer = 0
     const onResize = () => engine?.resize()
 
     try {
@@ -2889,6 +3055,9 @@ export const InfiniteMovieMenu = <T,>({
       )
       engineRef.current = engine
       engine.onSpinActive = (active) => onSpinActiveChangeRef.current?.(active)
+      engine.onFlick = (speed, direction) =>
+        flickListenerRef.current?.(speed, direction)
+      engine.onFrame = () => frameListenerRef.current?.()
       engine.setGestureSettledHandler((total) =>
         onGestureSettledRef.current?.(total),
       )
@@ -2914,15 +3083,27 @@ export const InfiniteMovieMenu = <T,>({
         setSkyState: (state) => engine?.setSkyState(state),
         prewarm: () => engine?.prewarmSky(),
         cancelPrewarm: () => engine?.cancelSkyPrewarm(),
-        landOn: (itemId, onArrive) => {
+        landOn: (itemId, onArrive, beatMs = 0) => {
           const item = findItem(itemId)
           if (!item) {
             onArrive()
             return
           }
           engine?.spinToItem(itemId, (index) => {
-            openShuffled(item, index)
+            if (beatMs <= 0) {
+              openShuffled(item, index)
+              onArrive()
+              return
+            }
+            // The poster has landed: let it hold for a beat, with a small push
+            // toward it, before the card opens.
             onArrive()
+            engine?.kickCamera(-0.9)
+            window.clearTimeout(beatTimer)
+            beatTimer = window.setTimeout(
+              () => openShuffled(item, index),
+              beatMs,
+            )
           })
         },
         settleTo: (itemId, ms, onArrive) => {
@@ -2936,7 +3117,10 @@ export const InfiniteMovieMenu = <T,>({
             onArrive()
           })
         },
-        cancelLanding: () => engine?.cancelSpin(),
+        cancelLanding: () => {
+          window.clearTimeout(beatTimer)
+          engine?.cancelSpin()
+        },
         setStatsEnabled: (enabled) => engine?.setStatsEnabled(enabled),
         getFrameStats: () => engine?.getFrameStats() ?? { average: 0, p95: 0 },
         getSkyStats: () =>
@@ -2969,6 +3153,7 @@ export const InfiniteMovieMenu = <T,>({
 
     return () => {
       window.removeEventListener('resize', onResize)
+      window.clearTimeout(beatTimer)
       if (portRef.current) shuffleProRef.current?.detachPort(portRef.current)
       portRef.current = null
       engineRef.current = null
@@ -3164,6 +3349,15 @@ export const InfiniteMovieMenu = <T,>({
         const engine = engineRef.current
         if (!spin || !engine) return
         engine.settleToItem(spin.item.id, 300, (index) => spin.arrive(index))
+      },
+      getPosterRect: (itemId) =>
+        engineRef.current?.getPosterRect(itemId) ?? null,
+      getPosterPoints: (ids) => engineRef.current?.getPosterPoints(ids) ?? [],
+      setOnFrame: (listener) => {
+        frameListenerRef.current = listener
+      },
+      setOnFlick: (listener) => {
+        flickListenerRef.current = listener
       },
     }
     return () => {

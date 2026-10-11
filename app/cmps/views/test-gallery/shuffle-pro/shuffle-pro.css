@@ -1138,6 +1138,43 @@
   font-weight: 650;
 }
 
+.sp-shelf-share {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.06);
+  color: rgb(255 255 255 / 0.9);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.sp-shelf-share svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sp-shelf-share:hover,
+.sp-shelf-share:focus-visible {
+  outline: none;
+  border-color: rgb(255 255 255 / 0.36);
+  background: rgb(255 255 255 / 0.12);
+}
+
+.warp-shell[data-theme="light"] .sp-shelf-share {
+  border-color: rgb(41 34 24 / 0.2);
+  background: rgb(41 34 24 / 0.06);
+  color: rgb(41 34 24);
+}
+
 .sp-shelf-slots {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

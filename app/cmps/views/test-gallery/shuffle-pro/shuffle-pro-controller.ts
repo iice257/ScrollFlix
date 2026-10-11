@@ -56,7 +56,8 @@ export type ShuffleProPort = {
   prewarm(): void
   cancelPrewarm(): void
   // Spin to the movie with the existing snap, then open its card.
-  landOn(itemId: string, onArrive: () => void): void
+  // beatMs holds the card back for a moment once the poster has landed.
+  landOn(itemId: string, onArrive: () => void, beatMs?: number): void
   // Skip: ease to the movie within `ms`, then open its card.
   settleTo(itemId: string, ms: number, onArrive: () => void): void
   cancelLanding(): void
@@ -80,6 +81,10 @@ export type ControllerDeps = {
   isImmersive: () => boolean
   isReducedMotion: () => boolean
   getFound: () => FoundPaths
+  // The streak count after each shuffle, for the best-streak record.
+  onStreak?: (streak: number) => void
+  // True while the golden hour is on and Gold is easier to find.
+  isGoldenHour?: () => boolean
   recordRun: (tier: Tier) => void
   createWhoosh: (tier: Tier) => Whoosh | null
   // A random visible movie that is not the one the globe is already on.
@@ -91,7 +96,7 @@ export type ControllerDeps = {
   // tier-specific assets can load in the background.
   prewarmTier?: (tier: Tier | null) => void
   // Sound cues: the peak is reached, the landing is done.
-  onCue?: (cue: 'peak' | 'land', tier: Tier) => void
+  onCue?: (cue: 'peak' | 'land' | 'end', tier: Tier) => void
 }
 
 export type ControllerSnapshot = {
@@ -159,6 +164,8 @@ type Press = {
 const SKY_HOLD_LEVEL = 0.6
 const SKIP_SETTLE_MS = 300
 const LANDING_WATCHDOG_MS = 2600
+// A premium landing holds for a beat on its poster before the card opens.
+export const LANDING_BEAT_MS = 380
 const CARD_CLOSE_FADE_MS = 600
 const NORMAL_FADE_MS = 400
 const PEAK_FLASH_MS = 250
@@ -262,8 +269,11 @@ export class ShuffleProController {
       immersive: this.deps.isImmersive(),
       random: this.deps.random,
     })
+    const before = this.streak
     this.streak = result.state
     this.syncStreakPrewarm(result.state, event.type)
+    const reached = result.trigger ? before.streak + 1 : result.state.streak
+    if (reached > 0) this.deps.onStreak?.(reached)
     return result.trigger
   }
 
@@ -323,6 +333,7 @@ export class ShuffleProController {
       tier: resolveTier(this.deps.isImmersive() ? 'jade' : 'frost', {
         found: this.deps.getFound(),
         random: this.deps.random,
+        goldenHour: this.deps.isGoldenHour?.() ?? false,
       }),
       prewarmed: false,
     }
@@ -392,6 +403,7 @@ export class ShuffleProController {
         : resolveTier(base, {
             found: this.deps.getFound(),
             random: this.deps.random,
+            goldenHour: this.deps.isGoldenHour?.() ?? false,
           })
     this.beginRun(tier, {
       automatic: true,
@@ -582,6 +594,7 @@ export class ShuffleProController {
     port.setCameraPull(0, LANDING_PULL_FREQ, LANDING_PULL_ZETA)
     run.whoosh?.fadeOut(500)
     run.whoosh = null
+    this.deps.onCue?.('end', run.tier)
     this.beginFade(run, 0, NORMAL_FADE_MS)
     run.landingDone = true
     this.streak = EMPTY_STREAK
@@ -625,6 +638,7 @@ export class ShuffleProController {
     if (this.phase !== 'presented' || !run) return
     this.presented = null
     this.phase = 'aborting'
+    this.deps.onCue?.('end', run.tier)
     this.beginFade(run, 0, CARD_CLOSE_FADE_MS)
     this.emit()
   }
@@ -818,8 +832,13 @@ export class ShuffleProController {
     ) {
       run.snapStarted = true
       const targetId = run.targetId
-      if (targetId) port.landOn(targetId, () => this.arrived(run))
-      else this.arrived(run)
+      if (targetId) {
+        port.landOn(
+          targetId,
+          () => this.arrived(run),
+          run.premium ? LANDING_BEAT_MS : 0,
+        )
+      } else this.arrived(run)
     }
   }
 
@@ -905,6 +924,7 @@ export class ShuffleProController {
     if (run) {
       run.whoosh?.stop()
       run.whoosh = null
+      this.deps.onCue?.('end', run.tier)
       port?.cancelLanding()
       port?.stopAutoSpin(LANDING_TAU_MS)
       port?.setCameraPull(0, LANDING_PULL_FREQ, LANDING_PULL_ZETA)

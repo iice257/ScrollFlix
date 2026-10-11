@@ -27,7 +27,7 @@ describe('sound settings', () => {
       ...DEFAULT_SOUND_SETTINGS,
       enabled: true,
       volume: 0.3,
-      categories: { ...DEFAULT_SOUND_SETTINGS.categories, globe: false },
+      categories: { ...DEFAULT_SOUND_SETTINGS.categories, shuffle: false },
     }
     expect(parseSoundSettings(serializeSoundSettings(settings))).toEqual(
       settings,
@@ -41,14 +41,14 @@ describe('sound settings', () => {
         enabled: 'yes',
         volume: 7,
         eggs: false,
-        categories: { ui: false, globe: 'no' },
+        categories: { ui: false, shuffle: 'no' },
       }),
     )
     expect(settings.enabled).toBe(false)
     expect(settings.volume).toBe(1)
     expect(settings.eggs).toBe(false)
     expect(settings.categories.ui).toBe(false)
-    expect(settings.categories.globe).toBe(true)
+    expect(settings.categories.shuffle).toBe(true)
   })
 
   it('carries over the old Easter egg switch', () => {
@@ -79,11 +79,11 @@ describe('sound settings', () => {
 
   it('gates a category on both the master switch and its own', () => {
     const on = { ...DEFAULT_SOUND_SETTINGS, enabled: true }
-    expect(isCategoryOn(on, 'globe')).toBe(true)
+    expect(isCategoryOn(on, 'shuffle')).toBe(true)
     expect(
       isCategoryOn(
-        { ...on, categories: { ...on.categories, globe: false } },
-        'globe',
+        { ...on, categories: { ...on.categories, shuffle: false } },
+        'shuffle',
       ),
     ).toBe(false)
   })

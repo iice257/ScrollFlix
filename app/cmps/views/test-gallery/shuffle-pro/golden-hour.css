@@ -1,0 +1,84 @@
+/* The golden hour: the sky warms slowly, and a single quiet line says so. */
+
+.warp-golden-wash {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(130% 80% at 50% 108%, rgb(255 184 84 / 0.55), rgb(255 140 50 / 0.2) 48%, transparent 74%),
+    linear-gradient(to bottom, rgb(255 170 70 / 0.07), transparent 38%);
+  mix-blend-mode: screen;
+  transition: opacity 5s ease;
+}
+
+.warp-shell[data-golden="true"] .warp-golden-wash {
+  opacity: 1;
+  animation: warp-golden-breathe 10s ease-in-out infinite alternate;
+}
+
+@keyframes warp-golden-breathe {
+  from {
+    filter: saturate(1) brightness(1);
+  }
+
+  to {
+    filter: saturate(1.25) brightness(1.12);
+  }
+}
+
+.warp-shell[data-theme="light"] .warp-golden-wash {
+  background:
+    radial-gradient(130% 80% at 50% 108%, rgb(255 168 60 / 0.34), rgb(255 150 60 / 0.12) 46%, transparent 72%);
+  mix-blend-mode: multiply;
+}
+
+.warp-golden-note {
+  position: fixed;
+  top: max(84px, calc(env(safe-area-inset-top) + 68px));
+  left: 50%;
+  z-index: 57;
+  max-width: calc(100vw - 32px);
+  color: rgb(255 214 150);
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  text-align: center;
+  text-shadow: 0 1px 16px rgb(0 0 0 / 0.55);
+  translate: -50% 0;
+  pointer-events: none;
+  animation: warp-golden-note 6.5s ease both;
+}
+
+.warp-shell[data-theme="light"] .warp-golden-note {
+  color: rgb(122 70 8);
+  text-shadow: none;
+}
+
+@keyframes warp-golden-note {
+  0% {
+    opacity: 0;
+    translate: -50% -6px;
+  }
+
+  15%,
+  80% {
+    opacity: 1;
+    translate: -50% 0;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .warp-shell[data-golden="true"] .warp-golden-wash {
+    animation: none;
+  }
+
+  .warp-golden-wash {
+    transition-duration: 1ms;
+  }
+}

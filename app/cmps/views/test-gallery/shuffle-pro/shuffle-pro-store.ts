@@ -10,9 +10,11 @@ export type FoundEntry = { count: number; firstAt: number; lastAt: number }
 export type ShuffleProData = {
   found: Partial<Record<Tier, FoundEntry>>
   totalRuns: number
+  // The longest streak of shuffles reached, kept for the run recap.
+  bestStreak: number
 }
 
-const EMPTY: ShuffleProData = { found: {}, totalRuns: 0 }
+const EMPTY: ShuffleProData = { found: {}, totalRuns: 0, bestStreak: 0 }
 const TIERS: readonly Tier[] = ['frost', 'amethyst', 'jade', 'gold']
 
 const isNumber = (value: unknown): value is number =>
@@ -26,6 +28,7 @@ export const parseShuffleProData = (raw: string | null): ShuffleProData => {
       v?: unknown
       found?: Record<string, Partial<FoundEntry>>
       totalRuns?: unknown
+      bestStreak?: unknown
     }
     if (parsed?.v !== 1 || typeof parsed.found !== 'object' || !parsed.found) {
       return EMPTY
@@ -51,6 +54,9 @@ export const parseShuffleProData = (raw: string | null): ShuffleProData => {
       totalRuns: isNumber(parsed.totalRuns)
         ? Math.max(0, Math.floor(parsed.totalRuns))
         : Object.values(found).reduce((sum, e) => sum + (e?.count ?? 0), 0),
+      bestStreak: isNumber(parsed.bestStreak)
+        ? Math.max(0, Math.floor(parsed.bestStreak))
+        : 0,
     }
   } catch {
     return EMPTY
@@ -64,6 +70,7 @@ export const recordRun = (
 ): ShuffleProData => {
   const previous = data.found[tier]
   return {
+    ...data,
     found: {
       ...data.found,
       [tier]: {
@@ -114,6 +121,11 @@ export const shuffleProStore = {
   },
   recordRun(tier: Tier, now = Date.now()) {
     save(recordRun(load(), tier, now))
+  },
+  // Remembers the longest streak; only a new best is written.
+  recordStreak(streak: number) {
+    const data = load()
+    if (streak > data.bestStreak) save({ ...data, bestStreak: streak })
   },
   reset() {
     save(EMPTY)

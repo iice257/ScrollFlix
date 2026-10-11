@@ -91,7 +91,7 @@ export const SoundSettingsPanel = ({
               onChange={(event) => {
                 unlockAudio()
                 soundStore.patch({ volume: Number(event.target.value) / 100 })
-                preview('action')
+                preview('confirm')
               }}
             />
           </fieldset>

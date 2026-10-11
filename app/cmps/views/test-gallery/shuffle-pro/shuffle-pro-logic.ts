@@ -124,18 +124,34 @@ export const HOLD_PREWARM_MS = 1500
 export type FoundPaths = Partial<Record<Tier, unknown>>
 
 export const GOLD_AFTER_FOUND_CHANCE = 0.1
+// The golden hour's odds (see golden-hour.ts).
+const GOLDEN_LOCKED_GOLD_CHANCE = 0.2
+const GOLDEN_FOUND_GOLD_CHANCE = 0.5
 
 export const hasUnlockedGold = (found: FoundPaths) =>
   Boolean(found.frost && found.amethyst && found.jade)
 
 // Gold rule: once Frost, Amethyst and Jade are all found, the next run of any
 // kind becomes Gold; after Gold has been found, any run has a 10% chance.
+// During the golden hour the chances are higher: a run can become Gold before
+// Gold is unlocked, and after it has been found the odds are one in two.
 export const resolveTier = (
   base: BaseTier,
-  { found, random }: { found: FoundPaths; random: () => number },
+  {
+    found,
+    random,
+    goldenHour = false,
+  }: { found: FoundPaths; random: () => number; goldenHour?: boolean },
 ): Tier => {
-  if (found.gold) return random() < GOLD_AFTER_FOUND_CHANCE ? 'gold' : base
-  return hasUnlockedGold(found) ? 'gold' : base
+  if (found.gold) {
+    const chance = goldenHour
+      ? GOLDEN_FOUND_GOLD_CHANCE
+      : GOLD_AFTER_FOUND_CHANCE
+    return random() < chance ? 'gold' : base
+  }
+  if (hasUnlockedGold(found)) return 'gold'
+  if (goldenHour && random() < GOLDEN_LOCKED_GOLD_CHANCE) return 'gold'
+  return base
 }
 
 // ---------------------------------------------------------------- timeline

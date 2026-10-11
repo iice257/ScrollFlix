@@ -1,4 +1,4 @@
-import { Lock } from 'lucide-react'
+import { Lock, Share2 } from 'lucide-react'
 import { useId, useSyncExternalStore } from 'react'
 import { TIER_LABELS, type Tier, hasUnlockedGold } from './shuffle-pro-logic'
 import { shuffleProStore } from './shuffle-pro-store'
@@ -47,11 +47,13 @@ export const Gem = ({ tier, found }: { tier: Tier; found: boolean }) => {
 type ShelfProps = {
   // Show the section title (the maximized About page has its own heading).
   title?: boolean
+  // Opens the share sheet for the run recap; shown once there has been a run.
+  onShare?: () => void
 }
 
 // The collection shelf: one slot per path. Undiscovered slots never spoil a
 // name; Gold stays behind a faint lock until the other three are found.
-export const ShuffleProShelf = ({ title = true }: ShelfProps) => {
+export const ShuffleProShelf = ({ title = true, onShare }: ShelfProps) => {
   const data = useSyncExternalStore(
     shuffleProStore.subscribe,
     shuffleProStore.get,
@@ -99,6 +101,12 @@ export const ShuffleProShelf = ({ title = true }: ShelfProps) => {
           )
         })}
       </ul>
+      {onShare && data.totalRuns > 0 ? (
+        <button type='button' className='sp-shelf-share' onClick={onShare}>
+          <Share2 aria-hidden='true' />
+          Share your run
+        </button>
+      ) : null}
     </section>
   )
 }

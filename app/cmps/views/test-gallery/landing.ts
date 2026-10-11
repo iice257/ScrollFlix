@@ -1,3 +1,5 @@
+import { pickWeighted } from './moods/taste'
+
 // TMDB ids that must never be the landing movie ("Marmaduke").
 const EXCLUDED_LANDING_TMDB_IDS: readonly string[] = ['38579']
 
@@ -19,6 +21,8 @@ export const pickLandingMovie = <T extends WithId>(
   visible: readonly T[],
   random: () => number,
   excludedTmdbIds: readonly string[] = EXCLUDED_LANDING_TMDB_IDS,
+  // A relative chance per film, so what someone saved can tip the first pick.
+  weightOf?: (movie: T) => number,
 ): T | null => {
   const eligible = visible.filter(
     (movie) =>
@@ -26,6 +30,7 @@ export const pickLandingMovie = <T extends WithId>(
   )
   const pool = eligible.length ? eligible : visible
   if (!pool.length) return null
+  if (weightOf) return pickWeighted(pool, weightOf, random)
   const index = Math.min(pool.length - 1, Math.floor(random() * pool.length))
   return pool[index]
 }

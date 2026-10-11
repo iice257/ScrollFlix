@@ -10,20 +10,17 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '../../../../utils/tw'
-import {
-  type PreparedShare,
-  SHARE_CLIP_SECONDS,
-  SHARE_HEIGHT,
-  SHARE_WIDTH,
-  drawShare,
-} from './share-art'
+import type { RecapScene } from './recap-art'
+import { SHARE_CLIP_SECONDS, SHARE_HEIGHT, SHARE_WIDTH } from './share-art'
 import {
   type ShareInput,
+  type ShareRenderable,
   clipExtension,
   clipSupported,
   copyText,
   deliverShare,
   downloadBlob,
+  prepareRecapArt,
   prepareShareArt,
   recordShareClip,
   renderShareImage,
@@ -31,7 +28,9 @@ import {
 } from './share-output'
 
 type ShareSheetProps = {
-  input: ShareInput & { movieId: string }
+  // A film's pick, or the recap of a person's runs. One of the two.
+  input?: ShareInput
+  recap?: RecapScene
   link: string
   onClose: () => void
 }
@@ -45,7 +44,13 @@ const PREVIEW_HOLD_SECONDS = 1.6
 
 // The share sheet: a live preview of the artwork, a choice of image or clip,
 // and Share / Save / Copy link. Everything is made on this device.
-const ShareSheet = ({ input, link, onClose }: ShareSheetProps) => {
+const ShareSheet = ({ input, recap, link, onClose }: ShareSheetProps) => {
+  const subject = recap ? 'My Shuffle Pro run' : (input?.title ?? '')
+  const heading = recap ? 'Share your run' : 'Share this pick'
+  const fileName = (extension?: string) =>
+    recap
+      ? `scrollflix-my-run.${extension ?? 'png'}`
+      : shareFileName(subject, input?.tier ?? null, extension)
   const [format, setFormat] = useState<Format>('image')
   const [phase, setPhase] = useState<Phase>('loading')
   const [progress, setProgress] = useState(0)
@@ -56,7 +61,7 @@ const ShareSheet = ({ input, link, onClose }: ShareSheetProps) => {
   } | null>(null)
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
-  const preparedRef = useRef<PreparedShare | null>(null)
+  const preparedRef = useRef<ShareRenderable | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const recordAbortRef = useRef<AbortController | null>(null)
   const noticeTimerRef = useRef(0)
@@ -69,9 +74,15 @@ const ShareSheet = ({ input, link, onClose }: ShareSheetProps) => {
   }, [])
 
   // Prepare the artwork once: fonts, the poster, and the cached layers.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the sheet is made for one thing, and closes if that changes
   useEffect(() => {
     let cancelled = false
-    void prepareShareArt(input)
+    const art = recap
+      ? prepareRecapArt(recap)
+      : input
+        ? prepareShareArt(input)
+        : Promise.reject(new Error('Nothing to share'))
+    void art
       .then((prepared) => {
         if (cancelled) return
         preparedRef.current = prepared
@@ -84,7 +95,7 @@ const ShareSheet = ({ input, link, onClose }: ShareSheetProps) => {
       cancelled = true
       preparedRef.current = null
     }
-  }, [input])
+  }, [])
 
   // Space and Enter inside the sheet act on its buttons, never on the page's
   // shortcuts (Space shuffles) behind it.
@@ -127,7 +138,7 @@ const ShareSheet = ({ input, link, onClose }: ShareSheetProps) => {
     ctx.setTransform(PREVIEW_SCALE, 0, 0, PREVIEW_SCALE, 0, 0)
 
     if (format === 'image') {
-      drawShare(ctx, prepared, SHARE_CLIP_SECONDS)
+      prepared.draw(ctx, SHARE_CLIP_SECONDS)
       return
     }
     let frame = 0
@@ -135,7 +146,7 @@ const ShareSheet = ({ input, link, onClose }: ShareSheetProps) => {
     const loop = (now: number) => {
       const cycle = SHARE_CLIP_SECONDS + PREVIEW_HOLD_SECONDS
       const t = ((now - start) / 1000) % cycle
-      drawShare(ctx, prepared, Math.min(t, SHARE_CLIP_SECONDS))
+      prepared.draw(ctx, Math.min(t, SHARE_CLIP_SECONDS))
       frame = window.requestAnimationFrame(loop)
     }
     frame = window.requestAnimationFrame(loop)
@@ -185,12 +196,12 @@ const ShareSheet = ({ input, link, onClose }: ShareSheetProps) => {
       if (!clip) return null
       return {
         blob: clip.blob,
-        name: shareFileName(input.title, input.tier, clipExtension(clip.mime)),
+        name: fileName(clipExtension(clip.mime)),
       }
     }
     return {
       blob: await renderShareImage(prepared),
-      name: shareFileName(input.title, input.tier),
+      name: fileName(),
     }
   }
 
@@ -200,7 +211,7 @@ const ShareSheet = ({ input, link, onClose }: ShareSheetProps) => {
     try {
       const file = await getFile()
       if (!file) return
-      const result = await deliverShare(file.blob, file.name, input.title, link)
+      const result = await deliverShare(file.blob, file.name, subject, link)
       if (result === 'downloaded') flash('Saved to your downloads.')
     } catch {
       flash('Something went wrong. Try saving it instead.')
@@ -232,7 +243,7 @@ const ShareSheet = ({ input, link, onClose }: ShareSheetProps) => {
   const ready = phase !== 'loading' && phase !== 'error'
 
   return (
-    <section className='warp-share-layer' aria-label='Share this pick'>
+    <section className='warp-share-layer' aria-label={heading}>
       <button
         type='button'
         className='warp-share-backdrop'
@@ -242,8 +253,8 @@ const ShareSheet = ({ input, link, onClose }: ShareSheetProps) => {
       <dialog ref={sheetRef} className='warp-share-card' aria-modal='true' open>
         <header className='warp-share-heading'>
           <div>
-            <h2>Share this pick</h2>
-            <p>{input.title}</p>
+            <h2>{heading}</h2>
+            <p>{subject}</p>
           </div>
           <button
             type='button'
@@ -394,7 +405,7 @@ const ShareSheet = ({ input, link, onClose }: ShareSheetProps) => {
               onClick={() => void copyLink()}
             >
               <Link2 aria-hidden='true' />
-              Copy link to this film
+              {recap ? 'Copy link to ScrollFlix' : 'Copy link to this film'}
             </button>
 
             <output className='warp-share-note'>

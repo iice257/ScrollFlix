@@ -25,7 +25,7 @@ export const SHARE_HEIGHT = 1350
 // The clip runs this long; the still image is the frame at the end of it.
 export const SHARE_CLIP_SECONDS = 5
 
-type Rgb = [number, number, number]
+export type Rgb = [number, number, number]
 type Palette = {
   c0: Rgb
   c1: Rgb
@@ -43,22 +43,22 @@ const STANDARD_PALETTE: Palette = {
   accent: [1, 1, 1],
 }
 
-const rgba = ([r, g, b]: Rgb, alpha = 1) =>
+export const rgba = ([r, g, b]: Rgb, alpha = 1) =>
   `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${alpha})`
 
-const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
+export const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
 // Progress of `t` between two moments, eased.
-const ease = (t: number, from: number, to: number) => {
+export const ease = (t: number, from: number, to: number) => {
   const x = clamp01((t - from) / (to - from))
   return x * x * (3 - 2 * x)
 }
-const easeOutBack = (x: number) => {
+export const easeOutBack = (x: number) => {
   const c1 = 1.5
   const c3 = c1 + 1
   return 1 + c3 * (x - 1) ** 3 + c1 * (x - 1) ** 2
 }
 
-const seededRandom = (seed: number) => {
+export const seededRandom = (seed: number) => {
   let state = seed >>> 0 || 1
   return () => {
     state = (state * 1664525 + 1013904223) >>> 0
@@ -75,9 +75,9 @@ export const hashString = (value: string) => {
   return hash >>> 0
 }
 
-const FONT = '"DM Sans", system-ui, sans-serif'
+export const FONT = '"DM Sans", system-ui, sans-serif'
 
-const setTracking = (ctx: CanvasRenderingContext2D, px: number) => {
+export const setTracking = (ctx: CanvasRenderingContext2D, px: number) => {
   try {
     ctx.letterSpacing = `${px}px`
   } catch {
@@ -85,7 +85,7 @@ const setTracking = (ctx: CanvasRenderingContext2D, px: number) => {
   }
 }
 
-const roundedRect = (
+export const roundedRect = (
   ctx: CanvasRenderingContext2D | Path2D,
   x: number,
   y: number,
@@ -162,7 +162,7 @@ export type PreparedShare = {
   pathAlpha: number
 }
 
-const makeCanvas = (width: number, height: number) => {
+export const makeCanvas = (width: number, height: number) => {
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
@@ -206,7 +206,7 @@ const makeGlowSprite = (color: Rgb) => {
   return canvas
 }
 
-const makeGrain = () => {
+export const makeGrain = () => {
   const canvas = makeCanvas(256, 256)
   const ctx = context2d(canvas)
   const data = ctx.createImageData(256, 256)
@@ -547,7 +547,7 @@ const flipState = (t: number) => {
   }
 }
 
-const drawGemPath = (
+export const drawGemPath = (
   ctx: CanvasRenderingContext2D,
   tier: Tier,
   x: number,
