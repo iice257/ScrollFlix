@@ -276,6 +276,12 @@ const INITIAL_TEXTURE_LOAD_CONCURRENCY = 24
 // net so a stalled request can never hold the page hostage.
 const POSTER_SETTLE_RETRY_DELAYS_MS = [800, 2400]
 const GLOBE_READY_SAFETY_NET_MS = 25000
+// Open early: when this share of the posters has settled and this long has
+// passed, or at the later time with a smaller share.
+const GLOBE_READY_EARLY_FRACTION = 0.92
+const GLOBE_READY_EARLY_MIN_MS = 4000
+const GLOBE_READY_LATE_FRACTION = 0.75
+const GLOBE_READY_LATE_MS = 9000
 // Longest stretch of texture uploads before handing the thread back.
 const UPLOAD_SLICE_MS = 8
 
@@ -2234,11 +2240,27 @@ class InfiniteMovieEngine<T> {
       this.reportProgress(100)
     }
     const safetyNet = window.setTimeout(markReady, GLOBE_READY_SAFETY_NET_MS)
-    this.cleanupCallbacks.push(() => window.clearTimeout(safetyNet))
+    // Slow posters shouldn't hold everyone back: once most have settled the
+    // globe opens, and the rest fill in as they arrive.
+    const startedAt = performance.now()
+    const mostlyThere = window.setTimeout(() => {
+      if (settled / total >= GLOBE_READY_LATE_FRACTION) markReady()
+    }, GLOBE_READY_LATE_MS)
+    this.cleanupCallbacks.push(() => {
+      window.clearTimeout(safetyNet)
+      window.clearTimeout(mostlyThere)
+    })
     const countSettled = () => {
       settled += 1
       if (ready) return
       if (settled >= total) {
+        window.requestAnimationFrame(markReady)
+        return
+      }
+      if (
+        settled / total >= GLOBE_READY_EARLY_FRACTION &&
+        performance.now() - startedAt >= GLOBE_READY_EARLY_MIN_MS
+      ) {
         window.requestAnimationFrame(markReady)
         return
       }

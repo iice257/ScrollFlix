@@ -35,7 +35,7 @@ Status: done, partial, todo, cut.
 | 6 | Favourites bias where the globe opens | done: the first pick and every shuffle lean towards saved films' genres |
 | 7 | Tune the motion blur on a real flick | todo, needs a phone |
 | 7 | Test on a real phone for performance and haptics | todo, needs a phone |
-| 7 | Smarter preloader rule than waiting up to 25 s for slow posters | todo |
+| 7 | Smarter preloader rule than waiting up to 25 s for slow posters | done: opens at 92% settled after 4 s, or 75% after 9 s; the rest fill in |
 | 7 | Playwright Chromium project | todo |
 
 ### Mood page ideas from the round 2 review
