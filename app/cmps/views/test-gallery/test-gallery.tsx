@@ -30,6 +30,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Sun,
+  Users,
   X,
 } from 'lucide-react'
 import {
@@ -45,6 +46,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   useSyncExternalStore,
@@ -89,6 +91,8 @@ import {
   tasteWeight,
   topGenres,
 } from './moods/taste'
+import { PARTY_OFF, partyReducer, weirdnessScore } from './party/party-logic'
+import { PartyFinal, PartyHud, PartySetup } from './party/party-ui'
 import { PosterFlight, type ViewRect } from './poster-flight'
 import { savedStore } from './saved-store'
 import {
@@ -1564,6 +1568,8 @@ export const TestGalleryApp = () => {
   const [aboutOpen, setAboutOpen] = useState(false)
   const [savedOpen, setSavedOpen] = useState(false)
   const [moodsOpen, setMoodsOpen] = useState(false)
+  // Pass the globe: a party game of turns and weirdness scores.
+  const [party, partyDispatch] = useReducer(partyReducer, PARTY_OFF)
   // The run recap's share sheet, opened from the Easter egg shelf.
   const [recapOpen, setRecapOpen] = useState(false)
   const [moodNudge, setMoodNudge] = useState(false)
@@ -2234,10 +2240,22 @@ export const TestGalleryApp = () => {
   const handleOpenFromGlobe = useCallback(
     (movie: TestMovie, source: 'tap' | 'shuffle') => {
       startPosterFlight(movie)
-      if (source === 'shuffle') openMovie(movie)
-      else handleOpenMovie(movie)
+      if (source === 'shuffle') {
+        // In the party game a landing is the player's pick.
+        if (party.phase === 'turn') {
+          partyDispatch({
+            type: 'land',
+            pick: {
+              movieId: movie.id,
+              title: movie.title,
+              score: weirdnessScore(movie),
+            },
+          })
+        }
+        openMovie(movie)
+      } else handleOpenMovie(movie)
     },
-    [handleOpenMovie, openMovie, startPosterFlight],
+    [handleOpenMovie, openMovie, party.phase, startPosterFlight],
   )
 
   const handleOpenWatchLinks = useCallback((movie: TestMovie) => {
@@ -2344,6 +2362,20 @@ export const TestGalleryApp = () => {
   // streak; five in a row start a Frost run on their own.
   const handleGestureSettled = useCallback(
     (totalRad: number) => {
+      // A real flick that comes to rest is a party player's turn.
+      if (party.phase === 'turn' && totalRad > 1.6) {
+        const landed = visibleMovies.find((movie) => movie.id === activeMovieId)
+        if (landed) {
+          partyDispatch({
+            type: 'land',
+            pick: {
+              movieId: landed.id,
+              title: landed.title,
+              score: weirdnessScore(landed),
+            },
+          })
+        }
+      }
       const trigger = shuffleProController.noteAction(
         isBigSpin(totalRad) ? { type: 'bigSpin' } : { type: 'neutral' },
       )
@@ -2356,7 +2388,7 @@ export const TestGalleryApp = () => {
       )
       if (movieId) shuffleProController.startAutomatic(trigger, movieId)
     },
-    [activeMovieId, shuffleProController, visibleMovies, weightOf],
+    [activeMovieId, party.phase, shuffleProController, visibleMovies, weightOf],
   )
 
   // Anything that isn't a shuffle ends the streak: filters, sort, search,
@@ -2516,6 +2548,8 @@ export const TestGalleryApp = () => {
             aboutOpen ||
             savedOpen ||
             moodsOpen ||
+            party.phase === 'setup' ||
+            party.phase === 'final' ||
             filterOpen ||
             sortOpen,
         ),
@@ -2572,6 +2606,7 @@ export const TestGalleryApp = () => {
     handleSkip,
     promptFullscreenHint,
     moodsOpen,
+    party.phase,
     savedOpen,
     initialGalleryReady,
     listMovies.length,
@@ -2997,6 +3032,33 @@ export const TestGalleryApp = () => {
         </>
       ) : null}
 
+      {party.phase === 'setup' ? (
+        <PartySetup
+          onStart={(names, rounds) => {
+            setDetailsMovieId(null)
+            partyDispatch({ type: 'start', names, rounds })
+          }}
+          onClose={() => partyDispatch({ type: 'close' })}
+        />
+      ) : null}
+      {party.phase === 'turn' || party.phase === 'result' ? (
+        <PartyHud
+          state={party}
+          onNext={() => {
+            setDetailsMovieId(null)
+            partyDispatch({ type: 'next' })
+          }}
+          onEnd={() => partyDispatch({ type: 'close' })}
+        />
+      ) : null}
+      {party.phase === 'final' ? (
+        <PartyFinal
+          state={party}
+          onAgain={() => partyDispatch({ type: 'again' })}
+          onDone={() => partyDispatch({ type: 'close' })}
+        />
+      ) : null}
+
       {recapOpen
         ? createPortal(
             <Suspense fallback={null}>
@@ -3020,6 +3082,7 @@ export const TestGalleryApp = () => {
       ) : null}
 
       {moodNudge &&
+      party.phase === 'off' &&
       mode === 'wall' &&
       !detailsMovieId &&
       !moodsOpen &&
@@ -3123,6 +3186,12 @@ export const TestGalleryApp = () => {
           motionPhase={aboutPresence.motionPhase}
           onClose={() => setAboutOpen(false)}
           onShareRecap={() => setRecapOpen(true)}
+          onStartParty={() => {
+            setAboutOpen(false)
+            setDetailsMovieId(null)
+            setMode('wall')
+            partyDispatch({ type: 'open' })
+          }}
           onToggleMaximized={() =>
             setAboutMaximized((isMaximized) => !isMaximized)
           }
@@ -4490,6 +4559,7 @@ type AboutDrawerProps = {
   motionPhase: MotionPhase
   onClose: () => void
   onShareRecap: () => void
+  onStartParty: () => void
   onToggleMaximized: () => void
 }
 
@@ -4720,6 +4790,7 @@ const AboutDrawer = ({
   motionPhase,
   onClose,
   onShareRecap,
+  onStartParty,
   onToggleMaximized,
 }: AboutDrawerProps) =>
   maximized ? (
@@ -4817,6 +4888,22 @@ const AboutDrawer = ({
         </section>
 
         <section className='warp-about-section'>
+          <h3>Play together</h3>
+          <p>
+            Pass the globe: take turns flicking it. Whatever it lands on gets a
+            weirdness score, and the highest total wins.
+          </p>
+          <button
+            type='button'
+            className='warp-party-entry'
+            onClick={onStartParty}
+          >
+            <Users aria-hidden='true' />
+            Pass the globe
+          </button>
+        </section>
+
+        <section className='warp-about-section'>
           <h3>Watch links</h3>
           <p>
             Links are a work in progress and are disabled for now. You can find
@@ -4861,6 +4948,10 @@ const AboutDrawer = ({
       <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
       <ConstellationSetting />
       <SoundSettingsPanel categories={false} />
+      <button type='button' className='warp-party-entry' onClick={onStartParty}>
+        <Users aria-hidden='true' />
+        Pass the globe
+      </button>
       <button
         type='button'
         className='warp-about-more'

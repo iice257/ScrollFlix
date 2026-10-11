@@ -29,7 +29,7 @@ Status: done, partial, todo, cut.
 | 3 | Constellations: Saved films light up and connect into a shape | done: saved films on screen get a halo and are joined by their shortest links; redraws only when the globe draws; On/Off in About |
 | 4 | "Tonight" mode: pick a mood and time budget, the run lands inside it | done: the mood page |
 | 5 | Share card as a short clip | done (round 2) |
-| 5 | Pass the globe party mode | todo |
+| 5 | Pass the globe party mode | done: 2 to 6 players, 1 to 3 rounds, weirdness score per landing, results and play again; entry in About |
 | 6 | Cosmetic variants after finding a path N times | todo |
 | 6 | Stats page becomes a profile (found paths, saved list, streak history) | todo |
 | 6 | Favourites bias where the globe opens | done: the first pick and every shuffle lean towards saved films' genres |
@@ -53,7 +53,7 @@ Status: done, partial, todo, cut.
 | Idea | Status |
 |------|--------|
 | Taste profile: Saved movies shift which moods and genres the globe leans toward | done: shuffles lean (up to 3x), a "For you" tag on the mood page, a line in Saved |
-| Pass the globe | todo (same as above) |
+| Pass the globe | done (same as above) |
 | Shareable run recap: paths found and streak | done: "Share your run" on the Easter egg shelf (image or clip); best streak is now remembered |
 | Rarity events: a one-time golden hour that raises Gold odds, announced by a quiet sky change | done: ~30% of visits, once a day, 2.5 minutes, `?golden-hour` to test |
 | Constellations | done (same as above) |
