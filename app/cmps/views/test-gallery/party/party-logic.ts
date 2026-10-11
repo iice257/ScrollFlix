@@ -52,9 +52,9 @@ export const MIN_PLAYERS = 2
 export const MAX_PLAYERS = 6
 export const MAX_NAME_LENGTH = 14
 
-export type Pick = { movieId: string; title: string; score: number }
+export type PartyPick = { movieId: string; title: string; score: number }
 
-export type Player = { name: string; picks: Pick[] }
+export type Player = { name: string; picks: PartyPick[] }
 
 export type PartyPhase = 'off' | 'setup' | 'turn' | 'result' | 'final'
 
@@ -65,7 +65,7 @@ export type PartyState = {
   // How many turns have been played.
   turn: number
   // The landing that ended the latest turn.
-  last: (Pick & { player: number }) | null
+  last: (PartyPick & { player: number }) | null
 }
 
 export const PARTY_OFF: PartyState = {
@@ -80,7 +80,7 @@ export type PartyAction =
   | { type: 'open' }
   | { type: 'close' }
   | { type: 'start'; names: string[]; rounds: number }
-  | { type: 'land'; pick: Pick }
+  | { type: 'land'; pick: PartyPick }
   | { type: 'next' }
   | { type: 'again' }
 
