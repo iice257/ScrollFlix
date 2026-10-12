@@ -1,3 +1,4 @@
+import { Analytics } from '@vercel/analytics/react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import ErrorBoundary from './cmps/common/error-boundary'
@@ -18,6 +19,7 @@ window.addEventListener('DOMContentLoaded', () => {
     <StrictMode>
       <ErrorBoundary>
         <TestGalleryApp />
+        <Analytics />
       </ErrorBoundary>
     </StrictMode>,
   )
