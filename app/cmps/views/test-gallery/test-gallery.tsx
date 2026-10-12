@@ -39,6 +39,7 @@ import {
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
   Suspense,
+  type SyntheticEvent,
   lazy,
   memo,
   startTransition,
@@ -1972,7 +1973,9 @@ export const TestGalleryApp = () => {
   }, [])
   useGoldenHourScheduler(initialGalleryReady)
   const [shuffleSpinning, setShuffleSpinning] = useState(false)
-  const isSpinActive = shuffleProSnapshot.canSkip || shuffleSpinning
+  // Skip exists only while a Shuffle Pro run is spinning; an ordinary shuffle
+  // always plays out, and pressing Shuffle again simply starts another.
+  const isSpinActive = shuffleProSnapshot.canSkip
   // True while Space is held down on the globe and the controller owns it.
   const keyHoldRef = useRef(false)
   // The premium frame stays on the card until it has finished closing.
@@ -2352,11 +2355,64 @@ export const TestGalleryApp = () => {
     weightOf,
   ])
 
-  // Skip finishes whatever spin is running: a Shuffle Pro run or a normal one.
+  // Skip finishes a Shuffle Pro run. Ordinary shuffles can't be skipped.
   const handleSkip = useCallback(() => {
     if (shuffleProController.getSnapshot().canSkip) shuffleProController.skip()
-    else menuControlRef.current?.skipSpin()
   }, [shuffleProController])
+
+  // While the first-load screen is up nothing else answers: the globe can't
+  // be dragged, scrolled or clicked, keys do nothing, and the loader card
+  // flashes red to say so. Its own buttons (Skip, sound) still work.
+  const loaderLocked = mode === 'wall' && !initialGalleryReady
+  const preloaderRef = useRef<HTMLOutputElement | null>(null)
+  const lastDeniedAt = useRef(Number.NEGATIVE_INFINITY)
+  const flashLoader = useCallback(() => {
+    const node = preloaderRef.current
+    const now = performance.now()
+    if (!node || now - lastDeniedAt.current < 450) return
+    lastDeniedAt.current = now
+    node.classList.remove('is-denied')
+    // Reading a layout property restarts the animation if it is mid-flash.
+    void node.offsetWidth
+    node.classList.add('is-denied')
+  }, [])
+  const blockWhileLoading = useCallback(
+    (event: SyntheticEvent) => {
+      if (!loaderLocked) return
+      if (
+        event.target instanceof Element &&
+        event.target.closest('.warp-gallery-preloader')
+      ) {
+        return
+      }
+      event.stopPropagation()
+      // Wheel listeners are passive; there is nothing to cancel on them.
+      if (event.type !== 'wheel') event.preventDefault()
+      flashLoader()
+    },
+    [flashLoader, loaderLocked],
+  )
+  useEffect(() => {
+    if (!loaderLocked) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const locked =
+        event.key === ' ' ||
+        event.key === 'Enter' ||
+        event.key.startsWith('Arrow')
+      if (!locked) return
+      if (
+        event.target instanceof Element &&
+        event.target.closest('.warp-gallery-preloader')
+      ) {
+        return
+      }
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      flashLoader()
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [flashLoader, loaderLocked])
 
   // A drag that turned the globe a quarter turn or more counts toward the
   // streak; five in a row start a Frost run on their own.
@@ -2581,11 +2637,16 @@ export const TestGalleryApp = () => {
           handleSkip()
           return
         }
-        // On the globe, Space works like pressing the globe: a tap shuffles
-        // (counted toward the streak, even mid-spin) and holding it charges a
-        // Shuffle Pro run. Which one it was is only known on key up.
+        // On the globe a tap shuffles (counted toward the streak, even
+        // mid-spin). Holding rolls the globe at the regular shuffle speed
+        // until it is let go, and a long enough hold starts Shuffle Pro. Which
+        // one it was is only known on key up.
         if (mode === 'wall' && !detailsMovieId) {
-          const session = shuffleProController.pressStart({ nx: 0.5, ny: 0.5 })
+          const session = shuffleProController.pressStart({
+            nx: 0.5,
+            ny: 0.5,
+            source: 'key',
+          })
           if (session === 'consumed') return
           keyHoldRef.current = session !== null
           if (session) return
@@ -2670,6 +2731,9 @@ export const TestGalleryApp = () => {
       data-theme={theme}
       data-immersive={immersive ? 'true' : 'false'}
       data-golden={goldenHour ? 'true' : 'false'}
+      onPointerDownCapture={blockWhileLoading}
+      onClickCapture={blockWhileLoading}
+      onWheelCapture={blockWhileLoading}
     >
       {immersive ? (
         <ImmersiveExitPill onExit={() => void exitImmersive()} />
@@ -3108,8 +3172,14 @@ export const TestGalleryApp = () => {
 
       {mode === 'wall' ? (
         <output
+          ref={preloaderRef}
           className='warp-gallery-preloader'
           data-state={initialGalleryReady ? 'ready' : 'loading'}
+          onAnimationEnd={(event) => {
+            if (event.animationName === 'warp-preloader-denied') {
+              event.currentTarget.classList.remove('is-denied')
+            }
+          }}
           aria-hidden={initialGalleryReady ? 'true' : undefined}
           aria-live='polite'
         >

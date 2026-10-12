@@ -10,7 +10,9 @@ import {
   type BaseTier,
   EMPTY_STREAK,
   HOLD_PREWARM_MS,
+  KEY_ROLL_OMEGA,
   LANDING_TAU_MS,
+  type PressSource,
   type RunProfile,
   type StreakEvent,
   type StreakState,
@@ -19,6 +21,7 @@ import {
   angularSpeedAt,
   axisForDragDirection,
   cameraPullback,
+  isKeyHold,
   isNearTrigger,
   precessedAxis,
   profileFor,
@@ -121,6 +124,8 @@ type PressInfo = {
   // Press point as a fraction of the canvas, for the trigger ring.
   nx: number
   ny: number
+  // A held Space rolls the globe and has its own hold limit.
+  source?: PressSource
 }
 
 type Run = {
@@ -141,6 +146,8 @@ type Run = {
   premium: boolean
   snapStarted: boolean
   skipped: boolean
+  // A run that grew out of a roll never spins slower than the roll did.
+  omegaFloor: number
   arrivedAt: number | null
   fade: { from: number; to: number; start: number; duration: number } | null
   // A run ends once its sky has faded out and its landing is over.
@@ -159,6 +166,9 @@ type Press = {
   // Decided when the press starts, so the effect can be prepared early.
   tier: Tier
   prewarmed: boolean
+  source: PressSource
+  // A held key is spinning the globe at the roll speed.
+  rolling: boolean
 }
 
 const SKY_HOLD_LEVEL = 0.6
@@ -336,6 +346,8 @@ export class ShuffleProController {
         goldenHour: this.deps.isGoldenHour?.() ?? false,
       }),
       prewarmed: false,
+      source: info.source ?? 'pointer',
+      rolling: false,
     }
     this.press = press
     if (this.phase === 'idle') {
@@ -368,6 +380,7 @@ export class ShuffleProController {
     this.press = null
     if (!press.triggered) {
       this.cancelPressPrewarm(press)
+      this.stopRoll(press)
       if (this.phase === 'armed') {
         this.phase = 'idle'
         this.emit()
@@ -377,6 +390,21 @@ export class ShuffleProController {
     }
     if (this.phase === 'windup' || this.phase === 'peak') this.release()
     return true
+  }
+
+  // A held Space is spinning the globe; let it decay, the shuffle that follows
+  // the release takes it from there.
+  private stopRoll(press: Press) {
+    if (!press.rolling) return
+    press.rolling = false
+    this.port?.stopAutoSpin(LANDING_TAU_MS)
+  }
+
+  private startRoll(press: Press) {
+    const port = this.port
+    if (!port || press.rolling || this.deps.isReducedMotion()) return
+    press.rolling = true
+    port.startAutoSpin(axisForDragDirection(0, 0), KEY_ROLL_OMEGA)
   }
 
   private cancelPressPrewarm(press: Press) {
@@ -477,18 +505,26 @@ export class ShuffleProController {
       premium: true,
       snapStarted: false,
       skipped: false,
+      omegaFloor: this.press?.rolling ? KEY_ROLL_OMEGA : 0,
       arrivedAt: null,
       fade: null,
       skyDone: false,
       landingDone: false,
     }
-    if (this.press) this.press.triggered = true
+    if (this.press) {
+      this.press.triggered = true
+      // The run owns the spin from here; its floor carries the roll's speed.
+      this.press.rolling = false
+    }
     this.phase = 'windup'
     this.presented = null
 
     port.setSkyState(sky)
     if (!reduced) {
-      port.startAutoSpin(precessedAxis(baseAxis, 0), profile.omegaMin)
+      port.startAutoSpin(
+        precessedAxis(baseAxis, 0),
+        Math.max(profile.omegaMin, this.run.omegaFloor),
+      )
       // The catch: the camera springs in a few percent, then back.
       port.kickCamera(-2.1)
     }
@@ -664,9 +700,12 @@ export class ShuffleProController {
     const port = this.port
     return {
       phase: this.phase,
-      // Idle readings show the globe's own spin, handy for tuning the blur.
+      // Idle and armed readings show the globe's own spin (a held Space rolls
+      // it), handy for tuning the blur.
       omega:
-        this.phase === 'idle' ? (port?.getAngularSpeed() ?? 0) : this.lastOmega,
+        this.phase === 'idle' || this.phase === 'armed'
+          ? (port?.getAngularSpeed() ?? 0)
+          : this.lastOmega,
       frame: port?.getFrameStats() ?? { average: 0, p95: 0 },
       sky: port?.getSkyStats() ?? {
         qualityLevel: 'full' as const,
@@ -719,11 +758,15 @@ export class ShuffleProController {
       this.port?.prewarm()
       this.deps.prewarmTier?.(press.tier)
     }
+    if (press.source === 'key' && isKeyHold(now - press.startedAt)) {
+      this.startRoll(press)
+    }
     if (
       shouldTriggerHold({
         elapsedMs: now - press.startedAt,
         maxMovedPx: press.maxMovedPx,
         immersive: this.deps.isImmersive(),
+        source: press.source,
       })
     ) {
       this.beginRun(press.tier, {
@@ -745,7 +788,9 @@ export class ShuffleProController {
     const elapsed = now - run.startedAt
 
     if (this.phase === 'windup' || this.phase === 'peak') {
-      const omega = run.reduced ? 0 : angularSpeedAt(elapsed, run.profile)
+      const omega = run.reduced
+        ? 0
+        : Math.max(angularSpeedAt(elapsed, run.profile), run.omegaFloor)
       const axis = precessedAxis(run.baseAxis, elapsed)
       const reveal = revealAt(elapsed, run.profile)
 
@@ -921,6 +966,7 @@ export class ShuffleProController {
   private teardown(resetStreak: boolean) {
     const port = this.port
     const run = this.run
+    if (this.press) this.stopRoll(this.press)
     if (run) {
       run.whoosh?.stop()
       run.whoosh = null

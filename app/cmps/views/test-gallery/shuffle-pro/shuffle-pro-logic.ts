@@ -19,21 +19,47 @@ export const HOLD_STILL_MOVE_PX = 8
 export const HOLD_RULES = {
   normal: { stillMs: 5000, movingMs: 10000 },
   immersive: { stillMs: 3000, movingMs: 6000 },
+  // Space has no pointer to judge by, and the globe rolls the whole time, so
+  // it gets one longer limit.
+  key: { normal: 10000, immersive: 6000 },
 } as const
+
+export type PressSource = 'pointer' | 'key'
 
 export const shouldTriggerHold = ({
   elapsedMs,
   maxMovedPx,
   immersive,
+  source = 'pointer',
 }: {
   elapsedMs: number
   maxMovedPx: number
   immersive: boolean
+  source?: PressSource
 }) => {
+  if (source === 'key') {
+    const limits = HOLD_RULES.key
+    return elapsedMs >= (immersive ? limits.immersive : limits.normal)
+  }
   const rules = immersive ? HOLD_RULES.immersive : HOLD_RULES.normal
   const still = maxMovedPx <= HOLD_STILL_MOVE_PX
   return elapsedMs >= (still ? rules.stillMs : rules.movingMs)
 }
+
+// ---------------------------------------------------------------- Space
+
+// Space held at least this long is a hold: the globe starts rolling. Anything
+// shorter is a tap, which is one ordinary shuffle. Operating-system key repeat
+// is ignored, so only the first key down of a press counts.
+export const KEY_TAP_MAX_MS = 250
+
+export const isKeyHold = (heldMs: number) => heldMs >= KEY_TAP_MAX_MS
+
+// How fast the globe rolls while Space is held, in rad/s. An ordinary shuffle
+// is an ease-out that opens near 15 rad/s and covers a half turn in about
+// 0.85s, so about 4 rad/s on average. The roll is never near Shuffle Pro's top
+// speed (STANDARD_PROFILE.omegaMax).
+export const KEY_ROLL_OMEGA = 4
 
 // ---------------------------------------------------------------- big spins
 

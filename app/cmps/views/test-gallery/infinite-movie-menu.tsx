@@ -89,8 +89,6 @@ export type PosterRect = {
 export type PosterPoint = PosterRect & { id: string; depth: number }
 
 export type InfiniteMovieMenuControl = {
-  // Finishes a Shuffle spin now, settling on its poster within 300ms.
-  skipSpin: () => void
   // Where a film's poster is on screen right now, or null if it isn't shown.
   getPosterRect: (itemId: string) => PosterRect | null
   // Where each of these films' posters is on screen, for those facing the
@@ -2962,11 +2960,6 @@ export const InfiniteMovieMenu = <T,>({
   shuffleProRef.current = shufflePro
   const onActiveItemChangeRef = useRef(onActiveItemChange)
   onActiveItemChangeRef.current = onActiveItemChange
-  // The Shuffle spin in flight, so Skip can finish it.
-  const spinInFlightRef = useRef<{
-    item: InfiniteMovieMenuItem<T>
-    arrive: (index: number) => void
-  } | null>(null)
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
   // Consumed once, by the first engine build that has items to face.
@@ -3326,17 +3319,14 @@ export const InfiniteMovieMenu = <T,>({
       return
     }
     const arrive = (index: number) => {
-      spinInFlightRef.current = null
       activeItemRef.current = item
       setActiveItem(item)
       onActiveItemChange(item)
       engine.setDetailFocus(item.id, true, 'fast', index)
       onOpenItem?.(item, 'shuffle')
     }
-    spinInFlightRef.current = { item, arrive }
     engine.spinToItem(item.id, arrive)
     return () => {
-      spinInFlightRef.current = null
       engine.cancelSpin()
     }
   }, [spinRequest])
@@ -3344,12 +3334,6 @@ export const InfiniteMovieMenu = <T,>({
   useEffect(() => {
     if (!controlRef) return
     controlRef.current = {
-      skipSpin: () => {
-        const spin = spinInFlightRef.current
-        const engine = engineRef.current
-        if (!spin || !engine) return
-        engine.settleToItem(spin.item.id, 300, (index) => spin.arrive(index))
-      },
       getPosterRect: (itemId) =>
         engineRef.current?.getPosterRect(itemId) ?? null,
       getPosterPoints: (ids) => engineRef.current?.getPosterPoints(ids) ?? [],
