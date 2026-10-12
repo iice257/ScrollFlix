@@ -23,6 +23,7 @@ import {
   cameraPullback,
   isKeyHold,
   isNearTrigger,
+  isPathBlocked,
   precessedAxis,
   profileFor,
   readyForSnap,
@@ -84,6 +85,8 @@ export type ControllerDeps = {
   isImmersive: () => boolean
   isReducedMotion: () => boolean
   getFound: () => FoundPaths
+  // True when found paths should keep starting runs (a setting; off by default).
+  getRepeatFound?: () => boolean
   // The streak count after each shuffle, for the best-streak record.
   onStreak?: (streak: number) => void
   // True while the golden hour is on and Gold is easier to find.
@@ -284,6 +287,8 @@ export class ShuffleProController {
     this.syncStreakPrewarm(result.state, event.type)
     const reached = result.trigger ? before.streak + 1 : result.state.streak
     if (reached > 0) this.deps.onStreak?.(reached)
+    // A path that was already found is spent; the streak starts over instead.
+    if (result.trigger && this.isBlocked(result.trigger)) return null
     return result.trigger
   }
 
@@ -307,6 +312,14 @@ export class ShuffleProController {
 
   getStreak() {
     return this.streak
+  }
+
+  private isBlocked(tier: Tier) {
+    return isPathBlocked(
+      tier,
+      this.deps.getFound(),
+      this.deps.getRepeatFound?.() ?? false,
+    )
   }
 
   // A run is spinning up or landing; new actions can't start another.
@@ -753,7 +766,11 @@ export class ShuffleProController {
       this.emit()
       return
     }
-    if (!press.prewarmed && now - press.startedAt >= HOLD_PREWARM_MS) {
+    if (
+      !press.prewarmed &&
+      now - press.startedAt >= HOLD_PREWARM_MS &&
+      !this.isBlocked(press.tier)
+    ) {
       press.prewarmed = true
       this.port?.prewarm()
       this.deps.prewarmTier?.(press.tier)
@@ -767,7 +784,8 @@ export class ShuffleProController {
         maxMovedPx: press.maxMovedPx,
         immersive: this.deps.isImmersive(),
         source: press.source,
-      })
+      }) &&
+      !this.isBlocked(press.tier)
     ) {
       this.beginRun(press.tier, {
         automatic: false,

@@ -4850,6 +4850,38 @@ const ConstellationSetting = () => {
   )
 }
 
+// Found Shuffle Pro paths stop starting runs; this brings them all back.
+const RepeatPathsSetting = () => {
+  const on = useSyncExternalStore(
+    shuffleProStore.subscribe,
+    () => shuffleProStore.get().repeatFound,
+    () => shuffleProStore.get().repeatFound,
+  )
+  return (
+    <fieldset className='warp-about-setting'>
+      <legend>Repeat found paths</legend>
+      <div className='warp-theme-switch'>
+        {([true, false] as const).map((option) => (
+          <button
+            type='button'
+            key={String(option)}
+            aria-pressed={on === option}
+            className={cn(on === option && 'is-active')}
+            onClick={() => shuffleProStore.setRepeatFound(option)}
+          >
+            {option ? (
+              <Sparkles aria-hidden='true' />
+            ) : (
+              <X aria-hidden='true' />
+            )}
+            {option ? 'On' : 'Off'}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
 const AboutDrawer = ({
   theme,
   movieCount,
@@ -4912,6 +4944,7 @@ const AboutDrawer = ({
           <div className='warp-about-settings'>
             <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
             <ConstellationSetting />
+            <RepeatPathsSetting />
             <SoundSettingsPanel />
           </div>
         </section>
@@ -5017,6 +5050,7 @@ const AboutDrawer = ({
       <ShuffleProShelf onShare={onShareRecap} />
       <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
       <ConstellationSetting />
+      <RepeatPathsSetting />
       <SoundSettingsPanel categories={false} />
       <button type='button' className='warp-party-entry' onClick={onStartParty}>
         <Users aria-hidden='true' />

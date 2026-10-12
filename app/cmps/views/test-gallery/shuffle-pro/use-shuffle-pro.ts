@@ -78,6 +78,7 @@ export const useShuffleProController = (context: Context) => {
         isImmersive: () => contextRef.current.immersive,
         isReducedMotion: () => readReducedMotion(reducedMotionOverride.current),
         getFound: () => shuffleProStore.get().found,
+        getRepeatFound: () => shuffleProStore.get().repeatFound,
         isGoldenHour: () => goldenHourStore.get(),
         recordRun: (tier) => shuffleProStore.recordRun(tier),
         onStreak: (streak) => shuffleProStore.recordStreak(streak),

@@ -157,6 +157,18 @@ const GOLDEN_FOUND_GOLD_CHANCE = 0.5
 export const hasUnlockedGold = (found: FoundPaths) =>
   Boolean(found.frost && found.amethyst && found.jade)
 
+// A path that has been found stops starting runs, so the surprise isn't worn
+// out; the "Repeat found paths" setting turns every path back on. A base tier
+// that would be upgraded to a Gold that isn't found yet still goes through.
+export const isPathBlocked = (
+  tier: Tier,
+  found: FoundPaths,
+  repeatFound: boolean,
+) => {
+  if (repeatFound || !found[tier]) return false
+  return !(tier !== 'gold' && hasUnlockedGold(found) && !found.gold)
+}
+
 // Gold rule: once Frost, Amethyst and Jade are all found, the next run of any
 // kind becomes Gold; after Gold has been found, any run has a 10% chance.
 // During the golden hour the chances are higher: a run can become Gold before

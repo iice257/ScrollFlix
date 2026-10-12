@@ -14,6 +14,7 @@ import {
   isBigSpin,
   isKeyHold,
   isNearTrigger,
+  isPathBlocked,
   landingOmega,
   pickLandingTarget,
   precessedAxis,
@@ -88,6 +89,34 @@ describe('Space hold', () => {
   it('rolls well below Shuffle Pro speed', () => {
     expect(KEY_ROLL_OMEGA).toBeGreaterThan(STANDARD_PROFILE.omegaMin)
     expect(KEY_ROLL_OMEGA).toBeLessThan(STANDARD_PROFILE.omegaMax * 0.7)
+  })
+})
+
+describe('isPathBlocked', () => {
+  it('lets a path that has not been found through', () => {
+    expect(isPathBlocked('frost', {}, false)).toBe(false)
+    expect(isPathBlocked('jade', { frost: 1 }, false)).toBe(false)
+  })
+
+  it('blocks a path once it is found', () => {
+    expect(isPathBlocked('frost', { frost: 1 }, false)).toBe(true)
+    expect(isPathBlocked('amethyst', { frost: 1, amethyst: 2 }, false)).toBe(
+      true,
+    )
+  })
+
+  it('lets every path through when repeats are on', () => {
+    expect(isPathBlocked('frost', { frost: 1 }, true)).toBe(false)
+    expect(
+      isPathBlocked('gold', { frost: 1, amethyst: 1, jade: 1, gold: 1 }, true),
+    ).toBe(false)
+  })
+
+  it('still lets a found path through when it would become the first Gold', () => {
+    const found = { frost: 1, amethyst: 1, jade: 1 }
+    expect(isPathBlocked('frost', found, false)).toBe(false)
+    expect(isPathBlocked('gold', { ...found, gold: 1 }, false)).toBe(true)
+    expect(isPathBlocked('frost', { ...found, gold: 1 }, false)).toBe(true)
   })
 })
 

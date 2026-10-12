@@ -286,6 +286,48 @@ describe('ShuffleProController: holding Space', () => {
   })
 })
 
+describe('ShuffleProController: found paths', () => {
+  it('does not start a Frost hold again once Frost is found', () => {
+    const h = setup({}, { found: { frost: 1 } })
+    hold(h, 6000)
+    expect(h.controller.getSnapshot().phase).toBe('armed')
+    expect(h.calls).not.toContain('sky:on')
+    expect(h.calls).not.toContain('prewarm')
+  })
+
+  it('starts it again when repeats are on', () => {
+    const h = setup({ getRepeatFound: () => true }, { found: { frost: 1 } })
+    hold(h, 5100)
+    expect(h.controller.getSnapshot().phase).toBe('windup')
+  })
+
+  it('keeps a Space hold rolling past 10s for a found path', () => {
+    const h = setup({}, { found: { frost: 1 } })
+    holdKey(h, 12000)
+    expect(h.controller.getSnapshot().phase).toBe('armed')
+    expect(h.getOmega()).toBe(KEY_ROLL_OMEGA)
+  })
+
+  it('swallows a streak trigger for a found path and starts the streak over', () => {
+    const h = setup({ random: () => 0 }, { found: { amethyst: 1 } })
+    let trigger: string | null = null
+    for (let i = 0; i < 10; i += 1) {
+      trigger = h.controller.noteAction({ type: 'shuffle' })
+    }
+    expect(trigger).toBeNull()
+    expect(h.controller.getStreak().streak).toBe(0)
+  })
+
+  it('still hands a streak trigger over for a path not found yet', () => {
+    const h = setup({ random: () => 0 }, { found: { frost: 1 } })
+    let trigger: string | null = null
+    for (let i = 0; i < 10; i += 1) {
+      trigger = h.controller.noteAction({ type: 'shuffle' })
+    }
+    expect(trigger).toBe('amethyst')
+  })
+})
+
 describe('ShuffleProController: warming up', () => {
   it('warms the effect up once a hold has lasted 1.5s, not before', () => {
     const h = setup()
