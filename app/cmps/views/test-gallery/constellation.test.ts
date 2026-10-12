@@ -48,3 +48,16 @@ describe('buildConstellation', () => {
     expect(buildConstellation(stars, 200)).toHaveLength(2)
   })
 })
+
+describe('buildConstellation on a sphere', () => {
+  it('measures distance through depth too', () => {
+    // a and b share a screen position but sit on opposite sides of the globe,
+    // so c (beside a) is its nearest neighbour, not b.
+    const a = { ...star('a', 0, 0), z: 100 }
+    const b = { ...star('b', 0, 0), z: -100 }
+    const c = { ...star('c', 20, 0), z: 100 }
+    const links = buildConstellation([a, b, c], 150)
+    expect(links).toContainEqual([0, 2])
+    expect(links).not.toContainEqual([0, 1])
+  })
+})

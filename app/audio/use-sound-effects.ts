@@ -21,6 +21,9 @@ const useChangeCue = <T>(
 
 type SoundEffectsState = {
   savedCount: number
+  detailsOpen: boolean
+  // How many films the session path has.
+  trailLength: number
 }
 
 // Maps page state to the few interface sounds. Each one is a no-op unless
@@ -29,6 +32,53 @@ export const useSoundEffects = (state: SoundEffectsState) => {
   useChangeCue(state.savedCount, (next, previous): Cue | null =>
     next > previous ? 'heart' : null,
   )
+  useChangeCue(state.detailsOpen, (next): Cue | null =>
+    next ? 'open' : 'close',
+  )
+  const trailLength = useRef(state.trailLength)
+  useEffect(() => {
+    const previous = trailLength.current
+    trailLength.current = state.trailLength
+    if (state.trailLength > previous) {
+      playCue('trailPoint', ((state.trailLength - 1) % 8) / 7)
+    }
+  }, [state.trailLength])
+}
+
+const INTERACTIVE = 'button, a[href], [role="button"], [role="tab"], summary'
+
+// The small sounds of using the page with a pointer: a faint tick as the
+// mouse crosses a control, a knock when anything is pressed, and a grab when
+// the globe is taken hold of. Touch gets the knock and the grab, no hover.
+export const useInterfaceSounds = () => {
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    let hovered: Element | null = null
+    const onDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (target instanceof HTMLCanvasElement) {
+        playCue('grab')
+        return
+      }
+      if (target.closest(INTERACTIVE)) playCue('tap')
+    }
+    const onOver = (event: PointerEvent) => {
+      if (event.pointerType !== 'mouse') return
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const control = target.closest(INTERACTIVE)
+      if (control === hovered) return
+      hovered = control
+      if (control && !control.hasAttribute('disabled')) playCue('hover')
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    document.addEventListener('pointerover', onOver, true)
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true)
+      document.removeEventListener('pointerover', onOver, true)
+    }
+  }, [])
 }
 
 // With sound on, the first real gesture anywhere unlocks audio (browsers only
