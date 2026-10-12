@@ -46,6 +46,7 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -79,6 +80,7 @@ import {
   type InfiniteMovieMenuItem,
 } from './infinite-movie-menu'
 import { matchesFilmLink, pickLandingMovie } from './landing'
+import { centeredScrollTop, glideStart, pickRandomRow } from './list-scroll'
 import { MoodFunnel, MoodLine, MoodNudge } from './moods/mood-entry'
 import {
   MOOD_GENRES,
@@ -3450,6 +3452,72 @@ const chunkRows = <T,>(rows: T[]) => {
   return chunks
 }
 
+const PICK_GLIDE_MS = 520
+// Hover is ignored for a moment after a pick, so a cursor resting on the list
+// cannot take the highlight from the film that was just picked.
+const PICK_HOVER_HOLD_MS = 1300
+
+// Brings a film's row to the middle of the index. The row is measured again on
+// every frame, because rows above it mount and groups expand while the list
+// moves. A target many screens away is reached by a jump to just short of it
+// followed by a short glide. Any input from the person ends the glide.
+const glideToRow = (
+  scroller: HTMLElement,
+  movieId: string,
+  instant: boolean,
+): (() => void) | undefined => {
+  const measure = () => {
+    const row = scroller.querySelector<HTMLElement>(
+      `[data-movie-id="${CSS.escape(movieId)}"]`,
+    )
+    if (!row) return null
+    const rowRect = row.getBoundingClientRect()
+    return centeredScrollTop({
+      rowTop:
+        rowRect.top - scroller.getBoundingClientRect().top + scroller.scrollTop,
+      rowHeight: rowRect.height,
+      viewportHeight: scroller.clientHeight,
+      scrollHeight: scroller.scrollHeight,
+    })
+  }
+
+  const first = measure()
+  if (first === null) return undefined
+  if (instant) {
+    scroller.scrollTop = first
+    return undefined
+  }
+
+  scroller.scrollTop = glideStart(
+    scroller.scrollTop,
+    first,
+    scroller.clientHeight,
+  )
+  const from = scroller.scrollTop
+  const startedAt = performance.now()
+  let frame = 0
+  const interruptions = ['wheel', 'touchstart', 'pointerdown'] as const
+  const stop = () => {
+    window.cancelAnimationFrame(frame)
+    for (const type of interruptions) scroller.removeEventListener(type, stop)
+  }
+  for (const type of interruptions) {
+    scroller.addEventListener(type, stop, { passive: true })
+  }
+  const step = (now: number) => {
+    const progress = Math.min(1, (now - startedAt) / PICK_GLIDE_MS)
+    const target = measure() ?? first
+    scroller.scrollTop =
+      progress >= 1
+        ? target
+        : from + (target - from) * (1 - (1 - progress) ** 3)
+    if (progress < 1) frame = window.requestAnimationFrame(step)
+    else stop()
+  }
+  frame = window.requestAnimationFrame(step)
+  return stop
+}
+
 type ListRowChunkProps = {
   // The film that is active or pulsing, only passed to the chunk holding it,
   // so a hover re-renders one chunk instead of every row on screen.
@@ -3695,9 +3763,13 @@ const WarpList = ({
       isScrollingRef.current = false
     }, 160)
   }
+  const listRef = useRef<HTMLElement | null>(null)
+  const holdHoverUntilRef = useRef(0)
+  const [pickScroll, setPickScroll] = useState<{ id: string } | null>(null)
   const handleHoverMovie = useCallback(
     (movie: TestMovie) => {
       if (isScrollingRef.current) return
+      if (performance.now() < holdHoverUntilRef.current) return
       startTransition(() => onSelectMovie(movie))
     },
     [onSelectMovie],
@@ -3820,7 +3892,8 @@ const WarpList = ({
   }
 
   const handlePickRandomMovie = () => {
-    const movie = movies[Math.floor(Math.random() * Math.max(movies.length, 1))]
+    // From every film in the list, not the rows that happen to be mounted.
+    const movie = pickRandomRow(movies, activeMovieId, Math.random)
     if (!movie) return
 
     const movieGroup = getMovieListGroupKey(movie, grouping, popularityGroups)
@@ -3831,46 +3904,23 @@ const WarpList = ({
       return nextGroups
     })
     onPickRandomMovie(movie)
+    holdHoverUntilRef.current = performance.now() + PICK_HOVER_HOLD_MS
     setRandomPulseId(movie.id)
     if (pulseTimerRef.current) window.clearTimeout(pulseTimerRef.current)
     pulseTimerRef.current = window.setTimeout(() => {
       setRandomPulseId(null)
       pulseTimerRef.current = null
     }, 1100)
-
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        const scroller = document.querySelector<HTMLElement>('.warp-list')
-        const row = document.querySelector<HTMLElement>(
-          `[data-movie-id="${movie.id}"]`,
-        )
-        if (!scroller || !row) return
-
-        const startTop = scroller.scrollTop
-        const maxTop = Math.max(
-          0,
-          scroller.scrollHeight - scroller.clientHeight,
-        )
-        const targetTop = Math.max(
-          0,
-          Math.min(
-            maxTop,
-            row.offsetTop - scroller.clientHeight / 2 + row.clientHeight / 2,
-          ),
-        )
-        const duration = 520
-        const startTime = performance.now()
-        const animateScroll = (time: number) => {
-          const progress = Math.min(1, (time - startTime) / duration)
-          const eased = 1 - (1 - progress) ** 3
-          scroller.scrollTop = startTop + (targetTop - startTop) * eased
-          if (progress < 1) window.requestAnimationFrame(animateScroll)
-        }
-
-        window.requestAnimationFrame(animateScroll)
-      })
-    })
+    setPickScroll({ id: movie.id })
   }
+
+  // Runs once the pick's row is mounted (its chunk is forced visible and its
+  // group expanded in the same commit), so the row can be measured.
+  useLayoutEffect(() => {
+    const scroller = listRef.current
+    if (!pickScroll || !scroller) return
+    return glideToRow(scroller, pickScroll.id, readReducedMotion(null))
+  }, [pickScroll])
 
   const randomRequestRef = useRef(randomRequest)
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new request picks
@@ -3882,6 +3932,7 @@ const WarpList = ({
 
   return (
     <section
+      ref={listRef}
       className='warp-list'
       aria-label='Movie list view'
       onScroll={handleScroll}
@@ -4063,7 +4114,10 @@ const WarpList = ({
                           activeChunkKey === chunkKey ? activeMovieId : null
                         }
                         eager={eagerChunkKeys.has(chunkKey)}
-                        forceVisible={pulseChunkKey === chunkKey}
+                        forceVisible={
+                          pulseChunkKey === chunkKey ||
+                          activeChunkKey === chunkKey
+                        }
                         isCollapsed={isCollapsed}
                         randomPulseId={
                           pulseChunkKey === chunkKey ? randomPulseId : null
