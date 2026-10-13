@@ -946,8 +946,33 @@
   color: rgb(33 26 16 / 0.88);
 }
 
-.warp-shell[data-theme="light"] .warp-list-row-genres span {
-  border: 1px solid rgb(33 26 16 / 0.16);
+.warp-shell[data-theme="light"] .warp-list-row-tag {
+  border: 1px solid rgb(33 26 16 / 0.26);
+  background: rgb(33 26 16 / 0.1);
+  color: rgb(33 26 16 / 0.9);
+}
+
+.warp-shell[data-theme="light"] .warp-list-row-tag:hover,
+.warp-shell[data-theme="light"] .warp-list-row-tag:focus-visible {
+  border-color: rgb(33 26 16);
+  background: rgb(33 26 16 / 0.22);
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-list-row-tag.is-on {
+  border-color: rgb(33 26 16);
+  background: rgb(33 26 16);
+  color: rgb(247 240 225);
+}
+
+.warp-shell[data-theme="light"] .warp-list-row-tag.is-on:hover,
+.warp-shell[data-theme="light"] .warp-list-row-tag.is-on:focus-visible {
+  background: rgb(33 26 16 / 0.84);
+  color: rgb(247 240 225);
+}
+
+.warp-shell[data-theme="light"] .warp-list-row-tag.is-plain {
+  border-color: rgb(33 26 16 / 0.16);
   color: rgb(33 26 16 / 0.64);
 }
 
@@ -956,7 +981,7 @@
 }
 
 .warp-shell[data-theme="light"] .warp-list-row:hover,
-.warp-shell[data-theme="light"] .warp-list-row:focus-visible,
+.warp-shell[data-theme="light"] .warp-list-row:has(.warp-list-row-open:focus-visible),
 .warp-shell[data-theme="light"] .warp-list-row.is-active {
   border-color: rgb(33 26 16 / 0.42);
   color: rgb(33 26 16 / 0.78);
@@ -973,7 +998,8 @@
 }
 
 .warp-shell[data-theme="light"] .warp-list-row:hover .warp-list-row-poster,
-.warp-shell[data-theme="light"] .warp-list-row:focus-visible .warp-list-row-poster,
+.warp-shell[data-theme="light"] .warp-list-row:has(.warp-list-row-open:focus-visible)
+    .warp-list-row-poster,
 .warp-shell[data-theme="light"] .warp-list-row.is-active .warp-list-row-poster {
   border-color: rgb(33 26 16 / 0.52);
 }

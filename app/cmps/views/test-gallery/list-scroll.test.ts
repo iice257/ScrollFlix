@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { centeredScrollTop, glideStart, pickRandomRow } from './list-scroll'
+import {
+  centeredScrollTop,
+  glideStart,
+  pickRandomRow,
+  visibleGenreTags,
+} from './list-scroll'
 
 const rows = Array.from({ length: 10_000 }, (_, index) => ({ id: `m${index}` }))
 
@@ -69,5 +74,35 @@ describe('glideStart', () => {
   it('jumps close to a far target, from either direction', () => {
     expect(glideStart(0, 100_000, 800)).toBe(100_000 - 1200)
     expect(glideStart(100_000, 0, 800)).toBe(1200)
+  })
+})
+
+describe('visibleGenreTags', () => {
+  const genres = ['Drama', 'Crime', 'Thriller', 'Mystery', 'Romance']
+
+  it('shows the first three genres when nothing is selected', () => {
+    expect(visibleGenreTags(genres, [])).toEqual(['Drama', 'Crime', 'Thriller'])
+  })
+
+  it('puts a selected genre first, even a late one', () => {
+    expect(visibleGenreTags(genres, ['Romance'])).toEqual([
+      'Romance',
+      'Drama',
+      'Crime',
+    ])
+  })
+
+  it('keeps selected genres in film order and never exceeds the limit', () => {
+    expect(visibleGenreTags(genres, ['Mystery', 'Crime'])).toEqual([
+      'Crime',
+      'Mystery',
+      'Drama',
+    ])
+    expect(visibleGenreTags(genres, genres)).toHaveLength(3)
+  })
+
+  it('ignores selected genres the film does not have', () => {
+    expect(visibleGenreTags(['Drama'], ['Horror'])).toEqual(['Drama'])
+    expect(visibleGenreTags([], ['Horror'])).toEqual([])
   })
 })

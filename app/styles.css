@@ -3577,7 +3577,7 @@
   }
 
   .warp-list-chunk-placeholder {
-    height: calc(var(--chunk-row-count, 1) * var(--warp-list-row-estimate, 69px));
+    height: calc(var(--chunk-row-count, 1) * var(--warp-list-row-estimate, 68px));
   }
 
   .warp-list-group.is-collapsed .warp-list-rows {
@@ -3589,10 +3589,11 @@
 
   .warp-list-row {
     display: grid;
-    grid-template-columns: 46px minmax(0, 1fr) minmax(8rem, 18rem);
+    grid-template-columns: minmax(0, 1fr) minmax(8rem, 18rem);
     align-items: center;
     gap: 14px;
     min-height: 68px;
+    cursor: pointer;
     border: 0;
     border-bottom: 1px solid rgb(255 255 255 / 0.17);
     border-top: 0;
@@ -3611,6 +3612,28 @@
       color 180ms ease,
       opacity 180ms ease,
       transform 180ms ease;
+  }
+
+  /* The film itself: poster and title. A button, so the keyboard can reach it,
+     with the genre chips beside it as separate buttons. */
+  .warp-list-row-open {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr);
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .warp-list-row-open:focus-visible {
+    outline: none;
   }
 
   /* No overflow clip here: a rounded clip on every row costs a compositing
@@ -3691,20 +3714,74 @@
     min-width: 0;
   }
 
-  .warp-list-row-genres span {
-    overflow: hidden;
-    max-width: 112px;
-    border: 1px solid rgb(255 255 255 / 0.16);
+  /* Genre chips. They read as buttons at rest (a filled pill, bright type),
+     light up on hover, and turn solid white when their filter is on, the same
+     way the chips in the filter view do. */
+  .warp-list-row-tag {
+    display: inline-flex;
+    min-height: 28px;
+    max-width: 128px;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid rgb(255 255 255 / 0.26);
     border-radius: 999px;
-    padding: 6px 9px;
-    color: rgb(255 255 255 / 0.64);
+    background: rgb(255 255 255 / 0.1);
+    padding: 0 11px;
+    color: rgb(255 255 255 / 0.9);
     font-size: 10px;
     font-weight: 900;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.05em;
     line-height: 1;
-    text-overflow: ellipsis;
     text-transform: uppercase;
     white-space: nowrap;
+    cursor: pointer;
+    transition:
+      border-color 160ms ease,
+      background 160ms ease,
+      color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .warp-list-row-tag > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .warp-list-row-tag svg {
+    flex: 0 0 auto;
+  }
+
+  .warp-list-row-tag:hover,
+  .warp-list-row-tag:focus-visible {
+    outline: none;
+    border-color: #fff;
+    background: rgb(255 255 255 / 0.22);
+    color: #fff;
+    transform: translateY(-1px);
+  }
+
+  .warp-list-row-tag:active {
+    transform: translateY(1px) scale(0.97);
+  }
+
+  .warp-list-row-tag.is-on {
+    border-color: #fff;
+    background: #fff;
+    color: #000;
+  }
+
+  .warp-list-row-tag.is-on:hover,
+  .warp-list-row-tag.is-on:focus-visible {
+    background: rgb(255 255 255 / 0.84);
+    color: #000;
+  }
+
+  /* A film with no genre listed gets a plain label, not a button. */
+  .warp-list-row-tag.is-plain {
+    border-color: rgb(255 255 255 / 0.16);
+    background: transparent;
+    color: rgb(255 255 255 / 0.64);
+    cursor: default;
   }
 
   .warp-list-row-rating {
@@ -3718,7 +3795,7 @@
   }
 
   .warp-list-row:hover,
-  .warp-list-row:focus-visible,
+  .warp-list-row:has(.warp-list-row-open:focus-visible),
   .warp-list-row.is-active {
     outline: none;
     border-color: rgb(255 255 255 / 0.42);
@@ -3740,7 +3817,8 @@
   }
 
   .warp-list-row:hover .warp-list-row-poster,
-  .warp-list-row:focus-visible .warp-list-row-poster,
+  .warp-list-row:has(.warp-list-row-open:focus-visible)
+    .warp-list-row-poster,
   .warp-list-row.is-active .warp-list-row-poster {
     border-color: rgb(255 255 255 / 0.52);
   }
@@ -5200,14 +5278,18 @@
     }
 
     .warp-list-row {
-      grid-template-columns: 42px minmax(0, 1fr);
-      gap: 10px;
+      grid-template-columns: minmax(0, 1fr);
       min-height: 62px;
       padding: 8px 0;
     }
 
+    .warp-list-row-open {
+      grid-template-columns: 42px minmax(0, 1fr);
+      gap: 10px;
+    }
+
     .warp-list-chunk-placeholder {
-      --warp-list-row-estimate: 63px;
+      --warp-list-row-estimate: 62px;
     }
 
     .warp-list-row-poster {
@@ -5509,6 +5591,7 @@
     .warp-spin-hint,
     .warp-shuffle-button,
     .warp-list-row,
+    .warp-list-row-tag,
     .warp-details-card,
     .warp-details-backdrop,
     .warp-filter-panel,

@@ -80,7 +80,12 @@ import {
   type InfiniteMovieMenuItem,
 } from './infinite-movie-menu'
 import { matchesFilmLink, pickLandingMovie } from './landing'
-import { centeredScrollTop, glideStart, pickRandomRow } from './list-scroll'
+import {
+  centeredScrollTop,
+  glideStart,
+  pickRandomRow,
+  visibleGenreTags,
+} from './list-scroll'
 import { MoodFunnel, MoodLine, MoodNudge } from './moods/mood-entry'
 import {
   MOOD_GENRES,
@@ -2809,11 +2814,13 @@ export const TestGalleryApp = () => {
           isFiltered={selectedFilterCount > 0}
           totalCount={movies.length}
           facetCatalog={facetCatalog}
+          selectedGenres={selectedGenres}
           onApplyFacet={handleApplyFacet}
           onOpenMovie={handleOpenMovie}
           onPickRandomMovie={handlePickRandomMovie}
           onSearchQueryChange={setListSearchQuery}
           onSelectMovie={handleSelectMovie}
+          onToggleGenre={toggleGenre}
         />
       ) : null}
 
@@ -3431,11 +3438,13 @@ type WarpListProps = {
   isFiltered: boolean
   totalCount: number
   facetCatalog: FacetCatalog
+  selectedGenres: string[]
   onApplyFacet: (facet: SearchFacet) => void
   onOpenMovie: (movie: TestMovie) => void
   onPickRandomMovie: (movie: TestMovie) => void
   onSearchQueryChange: (searchQuery: string) => void
   onSelectMovie: (movie: TestMovie) => void
+  onToggleGenre: (genre: string) => void
 }
 
 // The index can hold tens of thousands of films, so rows render in chunks as
@@ -3527,9 +3536,11 @@ type ListRowChunkProps = {
   isCollapsed: boolean
   randomPulseId: string | null
   rows: TestMovie[]
+  selectedGenres: string[]
   onHoverMovie: (movie: TestMovie) => void
   onOpenMovie: (movie: TestMovie) => void
   onSelectMovie: (movie: TestMovie) => void
+  onToggleGenre: (movie: TestMovie, genre: string) => void
 }
 
 // How far past the viewport a chunk keeps its rows. Beyond it the rows are
@@ -3593,13 +3604,18 @@ const ListRowChunk = memo(
     isCollapsed,
     randomPulseId,
     rows,
+    selectedGenres,
     onHoverMovie,
     onOpenMovie,
     onSelectMovie,
+    onToggleGenre,
   }: ListRowChunkProps) => {
     const chunkRef = useRef<HTMLDivElement | null>(null)
     const measuredHeight = useRef<number | null>(null)
-    const [isNear, setIsNear] = useState(false)
+    // A chunk that mounts already forced visible (the film just clicked or
+    // picked, after the list was rebuilt around it) starts as near, so it is
+    // not dropped to a placeholder for a frame when the force moves on.
+    const [isNear, setIsNear] = useState(forceVisible)
     const shouldRender = eager || forceVisible || isNear
 
     // Kept in a ref so the observer callback sees whether rows are mounted.
@@ -3663,9 +3679,11 @@ const ListRowChunk = memo(
                 isCollapsed={isCollapsed}
                 isRandomPulse={randomPulseId === movie.id}
                 movie={movie}
+                selectedGenres={selectedGenres}
                 onHoverMovie={onHoverMovie}
                 onOpenMovie={onOpenMovie}
                 onSelectMovie={onSelectMovie}
+                onToggleGenre={onToggleGenre}
               />
             ))
           : null}
@@ -3679,51 +3697,87 @@ type ListRowProps = {
   isCollapsed: boolean
   isRandomPulse: boolean
   movie: TestMovie
+  selectedGenres: string[]
   onHoverMovie: (movie: TestMovie) => void
   onOpenMovie: (movie: TestMovie) => void
   onSelectMovie: (movie: TestMovie) => void
+  onToggleGenre: (movie: TestMovie, genre: string) => void
 }
 
 // Memoised so hovering a row re-renders only the rows whose state changed.
+// The row is a div holding two kinds of button (the film, and one chip per
+// genre), because a button cannot contain another button. A click anywhere
+// else on the row opens the film too.
 const ListRow = memo(
   ({
     isActive,
     isCollapsed,
     isRandomPulse,
     movie,
+    selectedGenres,
     onHoverMovie,
     onOpenMovie,
     onSelectMovie,
-  }: ListRowProps) => (
-    <button
-      type='button'
-      data-movie-id={movie.id}
-      className={cn(
-        'warp-list-row',
-        isActive && 'is-active',
-        isRandomPulse && 'is-random-pulse',
-      )}
-      tabIndex={isCollapsed ? -1 : undefined}
-      onClick={() => onOpenMovie(movie)}
-      onFocus={() => onSelectMovie(movie)}
-      onMouseEnter={() => onHoverMovie(movie)}
-    >
-      <span className='warp-list-row-poster' aria-hidden='true'>
-        <MoviePoster movie={movie} size='list' />
-      </span>
-      <span className='warp-list-row-main'>
-        <span className='warp-list-row-title'>{movie.title}</span>
-        <span className='warp-list-row-meta'>{formatMovieMeta(movie)}</span>
-      </span>
-      <span className='warp-list-row-genres'>
-        {(movie.genres.length ? movie.genres : ['Movie'])
-          .slice(0, 3)
-          .map((genre) => (
-            <span key={genre}>{genre}</span>
-          ))}
-      </span>
-    </button>
-  ),
+    onToggleGenre,
+  }: ListRowProps) => {
+    const tabIndex = isCollapsed ? -1 : undefined
+    return (
+      <div
+        data-movie-id={movie.id}
+        className={cn(
+          'warp-list-row',
+          isActive && 'is-active',
+          isRandomPulse && 'is-random-pulse',
+        )}
+        onClick={() => onOpenMovie(movie)}
+        onMouseEnter={() => onHoverMovie(movie)}
+      >
+        <button
+          type='button'
+          className='warp-list-row-open'
+          tabIndex={tabIndex}
+          onFocus={() => onSelectMovie(movie)}
+        >
+          <span className='warp-list-row-poster' aria-hidden='true'>
+            <MoviePoster movie={movie} size='list' />
+          </span>
+          <span className='warp-list-row-main'>
+            <span className='warp-list-row-title'>{movie.title}</span>
+            <span className='warp-list-row-meta'>{formatMovieMeta(movie)}</span>
+          </span>
+        </button>
+        <span className='warp-list-row-genres'>
+          {movie.genres.length ? (
+            visibleGenreTags(movie.genres, selectedGenres).map((genre) => {
+              const isOn = selectedGenres.includes(genre)
+              return (
+                <button
+                  type='button'
+                  key={genre}
+                  data-genre={genre}
+                  className={cn('warp-list-row-tag', isOn && 'is-on')}
+                  aria-pressed={isOn}
+                  aria-label={`${isOn ? 'Remove' : 'Filter by'} ${genre}`}
+                  tabIndex={tabIndex}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onToggleGenre(movie, genre)
+                  }}
+                >
+                  <span>{genre}</span>
+                  {isOn ? (
+                    <X aria-hidden='true' size={11} strokeWidth={3.4} />
+                  ) : null}
+                </button>
+              )
+            })
+          ) : (
+            <span className='warp-list-row-tag is-plain'>Movie</span>
+          )}
+        </span>
+      </div>
+    )
+  },
 )
 const WarpList = ({
   activeMovieId,
@@ -3738,11 +3792,13 @@ const WarpList = ({
   isFiltered,
   totalCount,
   facetCatalog,
+  selectedGenres,
   onApplyFacet,
   onOpenMovie,
   onPickRandomMovie,
   onSearchQueryChange,
   onSelectMovie,
+  onToggleGenre,
 }: WarpListProps) => {
   const [randomPulseId, setRandomPulseId] = useState<string | null>(null)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
@@ -3890,6 +3946,63 @@ const WarpList = ({
       return nextGroups
     })
   }
+
+  // A genre chip changes which films the list holds. The film whose chip was
+  // clicked is in the new list too, so it stays where it was under the cursor
+  // instead of the list jumping to wherever that scroll offset now lands.
+  const anchorRef = useRef<{
+    id: string
+    genre: string
+    top: number
+    at: number
+    refocus: boolean
+  } | null>(null)
+  const handleToggleGenre = useCallback(
+    (movie: TestMovie, genre: string) => {
+      const scroller = listRef.current
+      const row = scroller?.querySelector<HTMLElement>(
+        `[data-movie-id="${CSS.escape(movie.id)}"]`,
+      )
+      if (scroller && row) {
+        anchorRef.current = {
+          id: movie.id,
+          genre,
+          refocus: row.contains(document.activeElement),
+          top:
+            row.getBoundingClientRect().top -
+            scroller.getBoundingClientRect().top,
+          at: performance.now(),
+        }
+      }
+      onSelectMovie(movie)
+      onToggleGenre(genre)
+    },
+    [onSelectMovie, onToggleGenre],
+  )
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: realign when the list itself changes
+  useLayoutEffect(() => {
+    const anchor = anchorRef.current
+    anchorRef.current = null
+    const scroller = listRef.current
+    if (!anchor || !scroller || performance.now() - anchor.at > 1000) return
+    const row = scroller.querySelector<HTMLElement>(
+      `[data-movie-id="${CSS.escape(anchor.id)}"]`,
+    )
+    if (!row) return
+    const top =
+      row.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+    scroller.scrollTop += top - anchor.top
+    // The row's chips are new elements after the rebuild; keep the keyboard
+    // on the one that was pressed.
+    if (anchor.refocus) {
+      row
+        .querySelector<HTMLElement>(
+          `[data-genre="${CSS.escape(anchor.genre)}"]`,
+        )
+        ?.focus({ preventScroll: true })
+    }
+  }, [movies])
 
   const handlePickRandomMovie = () => {
     // From every film in the list, not the rows that happen to be mounted.
@@ -4123,9 +4236,11 @@ const WarpList = ({
                           pulseChunkKey === chunkKey ? randomPulseId : null
                         }
                         rows={chunk}
+                        selectedGenres={selectedGenres}
                         onHoverMovie={handleHoverMovie}
                         onOpenMovie={onOpenMovie}
                         onSelectMovie={onSelectMovie}
+                        onToggleGenre={handleToggleGenre}
                       />
                     )
                   })}

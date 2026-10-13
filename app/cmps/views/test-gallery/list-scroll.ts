@@ -53,3 +53,16 @@ export const glideStart = (
   if (Math.abs(distance) <= lead * 2) return from
   return target - Math.sign(distance) * lead
 }
+
+// The genre chips on an Index row. A row has room for three, so a genre the
+// list is filtered by comes first: it is the reason the film is there, and it
+// would otherwise be hidden whenever it is a film's fourth genre.
+export const visibleGenreTags = (
+  genres: readonly string[],
+  selected: readonly string[],
+  limit = 3,
+) => {
+  const picked = genres.filter((genre) => selected.includes(genre))
+  const rest = genres.filter((genre) => !selected.includes(genre))
+  return [...picked, ...rest].slice(0, limit)
+}
