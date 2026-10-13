@@ -74,6 +74,7 @@ import {
 } from '../../ui/tooltip'
 import { constellationSetting } from './constellation'
 import { ConstellationLayer } from './constellation-layer'
+import { formatGenreCount } from './genre-count'
 import {
   InfiniteMovieMenu,
   type InfiniteMovieMenuControl,
@@ -2037,6 +2038,8 @@ export const TestGalleryApp = () => {
     )
   }, [])
 
+  const clearGenres = useCallback(() => setSelectedGenres([]), [])
+
   const clearAllFilters = useCallback(() => {
     setContentFilter('all')
     setSelectedYear(null)
@@ -2162,7 +2165,9 @@ export const TestGalleryApp = () => {
     selectedGenres,
     selectedMoodFilters,
     selectedYear,
+    totalCount: movies.length,
     onClear: clearAllFilters,
+    onClearGenres: clearGenres,
     onSelectContentFilter: selectContentFilter,
     onToggleGenre: toggleGenre,
     onToggleMoodFilter: toggleMoodFilter,
@@ -4522,7 +4527,9 @@ type FilterSectionsProps = {
   selectedGenres: string[]
   selectedMoodFilters: MoodFilter[]
   selectedYear: YearFilter | null
+  totalCount: number
   onClear: () => void
+  onClearGenres: () => void
   onSelectContentFilter: (contentFilter: ContentFilter) => void
   onToggleGenre: (genre: string) => void
   onToggleMoodFilter: (moodFilter: MoodFilter) => void
@@ -4542,7 +4549,9 @@ const FilterSections = ({
   selectedGenres,
   selectedMoodFilters,
   selectedYear,
+  totalCount,
   onClear,
+  onClearGenres,
   onSelectContentFilter,
   onToggleGenre,
   onToggleMoodFilter,
@@ -4685,9 +4694,20 @@ const FilterSections = ({
         <p>Genres</p>
         <small>The more the merrier</small>
         <div className='warp-fs-chips'>
+          <button
+            type='button'
+            className={cn(
+              'warp-fs-chip',
+              !selectedGenres.length && 'is-active',
+            )}
+            aria-pressed={!selectedGenres.length}
+            onClick={onClearGenres}
+          >
+            <span>All</span>
+            <span>{formatGenreCount(totalCount)}</span>
+          </button>
           {genres.map(({ genre, count }) => {
-            const active =
-              !selectedGenres.length || selectedGenres.includes(genre)
+            const active = selectedGenres.includes(genre)
             return (
               <button
                 type='button'
@@ -4697,7 +4717,7 @@ const FilterSections = ({
                 onClick={() => onToggleGenre(genre)}
               >
                 <span>{genre}</span>
-                <span>{count}</span>
+                <span>{formatGenreCount(count)}</span>
               </button>
             )
           })}

@@ -84,4 +84,24 @@ test.describe('Gallery user flows', () => {
     const picked = list.locator('.warp-list-row.is-active')
     await expect(picked).toBeInViewport({ timeout: 5_000 })
   })
+
+  test('the genre All chip is on only while no genre is selected', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Filters' }).click()
+    const genres = page.locator('[data-section="genres"]').first()
+    const all = genres.getByRole('button', { name: /^All/ })
+    const first = genres.getByRole('button').nth(1)
+
+    await expect(all).toHaveAttribute('aria-pressed', 'true')
+    await expect(first).toHaveAttribute('aria-pressed', 'false')
+
+    await first.click()
+    await expect(all).toHaveAttribute('aria-pressed', 'false')
+    await expect(first).toHaveAttribute('aria-pressed', 'true')
+
+    await all.click()
+    await expect(all).toHaveAttribute('aria-pressed', 'true')
+    await expect(first).toHaveAttribute('aria-pressed', 'false')
+  })
 })
