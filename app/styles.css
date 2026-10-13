@@ -250,6 +250,11 @@
     --warp-pill-bg: rgb(187 187 187 / 0.86);
     --warp-control-height: 42px;
     --warp-control-inner-height: 34px;
+    /* One label style for every dock pill (view toggle, Watch / Genres,
+       Shuffle, Sort, Filters, Clear), so no pill reads lighter or smaller. */
+    --warp-tab-size: 16px;
+    --warp-tab-weight: 750;
+    --warp-tab-tracking: -0.025em;
     --warp-danger: #e5484d;
     --warp-danger-hover: #d13438;
     background: #000;
@@ -959,9 +964,9 @@
 
   .warp-mode-label {
     display: inline;
-    font-size: 16px;
-    font-weight: 750;
-    letter-spacing: -0.025em;
+    font-size: var(--warp-tab-size);
+    font-weight: var(--warp-tab-weight);
+    letter-spacing: var(--warp-tab-tracking);
   }
 
   .warp-mode-toggle button[aria-pressed="true"] {
@@ -1020,9 +1025,9 @@
     border-radius: 999px;
     background: transparent;
     color: #111;
-    font-size: 16px;
-    font-weight: 750;
-    letter-spacing: -0.025em;
+    font-size: var(--warp-tab-size);
+    font-weight: var(--warp-tab-weight);
+    letter-spacing: var(--warp-tab-tracking);
     transition:
       background 160ms ease,
       color 160ms ease,
@@ -1086,9 +1091,9 @@
     justify-content: center;
     gap: 8px;
     padding: 0 16px;
-    font-size: 16px;
-    font-weight: 750;
-    letter-spacing: -0.03em;
+    font-size: var(--warp-tab-size);
+    font-weight: var(--warp-tab-weight);
+    letter-spacing: var(--warp-tab-tracking);
     transition:
       background 180ms ease,
       color 180ms ease,
@@ -1178,7 +1183,9 @@
   .warp-filter-clear {
     height: var(--warp-control-inner-height);
     padding: 0 16px;
-    font-size: 15px;
+    font-size: var(--warp-tab-size);
+    font-weight: var(--warp-tab-weight);
+    letter-spacing: var(--warp-tab-tracking);
     animation: warp-filter-clear-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
@@ -1205,8 +1212,9 @@
     padding: 0 14px;
     background: var(--warp-danger);
     color: #fff;
-    font-size: 15px;
-    font-weight: 800;
+    font-size: var(--warp-tab-size);
+    font-weight: var(--warp-tab-weight);
+    letter-spacing: var(--warp-tab-tracking);
   }
 
   .warp-main-nav .warp-nav-clear:hover,
@@ -1232,9 +1240,9 @@
     background: var(--warp-pill-bg);
     padding: 0 6px 0 14px;
     color: #0b0b0b;
-    font-size: 15px;
-    font-weight: 750;
-    letter-spacing: -0.02em;
+    font-size: var(--warp-tab-size);
+    font-weight: var(--warp-tab-weight);
+    letter-spacing: var(--warp-tab-tracking);
     backdrop-filter: blur(14px) saturate(0.96);
     -webkit-backdrop-filter: blur(14px) saturate(0.96);
     transition:
@@ -1267,8 +1275,9 @@
     border-radius: 999px;
     background: rgb(0 0 0 / 0.1);
     padding: 0 10px;
-    font-size: 13px;
-    font-weight: 850;
+    font-size: var(--warp-tab-size);
+    font-weight: var(--warp-tab-weight);
+    letter-spacing: var(--warp-tab-tracking);
     white-space: nowrap;
   }
 
@@ -2116,9 +2125,9 @@
     background: var(--warp-pill-bg);
     padding: 0 16px;
     color: #0b0b0b;
-    font-size: 16px;
-    font-weight: 750;
-    letter-spacing: -0.025em;
+    font-size: var(--warp-tab-size);
+    font-weight: var(--warp-tab-weight);
+    letter-spacing: var(--warp-tab-tracking);
     backdrop-filter: blur(14px) saturate(0.96);
     -webkit-backdrop-filter: blur(14px) saturate(0.96);
     transition:
@@ -4871,6 +4880,7 @@
     .warp-shell {
       --warp-control-height: 38px;
       --warp-control-inner-height: 30px;
+      --warp-tab-size: 14px;
     }
 
     .warp-shell[data-mode="wall"]::before {
@@ -4974,12 +4984,10 @@
 
     .warp-filter-clear {
       padding: 0 12px;
-      font-size: 12px;
     }
 
     .warp-shell[data-mode="filters"] .warp-main-nav .warp-nav-clear {
       padding: 0 10px;
-      font-size: 12px;
     }
 
     /* The red Clear segment already signals active filters on small screens,
@@ -5012,9 +5020,6 @@
 
     .warp-mode-label {
       display: inline;
-      font-size: 10px;
-      font-weight: 900;
-      letter-spacing: -0.035em;
     }
 
     .warp-mode-toggle button[aria-pressed="false"] .warp-mode-label {
@@ -5077,7 +5082,6 @@
     .warp-shell[data-mode="filters"] .warp-main-nav button {
       min-width: 0;
       padding: 0 12px;
-      font-size: 13px;
     }
 
     .warp-sort-button {
@@ -5086,7 +5090,6 @@
 
     .warp-sort-badge {
       padding: 0 8px;
-      font-size: 12px;
     }
 
     /* The index dock carries more controls, so its view toggle goes

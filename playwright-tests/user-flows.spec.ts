@@ -85,6 +85,46 @@ test.describe('Gallery user flows', () => {
     await expect(picked).toBeInViewport({ timeout: 5_000 })
   })
 
+  test('every dock pill shares one height and one label style', async ({
+    page,
+  }) => {
+    const readDock = () =>
+      page.evaluate(() => {
+        const pills = [
+          ...document.querySelectorAll(
+            '.warp-dock .warp-mode-toggle, .warp-dock .warp-main-nav, .warp-dock .warp-shuffle-button, .warp-dock .warp-sort-button, .warp-dock .warp-filter-actions .warp-filter-button',
+          ),
+        ].filter((el) => el.getBoundingClientRect().width > 0)
+        const labels = [
+          ...document.querySelectorAll(
+            '.warp-dock .warp-mode-label, .warp-dock .warp-main-nav button, .warp-dock .warp-shuffle-button, .warp-dock .warp-sort-badge, .warp-dock .warp-filter-label',
+          ),
+        ].filter((el) => el.getBoundingClientRect().width > 0)
+        return {
+          heights: pills.map((el) =>
+            Math.round(el.getBoundingClientRect().height),
+          ),
+          styles: labels.map((el) => {
+            const style = getComputedStyle(el)
+            return `${style.fontSize}/${style.fontWeight}`
+          }),
+        }
+      })
+
+    for (const mode of ['wall', 'list']) {
+      if (mode === 'list') {
+        await page.getByRole('button', { name: 'Movie index' }).click()
+        await expect(
+          page.getByRole('region', { name: 'Movie list view' }),
+        ).toBeVisible()
+      }
+      const { heights, styles } = await readDock()
+      expect(heights.length).toBeGreaterThan(2)
+      expect(new Set(heights).size).toBe(1)
+      expect(new Set(styles).size).toBe(1)
+    }
+  })
+
   test('the genre All chip is on only while no genre is selected', async ({
     page,
   }) => {
