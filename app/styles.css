@@ -3268,7 +3268,9 @@
     inset: 0;
     z-index: 4;
     overflow: auto;
-    padding: 0 24px 116px;
+    padding: 0 max(24px, env(safe-area-inset-right)) 116px max(24px, env(safe-area-inset-left));
+    /* Where the sticky group headings dock: the header's own height. */
+    --warp-list-head-height: calc(max(24px, env(safe-area-inset-top)) + 58px + 20px + 1px);
     background: #000;
     scrollbar-width: none;
     animation: warp-view-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -3287,12 +3289,16 @@
     top: 0;
     z-index: 5;
     display: grid;
-    grid-template-columns: auto minmax(0, 420px) minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 420px) minmax(0, 1fr);
+    /* The row is as tall as the home top bar (58px) and starts at the same
+       inset, so its centre line matches the brand row; the big title is
+       centred on it and overflows evenly. */
+    grid-template-rows: 58px;
     align-items: center;
     column-gap: 26px;
-    max-width: 1180px;
+    max-width: 1232px;
     margin: 0 auto;
-    padding: 24px 0 16px;
+    padding: max(24px, env(safe-area-inset-top)) 0 20px;
     border-bottom: 1px solid rgb(255 255 255 / 0.18);
     background: #000;
   }
@@ -3315,10 +3321,10 @@
   .warp-list-count {
     margin: 0;
     justify-self: end;
-    color: rgb(255 255 255 / 0.5);
-    font-size: 12px;
-    font-weight: 850;
-    letter-spacing: 0.1em;
+    color: rgb(255 255 255 / 0.55);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
     line-height: 1;
     text-align: right;
     text-transform: uppercase;
@@ -3400,8 +3406,8 @@
   .warp-list-suggest p {
     margin: 0;
     padding: 6px 10px 8px;
-    color: rgb(255 255 255 / 0.42);
-    font-size: 10px;
+    color: rgb(255 255 255 / 0.5);
+    font-size: 11px;
     font-weight: 850;
     letter-spacing: 0.12em;
     text-transform: uppercase;
@@ -3422,8 +3428,8 @@
 
   .warp-list-suggest button span {
     min-width: 62px;
-    color: rgb(255 255 255 / 0.46);
-    font-size: 10px;
+    color: rgb(255 255 255 / 0.54);
+    font-size: 11px;
     font-weight: 850;
     letter-spacing: 0.1em;
     text-transform: uppercase;
@@ -3479,14 +3485,14 @@
   }
 
   .warp-list-tools {
-    display: flex;
+    display: none;
     justify-self: end;
     gap: 8px;
   }
 
   .warp-list-groups {
     display: grid;
-    max-width: 1180px;
+    max-width: 1232px;
     gap: 44px;
     margin: 0 auto;
     padding-top: 8px;
@@ -3504,7 +3510,7 @@
 
   .warp-list-group-heading {
     position: sticky;
-    top: 108px;
+    top: var(--warp-list-head-height);
     z-index: 1;
     display: flex;
     width: 100%;
@@ -3548,8 +3554,8 @@
   }
 
   .warp-list-group-heading small {
-    color: rgb(255 255 255 / 0.42);
-    font-size: 10px;
+    color: rgb(255 255 255 / 0.5);
+    font-size: 11px;
     font-weight: 900;
     letter-spacing: 0.11em;
     line-height: 1;
@@ -3707,9 +3713,9 @@
   .warp-list-row-meta {
     overflow: hidden;
     color: rgb(255 255 255 / 0.88);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 900;
-    letter-spacing: 0.07em;
+    letter-spacing: 0.06em;
     line-height: 1;
     text-overflow: ellipsis;
     text-transform: uppercase;
@@ -3737,7 +3743,7 @@
     background: rgb(255 255 255 / 0.1);
     padding: 0 11px;
     color: rgb(255 255 255 / 0.9);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 900;
     letter-spacing: 0.05em;
     line-height: 1;
@@ -5202,11 +5208,13 @@
 
     .warp-list {
       padding: 0 16px 92px;
+      --warp-list-head-height: 84px;
     }
 
     .warp-list-heading {
       top: 0;
       grid-template-columns: minmax(0, 1fr) auto auto;
+      grid-template-rows: none;
       align-items: center;
       column-gap: 12px;
       row-gap: 10px;
@@ -5222,8 +5230,6 @@
     .warp-list-count {
       grid-column: 2;
       order: -1;
-      font-size: 10px;
-      letter-spacing: 0.08em;
     }
 
     .warp-list-search {
@@ -5253,6 +5259,7 @@
     }
 
     .warp-list-tools {
+      display: flex;
       grid-column: 3;
       justify-self: end;
       order: -1;
@@ -5267,17 +5274,12 @@
     }
 
     .warp-list-group-heading {
-      top: 84px;
       padding: 17px 0 13px;
     }
 
     .warp-list-group-heading h2 {
       font-size: 42px;
       letter-spacing: -0.06em;
-    }
-
-    .warp-list-group-heading small {
-      font-size: 9px;
     }
 
     .warp-list-row {
@@ -5302,10 +5304,6 @@
 
     .warp-list-row-title {
       font-size: 16px;
-    }
-
-    .warp-list-row-meta {
-      font-size: 9px;
     }
 
     .warp-list-row-genres {

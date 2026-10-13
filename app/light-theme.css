@@ -835,7 +835,7 @@
 }
 
 .warp-shell[data-theme="light"] .warp-list-count {
-  color: rgb(33 26 16 / 0.5);
+  color: rgb(33 26 16 / 0.55);
 }
 
 .warp-shell[data-theme="light"] .warp-list-search {
@@ -865,7 +865,7 @@
 }
 
 .warp-shell[data-theme="light"] .warp-list-suggest p {
-  color: rgb(33 26 16 / 0.42);
+  color: rgb(33 26 16 / 0.5);
 }
 
 .warp-shell[data-theme="light"] .warp-list-suggest button {
@@ -873,7 +873,7 @@
 }
 
 .warp-shell[data-theme="light"] .warp-list-suggest button span {
-  color: rgb(33 26 16 / 0.46);
+  color: rgb(33 26 16 / 0.54);
 }
 
 .warp-shell[data-theme="light"] .warp-list-suggest button:hover,
@@ -921,7 +921,7 @@
 }
 
 .warp-shell[data-theme="light"] .warp-list-group-heading small {
-  color: rgb(33 26 16 / 0.42);
+  color: rgb(33 26 16 / 0.5);
 }
 
 .warp-shell[data-theme="light"] .warp-list-group-heading svg {
