@@ -3,6 +3,7 @@
 // and a link. Nothing is uploaded anywhere.
 
 import { TIER_LABELS, type Tier } from '../shuffle-pro/shuffle-pro-logic'
+import { type PathScene, drawPath, preparePath } from './path-art'
 import { type RecapScene, drawRecap, prepareRecap } from './recap-art'
 import {
   SHARE_CLIP_SECONDS,
@@ -99,6 +100,15 @@ export const prepareRecapArt = async (
   await loadFonts()
   const prepared = prepareRecap(scene)
   return { draw: (ctx, t) => drawRecap(ctx, prepared, t) }
+}
+
+// The session path card: no poster to load, only the fonts.
+export const preparePathArt = async (
+  scene: PathScene,
+): Promise<ShareRenderable> => {
+  await loadFonts()
+  const prepared = preparePath(scene)
+  return { draw: (ctx, t) => drawPath(ctx, prepared, t) }
 }
 
 // The still image: the finished frame at full size.

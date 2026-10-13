@@ -7,8 +7,8 @@
 //
 // Cue map (category -> cues). There are only a few on purpose: the site is
 // quiet apart from the Easter egg.
-//   shuffle  shuffleStart, landing
-//   ui       heart, moodPick, moodGo, confirm
+//   shuffle  shuffleStart, landing, settle, trailPoint
+//   ui       heart, moodPick, moodGo, confirm, hover, tap, grab, open, close
 // The Shuffle Pro Easter egg voices live in shuffle-pro-audio.ts and are
 // gated by `eggs`, not by the master switch.
 
@@ -201,6 +201,13 @@ export type Cue =
   | 'moodPick'
   | 'moodGo'
   | 'confirm'
+  | 'hover'
+  | 'tap'
+  | 'grab'
+  | 'open'
+  | 'close'
+  | 'settle'
+  | 'trailPoint'
 
 export const CUE_CATEGORY: Record<Cue, SoundCategory> = {
   shuffleStart: 'shuffle',
@@ -209,6 +216,13 @@ export const CUE_CATEGORY: Record<Cue, SoundCategory> = {
   moodPick: 'ui',
   moodGo: 'ui',
   confirm: 'ui',
+  hover: 'ui',
+  tap: 'ui',
+  grab: 'ui',
+  open: 'ui',
+  close: 'ui',
+  settle: 'shuffle',
+  trailPoint: 'shuffle',
 }
 
 const CUE_MIN_INTERVAL_MS: Record<Cue, number> = {
@@ -218,6 +232,13 @@ const CUE_MIN_INTERVAL_MS: Record<Cue, number> = {
   moodPick: 70,
   moodGo: 300,
   confirm: 90,
+  hover: 55,
+  tap: 45,
+  grab: 120,
+  open: 160,
+  close: 160,
+  settle: 160,
+  trailPoint: 90,
 }
 
 const MAX_VOICES = 8
@@ -225,6 +246,11 @@ const limiter = createCueLimiter(CUE_MIN_INTERVAL_MS, MAX_VOICES)
 
 // One pentatonic note per mood world, low to high.
 const MOOD_NOTES = [523.25, 587.33, 659.25, 783.99, 880, 1046.5]
+
+// The shuffle trail climbs a pentatonic scale, one star at a time.
+const TRAIL_NOTES = [
+  659.25, 783.99, 880, 1046.5, 1174.66, 1318.51, 1567.98, 1760,
+]
 
 const VOICES: Record<Cue, (audio: AudioOut, strength: number) => void> = {
   // A soft whoosh as the globe sets off for a random movie.
@@ -282,6 +308,89 @@ const VOICES: Record<Cue, (audio: AudioOut, strength: number) => void> = {
         type: 'triangle',
       })
     }
+  },
+  // A glassy tick under a mouse pointer; deliberately tiny.
+  hover: (audio) => {
+    pluck(audio, { freq: 2600, toFreq: 2100, decay: 0.035, gain: 0.02 })
+  },
+  // A press: a soft knock with a crisp edge.
+  tap: (audio) => {
+    pluck(audio, {
+      freq: 520,
+      toFreq: 340,
+      decay: 0.09,
+      gain: 0.07,
+      type: 'triangle',
+    })
+    burst(audio, {
+      centerHz: 4200,
+      q: 1.2,
+      type: 'highpass',
+      decay: 0.025,
+      gain: 0.05,
+    })
+  },
+  // Taking hold of the globe.
+  grab: (audio) => {
+    pluck(audio, { freq: 190, toFreq: 120, decay: 0.09, gain: 0.1 })
+    burst(audio, {
+      centerHz: 700,
+      q: 0.7,
+      type: 'lowpass',
+      decay: 0.05,
+      gain: 0.06,
+    })
+  },
+  // A film card opens: a short upward sweep with a breath of air.
+  open: (audio) => {
+    pluck(audio, {
+      freq: 392,
+      toFreq: 784,
+      decay: 0.24,
+      gain: 0.07,
+      type: 'triangle',
+    })
+    pluck(audio, { freq: 1175, decay: 0.3, gain: 0.025, start: 0.07 })
+    burst(audio, {
+      centerHz: 1200,
+      toHz: 3600,
+      q: 0.8,
+      attack: 0.05,
+      decay: 0.2,
+      gain: 0.035,
+    })
+  },
+  close: (audio) => {
+    pluck(audio, {
+      freq: 660,
+      toFreq: 300,
+      decay: 0.2,
+      gain: 0.055,
+      type: 'triangle',
+    })
+  },
+  // A drag or flick comes to rest; a harder one lands heavier.
+  settle: (audio, strength) => {
+    pluck(audio, {
+      freq: 150,
+      toFreq: 58,
+      decay: 0.28,
+      gain: 0.06 + 0.2 * strength,
+    })
+    burst(audio, {
+      centerHz: 500,
+      q: 0.7,
+      type: 'lowpass',
+      decay: 0.06,
+      gain: 0.04 + 0.08 * strength,
+    })
+  },
+  // A star joins the shuffle trail. Strength 0..1 picks the note.
+  trailPoint: (audio, strength) => {
+    const hz = TRAIL_NOTES[Math.round(strength * (TRAIL_NOTES.length - 1))]
+    pluck(audio, { freq: hz, decay: 0.55, gain: 0.06 })
+    pluck(audio, { freq: hz * 2.76, decay: 0.3, gain: 0.018, start: 0.01 })
+    pluck(audio, { freq: hz * 2, decay: 0.7, gain: 0.02, start: 0.09 })
   },
   confirm: (audio) => {
     pluck(audio, { freq: 659, decay: 0.16, gain: 0.07, type: 'triangle' })

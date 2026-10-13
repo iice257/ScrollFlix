@@ -32,6 +32,9 @@ export type RecapScene = {
   savedCount: number
   // The genres the saved films lean on, if they say anything yet.
   taste: string[]
+  // The session path, one entry per pick: the Shuffle Pro path that found it,
+  // or null for a plain shuffle.
+  path: (Tier | null)[]
 }
 
 const TIERS: readonly Tier[] = ['frost', 'amethyst', 'jade', 'gold']
@@ -107,6 +110,73 @@ const drawStars = (
     ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2)
     ctx.fill()
   }
+}
+
+// Where each pick of the path sits on the card: left to right with a seeded
+// wander, so the same run always draws the same shape.
+const pathPoints = (path: readonly (Tier | null)[]) => {
+  const random = seededRandom(path.length * 17 + 3)
+  let y = 0.5
+  return path.map((_, index) => {
+    y = Math.min(0.95, Math.max(0.05, y + (random() - 0.5) * 0.7))
+    return {
+      x: 120 + (path.length > 1 ? index / (path.length - 1) : 0.5) * 840,
+      y: 470 + y * 700,
+    }
+  })
+}
+
+// The path as a constellation behind the tiles: plain picks are pale, Shuffle
+// Pro picks glow in their path's colour. Each link draws in after the last.
+const drawPath = (
+  ctx: CanvasRenderingContext2D,
+  scene: RecapScene,
+  t: number,
+) => {
+  if (scene.path.length < 2) return
+  const points = pathPoints(scene.path)
+  const reveal = clamp01((t - 1.0) / 2.2) * (points.length - 1)
+  ctx.save()
+  ctx.lineCap = 'round'
+  for (let index = 1; index < points.length; index += 1) {
+    const progress = clamp01(reveal - (index - 1))
+    if (progress <= 0) break
+    const from = points[index - 1]
+    const to = points[index]
+    const tier = scene.path[index]
+    const colour = tier ? (PALETTES[tier].c1 as Rgb) : null
+    ctx.shadowColor = colour ? rgba(colour, 0.9) : 'rgba(255, 255, 255, 0.5)'
+    ctx.shadowBlur = colour ? 22 : 8
+    ctx.strokeStyle = colour ? rgba(colour, 0.9) : 'rgba(255, 255, 255, 0.34)'
+    ctx.lineWidth = colour ? 7 : 3
+    ctx.beginPath()
+    ctx.moveTo(from.x, from.y)
+    ctx.lineTo(
+      from.x + (to.x - from.x) * progress,
+      from.y + (to.y - from.y) * progress,
+    )
+    ctx.stroke()
+  }
+  points.forEach((point, index) => {
+    if (reveal < index - 0.2) return
+    const tier = scene.path[index]
+    const colour = tier ? (PALETTES[tier].c1 as Rgb) : null
+    ctx.shadowColor = colour ? rgba(colour, 1) : 'rgba(255, 255, 255, 0.6)'
+    ctx.shadowBlur = colour ? 30 : 10
+    ctx.fillStyle = colour ? rgba(colour, 1) : 'rgba(255, 255, 255, 0.7)'
+    ctx.beginPath()
+    ctx.arc(point.x, point.y, colour ? 13 : 6.5, 0, Math.PI * 2)
+    ctx.fill()
+    if (colour) {
+      ctx.shadowBlur = 0
+      ctx.strokeStyle = rgba(colour, 0.8)
+      ctx.lineWidth = 4
+      ctx.beginPath()
+      ctx.arc(point.x, point.y, 26, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+  })
+  ctx.restore()
 }
 
 const drawHeader = (
@@ -240,6 +310,7 @@ const drawFooter = (
   ctx.textAlign = 'center'
   ctx.textBaseline = 'alphabetic'
   const detail = [
+    scene.path.length > 1 ? `path of ${scene.path.length} picks` : '',
     scene.savedCount ? `${scene.savedCount} saved` : '',
     scene.taste.length ? `leaning ${scene.taste.join(' and ')}` : '',
   ]
@@ -269,6 +340,7 @@ export const drawRecap = (
   ctx.clearRect(0, 0, SHARE_WIDTH, SHARE_HEIGHT)
   ctx.drawImage(prepared.backdrop, 0, 0, SHARE_WIDTH, SHARE_HEIGHT)
   drawStars(ctx, prepared, t)
+  drawPath(ctx, prepared.scene, t)
   drawHeader(ctx, prepared.scene, t)
   TIERS.forEach((tier, index) => drawTile(ctx, prepared.scene, tier, index, t))
   drawFooter(ctx, prepared.scene, t)

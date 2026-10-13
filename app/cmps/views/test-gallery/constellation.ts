@@ -6,6 +6,8 @@ export type ConstellationStar = {
   id: string
   x: number
   y: number
+  // For stars on a sphere: the depth, so distances are measured through 3D.
+  z?: number
   // Half the poster's size on screen, so glows follow the globe's perspective.
   r: number
   // Closer to the viewer is larger.
@@ -49,6 +51,7 @@ export const buildConstellation = (
         const distance = Math.hypot(
           stars[index].x - stars[next].x,
           stars[index].y - stars[next].y,
+          (stars[index].z ?? 0) - (stars[next].z ?? 0),
         )
         if (distance < best[index]) {
           best[index] = distance
