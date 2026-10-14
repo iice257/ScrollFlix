@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '../../../../utils/tw'
+import type { PathScene } from './path-art'
 import type { RecapScene } from './recap-art'
 import { SHARE_CLIP_SECONDS, SHARE_HEIGHT, SHARE_WIDTH } from './share-art'
 import {
@@ -20,6 +21,7 @@ import {
   copyText,
   deliverShare,
   downloadBlob,
+  preparePathArt,
   prepareRecapArt,
   prepareShareArt,
   recordShareClip,
@@ -28,9 +30,11 @@ import {
 } from './share-output'
 
 type ShareSheetProps = {
-  // A film's pick, or the recap of a person's runs. One of the two.
+  // A film's pick, the recap of a person's runs, or the session path. One of
+  // the three.
   input?: ShareInput
   recap?: RecapScene
+  path?: PathScene
   link: string
   onClose: () => void
 }
@@ -44,13 +48,23 @@ const PREVIEW_HOLD_SECONDS = 1.6
 
 // The share sheet: a live preview of the artwork, a choice of image or clip,
 // and Share / Save / Copy link. Everything is made on this device.
-const ShareSheet = ({ input, recap, link, onClose }: ShareSheetProps) => {
-  const subject = recap ? 'My Shuffle Pro run' : (input?.title ?? '')
-  const heading = recap ? 'Share your run' : 'Share this pick'
+const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
+  const subject = path
+    ? 'The way I got here'
+    : recap
+      ? 'My Shuffle Pro run'
+      : (input?.title ?? '')
+  const heading = path
+    ? 'Share your path'
+    : recap
+      ? 'Share your run'
+      : 'Share this pick'
   const fileName = (extension?: string) =>
-    recap
-      ? `scrollflix-my-run.${extension ?? 'png'}`
-      : shareFileName(subject, input?.tier ?? null, extension)
+    path
+      ? `scrollflix-session-path.${extension ?? 'png'}`
+      : recap
+        ? `scrollflix-my-run.${extension ?? 'png'}`
+        : shareFileName(subject, input?.tier ?? null, extension)
   const [format, setFormat] = useState<Format>('image')
   const [phase, setPhase] = useState<Phase>('loading')
   const [progress, setProgress] = useState(0)
@@ -77,11 +91,13 @@ const ShareSheet = ({ input, recap, link, onClose }: ShareSheetProps) => {
   // biome-ignore lint/correctness/useExhaustiveDependencies: the sheet is made for one thing, and closes if that changes
   useEffect(() => {
     let cancelled = false
-    const art = recap
-      ? prepareRecapArt(recap)
-      : input
-        ? prepareShareArt(input)
-        : Promise.reject(new Error('Nothing to share'))
+    const art = path
+      ? preparePathArt(path)
+      : recap
+        ? prepareRecapArt(recap)
+        : input
+          ? prepareShareArt(input)
+          : Promise.reject(new Error('Nothing to share'))
     void art
       .then((prepared) => {
         if (cancelled) return
@@ -405,7 +421,9 @@ const ShareSheet = ({ input, recap, link, onClose }: ShareSheetProps) => {
               onClick={() => void copyLink()}
             >
               <Link2 aria-hidden='true' />
-              {recap ? 'Copy link to ScrollFlix' : 'Copy link to this film'}
+              {recap || path
+                ? 'Copy link to ScrollFlix'
+                : 'Copy link to this film'}
             </button>
 
             <output className='warp-share-note'>

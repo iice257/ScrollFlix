@@ -91,7 +91,7 @@ export type ControllerDeps = {
   onStreak?: (streak: number) => void
   // True while the golden hour is on and Gold is easier to find.
   isGoldenHour?: () => boolean
-  recordRun: (tier: Tier) => void
+  recordRun: (tier: Tier, movieId?: string) => void
   createWhoosh: (tier: Tier) => Whoosh | null
   // A random visible movie that is not the one the globe is already on.
   pickTarget: () => string | null
@@ -667,7 +667,7 @@ export class ShuffleProController {
     if (run.premium && run.targetId) {
       this.presented = { movieId: run.targetId, tier: run.tier }
       this.phase = 'presented'
-      this.deps.recordRun(run.tier)
+      this.deps.recordRun(run.tier, run.targetId)
       this.deps.onCue?.('land', run.tier)
       // Everything that built up now settles behind the card.
       this.beginFade(run, SKY_HOLD_LEVEL, 900)

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { pickWeighted } from '../moods/taste'
+import { sessionPathStore } from '../session-path'
 import { goldenHourStore } from './golden-hour'
 import {
   createWhoosh,
@@ -11,6 +12,7 @@ import {
   ShuffleProController,
 } from './shuffle-pro-controller'
 import {
+  preloadJingle,
   startPresentationMusic,
   stopPresentationMusic,
 } from './shuffle-pro-music'
@@ -80,19 +82,25 @@ export const useShuffleProController = (context: Context) => {
         getFound: () => shuffleProStore.get().found,
         getRepeatFound: () => shuffleProStore.get().repeatFound,
         isGoldenHour: () => goldenHourStore.get(),
-        recordRun: (tier) => shuffleProStore.recordRun(tier),
+        recordRun: (tier, movieId) => {
+          shuffleProStore.recordRun(tier)
+          if (movieId) sessionPathStore.add(movieId, tier)
+        },
         onStreak: (streak) => shuffleProStore.recordStreak(streak),
         createWhoosh,
         prewarmTier: (tier) => {
-          if (tier) startTierPreload(tier)
-          else cancelTierPreload()
+          if (tier) {
+            startTierPreload(tier)
+            preloadJingle(tier)
+          } else cancelTierPreload()
         },
         onCue: (cue, tier) => {
           if (cue === 'peak') {
             playPeakChime(tier)
+          } else if (cue === 'land') {
+            playLandingThud(tier)
             startPresentationMusic(tier)
-          } else if (cue === 'land') playLandingThud(tier)
-          else stopPresentationMusic()
+          } else stopPresentationMusic()
         },
         pickTarget: () =>
           pickOtherMovie(

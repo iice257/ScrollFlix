@@ -24,6 +24,7 @@ import {
   MoveHorizontal,
   Play,
   Pointer,
+  Route,
   Search,
   Share2,
   Shuffle,
@@ -61,6 +62,7 @@ import {
 } from '../../../audio/sound-settings-panel'
 import {
   useAudioUnlockOnGesture,
+  useInterfaceSounds,
   useSoundEffects,
 } from '../../../audio/use-sound-effects'
 import { useMediaQuery } from '../../../hooks/use-media-query'
@@ -110,6 +112,7 @@ import {
   type SearchFacet,
   suggestFacets,
 } from './search-facets'
+import { type PathPoint, sessionPathStore } from './session-path'
 import { shareLink } from './share/share-link'
 import {
   GoldenHourNote,
@@ -135,6 +138,7 @@ import {
 } from './shuffle-pro/shuffle-pro-debug'
 import { isBigSpin, isNearTrigger } from './shuffle-pro/shuffle-pro-logic'
 import type { Tier } from './shuffle-pro/shuffle-pro-logic'
+import { TIER_LABELS } from './shuffle-pro/shuffle-pro-logic'
 import { ShuffleProShelf } from './shuffle-pro/shuffle-pro-shelf'
 import { shuffleProStore } from './shuffle-pro/shuffle-pro-store'
 import { ShuffleSkipButton } from './shuffle-pro/shuffle-skip-button'
@@ -143,6 +147,8 @@ import {
   readReducedMotion,
   useShuffleProController,
 } from './shuffle-pro/use-shuffle-pro'
+import './session-path.css'
+import { stopsFromPath } from './share/path-art'
 import { useTitleTranslation } from './use-title-translation'
 import { WeatherLayer, type WeatherStorm } from './weather-layer'
 
@@ -1588,6 +1594,9 @@ export const TestGalleryApp = () => {
   const [party, partyDispatch] = useReducer(partyReducer, PARTY_OFF)
   // The run recap's share sheet, opened from the Easter egg shelf.
   const [recapOpen, setRecapOpen] = useState(false)
+  // The session path's drawer and its share sheet.
+  const [pathOpen, setPathOpen] = useState(false)
+  const [pathShareOpen, setPathShareOpen] = useState(false)
   const [moodNudge, setMoodNudge] = useState(false)
   const [moodShuffleNonce, setMoodShuffleNonce] = useState(0)
   const recentShufflesRef = useRef<number[]>([])
@@ -1843,8 +1852,14 @@ export const TestGalleryApp = () => {
     shuffleProStore.get,
     shuffleProStore.get,
   )
+  const sessionPath = useSyncExternalStore(
+    sessionPathStore.subscribe,
+    sessionPathStore.get,
+    sessionPathStore.get,
+  )
   const recapScene = useMemo(
     () => ({
+      path: sessionPath.map((point) => point.tier),
       found: Object.fromEntries(
         Object.entries(shuffleProData.found).map(([tier, entry]) => [
           tier,
@@ -1856,8 +1871,12 @@ export const TestGalleryApp = () => {
       savedCount: tasteEntries.length,
       taste: topGenres(tasteProfile),
     }),
-    [shuffleProData, tasteEntries.length, tasteProfile],
+    [shuffleProData, tasteEntries.length, tasteProfile, sessionPath],
   )
+  const pathStops = useMemo(() => {
+    const titles = new Map(movies.map((movie) => [movie.id, movie.title]))
+    return stopsFromPath(sessionPath, (id) => titles.get(id) ?? null)
+  }, [movies, sessionPath])
   const weightOf = useMemo(
     () =>
       tasteWeights
@@ -2006,6 +2025,7 @@ export const TestGalleryApp = () => {
   const filterPresence = useExitPresence(filterOpen)
   const aboutPresence = useExitPresence(aboutOpen)
   const savedPresence = useExitPresence(savedOpen)
+  const pathPresence = useExitPresence(pathOpen)
   const moodsPresence = useExitPresence(moodsOpen)
   const savedEntries = useSyncExternalStore(
     savedStore.subscribe,
@@ -2025,7 +2045,12 @@ export const TestGalleryApp = () => {
   const detailsPresence = useExitPresence(Boolean(detailsMovie), detailsMovie)
 
   useAudioUnlockOnGesture()
-  useSoundEffects({ savedCount: savedEntries.length })
+  useInterfaceSounds()
+  useSoundEffects({
+    savedCount: savedEntries.length,
+    detailsOpen: Boolean(detailsMovieId),
+    trailLength: sessionPath.length,
+  })
   // A normal shuffle ending: a soft thump. Shuffle Pro lands with its own.
   const wasShuffleSpinning = useRef(false)
   useEffect(() => {
@@ -2243,16 +2268,17 @@ export const TestGalleryApp = () => {
 
   // Escape closes the recap's share sheet before anything behind it.
   useEffect(() => {
-    if (!recapOpen) return
+    if (!recapOpen && !pathShareOpen) return
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       event.preventDefault()
       event.stopImmediatePropagation()
       setRecapOpen(false)
+      setPathShareOpen(false)
     }
     window.addEventListener('keydown', handleKeyDown, true)
     return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [recapOpen])
+  }, [recapOpen, pathShareOpen])
 
   // A stale flight must never replay when the same film opens another way.
   useEffect(() => {
@@ -2262,6 +2288,7 @@ export const TestGalleryApp = () => {
   const handleOpenFromGlobe = useCallback(
     (movie: TestMovie, source: 'tap' | 'shuffle') => {
       startPosterFlight(movie)
+      sessionPathStore.add(movie.id)
       if (source === 'shuffle') {
         // In the party game a landing is the player's pick.
         if (party.phase === 'turn') {
@@ -2340,6 +2367,7 @@ export const TestGalleryApp = () => {
       weightOf,
     )
     if (!movieId) return
+    sessionPathStore.add(movieId)
     // Streak rules decide whether this shuffle becomes a Shuffle Pro run.
     const trigger = shuffleProController.noteAction({ type: 'shuffle' })
     setDetailsMovieId(null)
@@ -2437,6 +2465,7 @@ export const TestGalleryApp = () => {
   // streak; five in a row start a Frost run on their own.
   const handleGestureSettled = useCallback(
     (totalRad: number) => {
+      if (totalRad > 0.5) playCue('settle', Math.min(1, totalRad / 6))
       // A real flick that comes to rest is a party player's turn.
       if (party.phase === 'turn' && totalRad > 1.6) {
         const landed = visibleMovies.find((movie) => movie.id === activeMovieId)
@@ -2525,6 +2554,7 @@ export const TestGalleryApp = () => {
         watchMovieId ||
         aboutOpen ||
         savedOpen ||
+        pathOpen ||
         moodsOpen ||
         filterOpen ||
         sortOpen ||
@@ -2543,6 +2573,7 @@ export const TestGalleryApp = () => {
     filterOpen,
     immersive,
     moodsOpen,
+    pathOpen,
     savedOpen,
     shuffleProController,
     sortOpen,
@@ -2577,6 +2608,7 @@ export const TestGalleryApp = () => {
       !watchMovieId &&
       !aboutOpen &&
       !savedOpen &&
+      !pathOpen &&
       !moodsOpen &&
       !filterOpen &&
       !sortOpen
@@ -2592,6 +2624,7 @@ export const TestGalleryApp = () => {
       else if (detailsMovieId) setDetailsMovieId(null)
       else if (aboutOpen) setAboutOpen(false)
       else if (savedOpen) setSavedOpen(false)
+      else if (pathOpen) setPathOpen(false)
       else if (sortOpen) setSortOpen(false)
       else setFilterOpen(false)
     }
@@ -2603,6 +2636,7 @@ export const TestGalleryApp = () => {
     detailsMovieId,
     filterOpen,
     moodsOpen,
+    pathOpen,
     savedOpen,
     sortOpen,
     watchMovieId,
@@ -2622,6 +2656,7 @@ export const TestGalleryApp = () => {
           watchMovieId ||
             aboutOpen ||
             savedOpen ||
+            pathOpen ||
             moodsOpen ||
             party.phase === 'setup' ||
             party.phase === 'final' ||
@@ -2687,6 +2722,7 @@ export const TestGalleryApp = () => {
     promptFullscreenHint,
     moodsOpen,
     party.phase,
+    pathOpen,
     savedOpen,
     initialGalleryReady,
     listMovies.length,
@@ -2802,6 +2838,7 @@ export const TestGalleryApp = () => {
       <ConstellationLayer
         controlRef={menuControlRef}
         ids={savedEntries.map((entry) => entry.id)}
+        path={sessionPath}
         active={
           constellationsOn &&
           mode === 'wall' &&
@@ -3060,6 +3097,25 @@ export const TestGalleryApp = () => {
         }
       />
 
+      {constellationsOn && sessionPath.length >= 2 ? (
+        <button
+          type='button'
+          className={cn(
+            'warp-saved-button warp-path-button',
+            pathOpen && 'is-active',
+          )}
+          aria-label={`Session path, ${sessionPath.length} films`}
+          aria-expanded={pathOpen}
+          onClick={() => {
+            setPathOpen((isOpen) => !isOpen)
+            setSavedOpen(false)
+            setAboutOpen(false)
+            setFilterOpen(false)
+          }}
+        >
+          <Route aria-hidden='true' />
+        </button>
+      ) : null}
       <button
         type='button'
         className={cn('warp-saved-button', savedOpen && 'is-active')}
@@ -3071,6 +3127,7 @@ export const TestGalleryApp = () => {
         aria-expanded={savedOpen}
         onClick={() => {
           setSavedOpen((isOpen) => !isOpen)
+          setPathOpen(false)
           setAboutOpen(false)
           setFilterOpen(false)
         }}
@@ -3090,6 +3147,7 @@ export const TestGalleryApp = () => {
         onClick={() => {
           setAboutOpen((isOpen) => !isOpen)
           setSavedOpen(false)
+          setPathOpen(false)
           setFilterOpen(false)
         }}
       >
@@ -3113,6 +3171,38 @@ export const TestGalleryApp = () => {
             onClose={() => setSavedOpen(false)}
             onOpenMovie={handleOpenMovie}
             onRemove={(movie) => savedStore.remove(movie.id)}
+          />
+        </>
+      ) : null}
+
+      {pathPresence.isPresent ? (
+        <>
+          <button
+            type='button'
+            className='warp-drawer-scrim'
+            data-motion={pathPresence.motionPhase}
+            aria-label='Close session path'
+            tabIndex={-1}
+            onClick={() => setPathOpen(false)}
+          />
+          <PathDrawer
+            motionPhase={pathPresence.motionPhase}
+            path={sessionPath}
+            movies={movies}
+            currentId={activeMovieId}
+            onClose={() => setPathOpen(false)}
+            onRetrace={(movie) => {
+              setPathOpen(false)
+              handleOpenMovie(movie)
+            }}
+            onShare={() => {
+              setPathOpen(false)
+              setPathShareOpen(true)
+            }}
+            onClear={() => {
+              sessionPathStore.clear()
+              setPathOpen(false)
+            }}
           />
         </>
       ) : null}
@@ -3151,6 +3241,19 @@ export const TestGalleryApp = () => {
                 recap={recapScene}
                 link={window.location.origin}
                 onClose={() => setRecapOpen(false)}
+              />
+            </Suspense>,
+            shellRef.current ?? document.body,
+          )
+        : null}
+
+      {pathShareOpen
+        ? createPortal(
+            <Suspense fallback={null}>
+              <ShareSheet
+                path={{ stops: pathStops }}
+                link={window.location.origin}
+                onClose={() => setPathShareOpen(false)}
               />
             </Suspense>,
             shellRef.current ?? document.body,
@@ -5023,7 +5126,7 @@ const ConstellationSetting = () => {
   )
   return (
     <fieldset className='warp-about-setting'>
-      <legend>Constellations</legend>
+      <legend>Session path</legend>
       <div className='warp-theme-switch'>
         {([true, false] as const).map((option) => (
           <button
@@ -5352,6 +5455,130 @@ const SavedDrawer = ({
     )}
   </aside>
 )
+
+type PathDrawerProps = {
+  motionPhase: MotionPhase
+  path: readonly PathPoint[]
+  movies: TestMovie[]
+  // The film the globe is on, marked as where you are.
+  currentId: string | null
+  onClose: () => void
+  onRetrace: (movie: TestMovie) => void
+  onShare: () => void
+  onClear: () => void
+}
+
+// The session path as a timeline: where this visit has been, oldest first, so
+// any step can be walked back to. Rises from its button like the Saved drawer.
+const PathDrawer = ({
+  motionPhase,
+  path,
+  movies,
+  currentId,
+  onClose,
+  onRetrace,
+  onShare,
+  onClear,
+}: PathDrawerProps) => {
+  const byId = useMemo(
+    () => new Map(movies.map((movie) => [movie.id, movie])),
+    [movies],
+  )
+  const steps = path.flatMap((point, index) => {
+    const movie = byId.get(point.id)
+    return movie ? [{ point, movie, index }] : []
+  })
+  const showOnGlobe = useSyncExternalStore(
+    constellationSetting.subscribe,
+    constellationSetting.get,
+    constellationSetting.get,
+  )
+  const listRef = useRef<HTMLOListElement | null>(null)
+  // Open on the newest step.
+  useEffect(() => {
+    const list = listRef.current
+    if (list) list.scrollTop = list.scrollHeight
+  }, [])
+
+  return (
+    <aside
+      className='warp-about-drawer warp-saved-drawer warp-path-drawer'
+      data-motion={motionPhase}
+      aria-label='Session path'
+    >
+      <header className='warp-about-drawer-heading'>
+        <div>
+          <h2>Session path</h2>
+          <p>
+            {steps.length} {steps.length === 1 ? 'film' : 'films'} this visit
+          </p>
+        </div>
+        <button
+          type='button'
+          className='warp-about-drawer-close'
+          aria-label='Close session path'
+          onClick={onClose}
+        >
+          <X aria-hidden='true' />
+        </button>
+      </header>
+      <button
+        type='button'
+        role='switch'
+        aria-checked={showOnGlobe}
+        className='warp-path-toggle'
+        onClick={() => constellationSetting.set(!showOnGlobe)}
+      >
+        <span>Show on globe</span>
+        <i className='warp-path-switch' />
+      </button>
+      <ol className='warp-path-list' ref={listRef}>
+        {steps.map(({ point, movie, index }, place) => (
+          <li
+            key={`${point.id}-${index}`}
+            data-tier={point.tier ?? undefined}
+            data-here={
+              place === steps.length - 1 && movie.id === currentId
+                ? 'true'
+                : undefined
+            }
+          >
+            <i className='warp-path-dot' />
+            <button
+              type='button'
+              className='warp-saved-row'
+              onClick={() => onRetrace(movie)}
+            >
+              <span className='warp-saved-thumb'>
+                <MoviePoster movie={movie} size='list' />
+              </span>
+              <span className='warp-saved-copy'>
+                <strong>{movie.title}</strong>
+                <small>
+                  {point.tier
+                    ? `Shuffle Pro · ${TIER_LABELS[point.tier]}`
+                    : [movie.year, movie.rating ? `★ ${movie.rating}` : null]
+                        .filter(Boolean)
+                        .join(' · ')}
+                  {place === steps.length - 1 ? ' · latest' : ''}
+                </small>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ol>
+      <div className='warp-path-actions'>
+        <button type='button' className='warp-path-share' onClick={onShare}>
+          <Share2 aria-hidden='true' />
+          Share path
+        </button>
+        <button type='button' className='warp-path-clear' onClick={onClear}>
+          Clear
+        </button>
+      </div>
+    </aside>
+  )
+}
 
 const WATCH_LINKS = [
   { label: 'Netflix', meta: 'Subscription' },

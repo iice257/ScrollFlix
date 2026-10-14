@@ -88,12 +88,27 @@ export type PosterRect = {
 
 export type PosterPoint = PosterRect & { id: string; depth: number }
 
+// A poster's centre on the sphere, in the globe's own units (front is +z).
+export type PosterWorld = { id: string; x: number; y: number; z: number }
+
+// Turns a point in those units into viewport pixels (null if behind the eye).
+export type PosterProjector = (
+  x: number,
+  y: number,
+  z: number,
+) => [number, number] | null
+
 export type InfiniteMovieMenuControl = {
   // Where a film's poster is on screen right now, or null if it isn't shown.
   getPosterRect: (itemId: string) => PosterRect | null
   // Where each of these films' posters is on screen, for those facing the
   // viewer. Cheap: one pass over the globe.
   getPosterPoints: (ids: ReadonlySet<string>) => PosterPoint[]
+  // Where each of these films sits on the sphere right now, on either side of
+  // it, and a projector to put any point of the sphere on screen. Used to draw
+  // paths that run around the globe.
+  getPosterWorld: (ids: ReadonlySet<string>) => PosterWorld[]
+  getProjector: () => PosterProjector
   // Called after every frame the globe actually draws (it only draws when
   // something moved).
   setOnFrame: (listener: (() => void) | null) => void
@@ -2107,6 +2122,44 @@ class InfiniteMovieEngine<T> {
     return [...found.values()]
   }
 
+  getPosterWorld(ids: ReadonlySet<string>): PosterWorld[] {
+    const found = new Map<string, PosterWorld & { index: number }>()
+    this.instanceMatrices.forEach((matrix, index) => {
+      const item = this.items[index % Math.max(1, this.items.length)]
+      if (!item || !ids.has(item.id)) return
+      const previous = found.get(item.id)
+      // A film that appears more than once keeps its first place.
+      if (previous && previous.index <= index) return
+      found.set(item.id, {
+        id: item.id,
+        x: matrix[12],
+        y: matrix[13],
+        z: matrix[14],
+        index,
+      })
+    })
+    return [...found.values()].map(({ id, x, y, z }) => ({ id, x, y, z }))
+  }
+
+  getProjector(): PosterProjector {
+    const rect = this.canvas.getBoundingClientRect()
+    const mvp = multiplyMat4(
+      identityMat4(),
+      this.projectionMatrix,
+      this.viewMatrix,
+    )
+    return (x, y, z) => {
+      const clipX = mvp[0] * x + mvp[4] * y + mvp[8] * z + mvp[12]
+      const clipY = mvp[1] * x + mvp[5] * y + mvp[9] * z + mvp[13]
+      const clipW = mvp[3] * x + mvp[7] * y + mvp[11] * z + mvp[15]
+      if (clipW <= 0.0001) return null
+      return [
+        rect.left + ((clipX / clipW + 1) / 2) * rect.width,
+        rect.top + ((1 - clipY / clipW) / 2) * rect.height,
+      ]
+    }
+  }
+
   // Resolves a click against a snapshot; same snapshot and point, same poster.
   pickFromSnapshot(
     snapshot: PickSnapshot,
@@ -3464,6 +3517,8 @@ export const InfiniteMovieMenu = <T,>({
       getPosterRect: (itemId) =>
         engineRef.current?.getPosterRect(itemId) ?? null,
       getPosterPoints: (ids) => engineRef.current?.getPosterPoints(ids) ?? [],
+      getPosterWorld: (ids) => engineRef.current?.getPosterWorld(ids) ?? [],
+      getProjector: () => engineRef.current?.getProjector() ?? (() => null),
       setOnFrame: (listener) => {
         frameListenerRef.current = listener
       },
