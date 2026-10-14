@@ -104,8 +104,6 @@
 /* ---------------------------------------------------------------- stage */
 
 .mood-stage {
-  --mx: 0;
-  --my: 0;
   display: flex;
   min-height: 0;
   gap: 10px;
@@ -182,23 +180,12 @@
   opacity: 0.6;
 }
 
-/* Depth layers lean with the pointer, the nearest the most. */
+/* Depth layers lean with the pointer, the nearest the most. The offsets are
+   set on the layers from mood-page.tsx (see mood-lean.ts for the reach). */
 .mood-scene .ms-far,
 .mood-scene .ms-mid,
 .mood-scene .ms-near {
   transition: translate 260ms ease-out;
-}
-
-.mood-scene .ms-far {
-  translate: calc(var(--mx) * -6px) calc(var(--my) * -4px);
-}
-
-.mood-scene .ms-mid {
-  translate: calc(var(--mx) * -14px) calc(var(--my) * -9px);
-}
-
-.mood-scene .ms-near {
-  translate: calc(var(--mx) * -26px) calc(var(--my) * -16px);
 }
 
 .mood-tick {
@@ -507,6 +494,11 @@
     flex-grow: 0;
   }
 
+  /* Worlds scrolled out of view hold still, like the closed ones on desktop. */
+  .mood-panel[data-offscreen="true"] .mood-scene * {
+    animation-play-state: paused;
+  }
+
   .mood-foot {
     flex-direction: column;
     align-items: stretch;
@@ -642,7 +634,6 @@
 }
 
 .mood-scene .ms-iris {
-  translate: calc(var(--mx) * 22px) calc(var(--my) * 12px);
   transition: translate 140ms ease-out;
 }
 

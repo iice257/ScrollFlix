@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { type ReactNode, memo } from 'react'
 import type { MoodFilter } from './mood-worlds'
 
 // One illustrated scene per mood, drawn in SVG so it stays sharp and weighs
@@ -862,7 +862,10 @@ const SCENES: Record<MoodFilter, () => ReactNode> = {
   highRated: GreatScene,
 }
 
-export const MoodScene = ({ id }: { id: MoodFilter }) => {
+// A scene is fixed for its id. The page re-renders on every hover to open the
+// panel under the pointer, and without this each of those re-built the SVG of
+// all six scenes (several hundred nodes) for nothing.
+export const MoodScene = memo(({ id }: { id: MoodFilter }) => {
   const Scene = SCENES[id]
   return <Scene />
-}
+})

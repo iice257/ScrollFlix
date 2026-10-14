@@ -144,4 +144,55 @@ test.describe('Gallery user flows', () => {
     await expect(all).toHaveAttribute('aria-pressed', 'true')
     await expect(first).toHaveAttribute('aria-pressed', 'false')
   })
+  test('the mood scenes lean with the pointer', async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) <= 900, 'touch has no lean')
+
+    await page
+      .getByRole('button', { name: /pick your mood/i })
+      .first()
+      .click()
+    const stage = page.locator('.mood-stage')
+    await expect(stage).toBeVisible()
+    const box = await stage.boundingBox()
+    if (!box) throw new Error('mood stage has no box')
+
+    // Pointer in the top-left, then the bottom-right: the near layer of the
+    // open scene moves against it, and no custom property is left on the stage.
+    const near = page.locator('.mood-panel.is-open .ms-near').first()
+    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.2)
+    await expect
+      .poll(() => near.evaluate((el) => (el as SVGElement).style.translate))
+      .not.toBe('')
+    const topLeft = await near.evaluate(
+      (el) => (el as SVGElement).style.translate,
+    )
+    await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.8)
+    await expect
+      .poll(() => near.evaluate((el) => (el as SVGElement).style.translate))
+      .not.toBe(topLeft)
+    expect(await stage.evaluate((el) => el.getAttribute('style'))).toBeNull()
+  })
+
+  test('on a phone only the worlds in view keep animating', async ({
+    page,
+  }) => {
+    test.skip((page.viewportSize()?.width ?? 0) > 900, 'desktop shows them all')
+
+    await page
+      .getByRole('button', { name: /pick your mood/i })
+      .first()
+      .click()
+    const panels = page.locator('.mood-panel')
+    await expect(panels).toHaveCount(6)
+
+    await expect(panels.first()).toHaveAttribute('data-offscreen', 'false')
+    await expect(panels.last()).toHaveAttribute('data-offscreen', 'true')
+    await expect(panels.last().locator('.mood-scene').first()).toBeAttached()
+    const paused = await panels
+      .last()
+      .locator('.mood-scene *')
+      .first()
+      .evaluate((el) => getComputedStyle(el).animationPlayState)
+    expect(paused).toBe('paused')
+  })
 })

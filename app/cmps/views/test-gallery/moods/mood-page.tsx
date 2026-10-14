@@ -12,6 +12,7 @@ import { playCue } from '../../../../audio/sound-engine'
 import { cn } from '../../../../utils/tw'
 import './mood-page.css'
 import { MoodScene } from './mood-art'
+import { LEAN_LAYERS, leanTranslate, stagePosition } from './mood-lean'
 import {
   MOOD_TIMES,
   MOOD_WORLDS,
@@ -53,20 +54,69 @@ const MoodPage = ({
   )
   const stageRef = useRef<HTMLDivElement | null>(null)
   const frameRef = useRef(0)
+  const rectRef = useRef<DOMRect | null>(null)
+  const layersRef = useRef<
+    Array<{ el: SVGElement; reachX: number; reachY: number }>
+  >([])
+
+  // The stage is measured when it changes size and when the pointer arrives,
+  // not on every pointer frame, and the depth layers are found once.
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    const measure = () => {
+      rectRef.current = stage.getBoundingClientRect()
+    }
+    measure()
+    layersRef.current = LEAN_LAYERS.flatMap(({ selector, reachX, reachY }) =>
+      Array.from(stage.querySelectorAll<SVGElement>(selector), (el) => ({
+        el,
+        reachX,
+        reachY,
+      })),
+    )
+    const observer = new ResizeObserver(measure)
+    observer.observe(stage)
+    return () => observer.disconnect()
+  }, [])
+
+  // On a phone the worlds sit in a scrolling strip: only the ones in view
+  // keep animating (see mood-page.css).
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const panel = entry.target as HTMLElement
+          panel.dataset.offscreen = entry.isIntersecting ? 'false' : 'true'
+        }
+      },
+      { root: stage },
+    )
+    for (const panel of stage.querySelectorAll('.mood-panel')) {
+      observer.observe(panel)
+    }
+    return () => observer.disconnect()
+  }, [])
 
   // The scenes lean toward the pointer a little; each depth layer more.
   const handlePointerMove = useCallback((event: ReactPointerEvent) => {
-    const stage = stageRef.current
-    if (!stage || event.pointerType === 'touch') return
+    if (event.pointerType === 'touch') return
     window.cancelAnimationFrame(frameRef.current)
     const { clientX, clientY } = event
     frameRef.current = window.requestAnimationFrame(() => {
-      const rect = stage.getBoundingClientRect()
-      const x = ((clientX - rect.left) / rect.width - 0.5) * 2
-      const y = ((clientY - rect.top) / rect.height - 0.5) * 2
-      stage.style.setProperty('--mx', x.toFixed(3))
-      stage.style.setProperty('--my', y.toFixed(3))
+      const rect = rectRef.current
+      if (!rect) return
+      const x = stagePosition(clientX, rect.left, rect.width)
+      const y = stagePosition(clientY, rect.top, rect.height)
+      for (const { el, reachX, reachY } of layersRef.current) {
+        el.style.translate = leanTranslate(reachX, reachY, x, y)
+      }
     })
+  }, [])
+  const handlePointerEnter = useCallback(() => {
+    rectRef.current = stageRef.current?.getBoundingClientRect() ?? null
   }, [])
   useEffect(() => () => window.cancelAnimationFrame(frameRef.current), [])
 
@@ -108,6 +158,7 @@ const MoodPage = ({
       <div
         ref={stageRef}
         className='mood-stage'
+        onPointerEnter={handlePointerEnter}
         onPointerMove={handlePointerMove}
       >
         {MOOD_WORLDS.map((world, index) => {
