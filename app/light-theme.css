@@ -1330,15 +1330,15 @@
 }
 
 .warp-shell[data-theme="light"] .warp-saved-button {
-  border: 1px solid rgb(33 26 16 / 0.2);
-  color: rgb(238 231 216);
+  border: 1px solid rgb(255 252 245 / 0.2);
+  color: rgb(42 35 25);
   box-shadow: 0 14px 44px rgb(110 78 34 / 0.143);
 }
 
 .warp-shell[data-theme="light"] .warp-saved-button:hover,
 .warp-shell[data-theme="light"] .warp-saved-button:focus-visible,
 .warp-shell[data-theme="light"] .warp-saved-button.is-active {
-  background: rgb(33 26 16);
+  background: rgb(255 252 245);
 }
 
 .warp-shell[data-theme="light"] .warp-saved-count {
@@ -1455,9 +1455,10 @@
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
 }
 
-/* Keep interactive controls distinct against the warm light surface. */
-.warp-shell[data-theme="light"] .warp-mode-toggle button,
-.warp-shell[data-theme="light"] .warp-main-nav button,
+/* Keep interactive controls distinct against the warm light surface: a warm
+   ink hairline, not a hard black outline. */
+.warp-shell[data-theme="light"] .warp-mode-toggle,
+.warp-shell[data-theme="light"] .warp-main-nav,
 .warp-shell[data-theme="light"] .warp-filter-button,
 .warp-shell[data-theme="light"] .warp-filter-clear,
 .warp-shell[data-theme="light"] .warp-filters-clear,
@@ -1475,5 +1476,5 @@
 .warp-shell[data-theme="light"] .warp-immersive-exit,
 .warp-shell[data-theme="light"] .warp-filter-panel button,
 .warp-shell[data-theme="light"] .warp-fs-chip {
-  border: 1px solid rgb(0 0 0 / 0.8);
+  border: 1px solid rgb(33 26 16 / 0.34);
 }

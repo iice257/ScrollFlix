@@ -38,7 +38,7 @@ const parseHex = (hex) => {
 // The dock's pills are already light-on-dark in dark mode, so they keep their
 // lightness and only pick up the warm tint instead of being inverted.
 const KEEP_LIGHTNESS =
-  /warp-(mode-toggle|main-nav|filter-button|filter-actions|filter-count|sort-button|info-button|title-card|shuffle-button|grid-icon|list-icon)/
+  /warp-(mode-toggle|main-nav|filter-button|filter-actions|filter-count|sort-button|info-button|saved-button|title-card|shuffle-button|grid-icon|list-icon)/
 
 // Map one colour; `shadow` keeps darkness for shadows instead of inverting,
 // and `keep` tints without inverting.
@@ -197,9 +197,10 @@ const stage = `
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
 }
 
-/* Keep interactive controls distinct against the warm light surface. */
-.warp-shell${THEME} .warp-mode-toggle button,
-.warp-shell${THEME} .warp-main-nav button,
+/* Keep interactive controls distinct against the warm light surface: a warm
+   ink hairline, not a hard black outline. */
+.warp-shell${THEME} .warp-mode-toggle,
+.warp-shell${THEME} .warp-main-nav,
 .warp-shell${THEME} .warp-filter-button,
 .warp-shell${THEME} .warp-filter-clear,
 .warp-shell${THEME} .warp-filters-clear,
@@ -217,7 +218,7 @@ const stage = `
 .warp-shell${THEME} .warp-immersive-exit,
 .warp-shell${THEME} .warp-filter-panel button,
 .warp-shell${THEME} .warp-fs-chip {
-  border: 1px solid rgb(0 0 0 / 0.8);
+  border: 1px solid rgb(33 26 16 / 0.34);
 }
 `
 
