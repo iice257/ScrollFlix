@@ -13,6 +13,8 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   /* Run serially: parallel WebGL-heavy workers starve the dev server and make tests flaky, with no speed gain. */
   workers: 1,
+  /* The globe renders in software on CI and starves the page, so views like the index can take longer than 5 s to appear. */
+  expect: { timeout: 15_000 },
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: 'html',
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
