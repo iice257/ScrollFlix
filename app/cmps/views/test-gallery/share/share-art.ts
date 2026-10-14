@@ -121,12 +121,38 @@ export type ShareScene = {
   foundTiers?: Tier[]
 }
 
-const POSTER_W = 540
-const POSTER_H = 810
-const POSTER_X = (SHARE_WIDTH - POSTER_W) / 2
-const POSTER_Y = 104
-const POSTER_CX = SHARE_WIDTH / 2
-const POSTER_CY = POSTER_Y + POSTER_H / 2
+// Where the poster and the text under it sit. An ordinary pick has no rarity
+// plate, so its poster is larger and its title closes the gap; a Shuffle Pro
+// pick keeps room for the plate (label, gem and name, pips) between them.
+type PosterLayout = {
+  w: number
+  h: number
+  x: number
+  y: number
+  cx: number
+  cy: number
+  // Baseline of the rarity plate's label, and of the title.
+  plateY: number
+  titleY: number
+}
+
+const makeLayout = (w: number, y: number, premium: boolean): PosterLayout => {
+  const h = (w * 3) / 2
+  const bottom = y + h
+  return {
+    w,
+    h,
+    x: (SHARE_WIDTH - w) / 2,
+    y,
+    cx: SHARE_WIDTH / 2,
+    cy: y + h / 2,
+    plateY: bottom + 70,
+    titleY: bottom + (premium ? 268 : 128),
+  }
+}
+
+const PLAIN_LAYOUT = makeLayout(600, 100, false)
+const PREMIUM_LAYOUT = makeLayout(520, 92, true)
 const FRAME = 14
 const POSTER_RADIUS = 24
 
@@ -153,6 +179,7 @@ export type PreparedShare = {
   scene: ShareScene
   palette: Palette
   premium: boolean
+  layout: PosterLayout
   backdrop: HTMLCanvasElement
   framedPoster: HTMLCanvasElement
   glow: HTMLCanvasElement
@@ -331,8 +358,9 @@ const drawFramedPoster = (
   scene: ShareScene,
   palette: Palette,
   premium: boolean,
+  layout: PosterLayout,
 ) => {
-  const canvas = makeCanvas(POSTER_W + GLOW_PAD * 2, POSTER_H + GLOW_PAD * 2)
+  const canvas = makeCanvas(layout.w + GLOW_PAD * 2, layout.h + GLOW_PAD * 2)
   const ctx = context2d(canvas)
   const x = GLOW_PAD
   const y = GLOW_PAD
@@ -345,8 +373,8 @@ const drawFramedPoster = (
     ctx,
     x - FRAME,
     y - FRAME,
-    POSTER_W + FRAME * 2,
-    POSTER_H + FRAME * 2,
+    layout.w + FRAME * 2,
+    layout.h + FRAME * 2,
     36,
   )
   ctx.fillStyle = rgba(palette.deep, 1)
@@ -354,30 +382,30 @@ const drawFramedPoster = (
   ctx.restore()
 
   ctx.save()
-  roundedRect(ctx, x, y, POSTER_W, POSTER_H, POSTER_RADIUS)
+  roundedRect(ctx, x, y, layout.w, layout.h, POSTER_RADIUS)
   ctx.clip()
   if (scene.poster) {
-    drawCover(ctx, scene.poster, x, y, POSTER_W, POSTER_H)
+    drawCover(ctx, scene.poster, x, y, layout.w, layout.h)
   } else {
     // No usable poster (blocked by CORS): the path's colours stand in.
     const placeholder = ctx.createLinearGradient(
       x,
       y,
-      x + POSTER_W,
-      y + POSTER_H,
+      x + layout.w,
+      y + layout.h,
     )
     placeholder.addColorStop(0, rgba(palette.c2, 1))
     placeholder.addColorStop(1, rgba(palette.deep, 1))
     ctx.fillStyle = placeholder
-    ctx.fillRect(x, y, POSTER_W, POSTER_H)
+    ctx.fillRect(x, y, layout.w, layout.h)
   }
   // A faint top-light on the artwork, so it sits in the frame.
-  const light = ctx.createLinearGradient(x, y, x, y + POSTER_H)
+  const light = ctx.createLinearGradient(x, y, x, y + layout.h)
   light.addColorStop(0, 'rgba(255, 255, 255, 0.14)')
   light.addColorStop(0.25, 'rgba(255, 255, 255, 0)')
   light.addColorStop(1, 'rgba(0, 0, 0, 0.22)')
   ctx.fillStyle = light
-  ctx.fillRect(x, y, POSTER_W, POSTER_H)
+  ctx.fillRect(x, y, layout.w, layout.h)
   ctx.restore()
   return canvas
 }
@@ -385,6 +413,7 @@ const drawFramedPoster = (
 export const prepareShare = (scene: ShareScene): PreparedShare => {
   const tier = scene.tier
   const premium = tier !== null
+  const layout = premium ? PREMIUM_LAYOUT : PLAIN_LAYOUT
   const palette: Palette = tier ? PALETTES[tier] : STANDARD_PALETTE
   const seed = hashString(`${scene.title}${tier ?? 'plain'}`)
   const random = seededRandom(seed)
@@ -411,8 +440,9 @@ export const prepareShare = (scene: ShareScene): PreparedShare => {
     scene,
     palette,
     premium,
+    layout,
     backdrop: drawBackdrop(scene, palette, premium, seed),
-    framedPoster: drawFramedPoster(scene, palette, premium),
+    framedPoster: drawFramedPoster(scene, palette, premium, layout),
     glow: makeGlowSprite(palette.c1),
     grain: makeGrain(),
     stars,
@@ -476,14 +506,14 @@ const drawRays = (
   p: PreparedShare,
   t: number,
 ) => {
-  const { palette } = p
+  const { palette, layout } = p
   const strength = ease(t, 0.1, 1.6)
   if (strength <= 0) return
   const wedges = 18
   const reach = 1100
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
-  ctx.translate(POSTER_CX, POSTER_CY)
+  ctx.translate(layout.cx, layout.cy)
   ctx.rotate(t * 0.045)
   const gradient = ctx.createRadialGradient(0, 0, 80, 0, 0, reach)
   gradient.addColorStop(0, rgba(palette.c1, 0.3 * strength))
@@ -512,17 +542,18 @@ const drawSparks = (
   half: 'back' | 'front',
 ) => {
   if (!p.sparks.length) return
+  const { layout } = p
   const intro = ease(t, 0.2, 1.4)
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
-  ctx.translate(POSTER_CX, POSTER_CY + 40)
+  ctx.translate(layout.cx, layout.cy + 40)
   ctx.rotate(-0.2)
   for (const spark of p.sparks) {
     const angle = spark.angle + t * spark.speed
     const depth = Math.sin(angle)
     const isFront = depth > 0
     if (isFront !== (half === 'front')) continue
-    const rx = (POSTER_W / 2 + 150) * spark.radius
+    const rx = (layout.w / 2 + 150) * spark.radius
     const ry = 170 * spark.radius
     const x = Math.cos(angle) * rx
     const y = depth * ry + spark.lift
@@ -579,40 +610,40 @@ export const drawGemPath = (
 }
 
 const drawCardBack = (ctx: CanvasRenderingContext2D, p: PreparedShare) => {
-  const { palette, scene } = p
-  const x = POSTER_X
-  const y = POSTER_Y
+  const { palette, scene, layout } = p
+  const x = layout.x
+  const y = layout.y
   ctx.save()
-  roundedRect(ctx, x, y, POSTER_W, POSTER_H, POSTER_RADIUS)
+  roundedRect(ctx, x, y, layout.w, layout.h, POSTER_RADIUS)
   ctx.clip()
-  const back = ctx.createLinearGradient(x, y, x + POSTER_W, y + POSTER_H)
+  const back = ctx.createLinearGradient(x, y, x + layout.w, y + layout.h)
   back.addColorStop(0, '#12161b')
   back.addColorStop(1, '#05070a')
   ctx.fillStyle = back
-  ctx.fillRect(x, y, POSTER_W, POSTER_H)
+  ctx.fillRect(x, y, layout.w, layout.h)
   const glow = ctx.createRadialGradient(
-    POSTER_CX,
-    POSTER_CY,
+    layout.cx,
+    layout.cy,
     0,
-    POSTER_CX,
-    POSTER_CY,
+    layout.cx,
+    layout.cy,
     380,
   )
   glow.addColorStop(0, rgba(palette.c2, 0.5))
   glow.addColorStop(1, rgba(palette.c2, 0))
   ctx.fillStyle = glow
-  ctx.fillRect(x, y, POSTER_W, POSTER_H)
+  ctx.fillRect(x, y, layout.w, layout.h)
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)'
   ctx.lineWidth = 2
-  for (let d = -POSTER_H; d < POSTER_W; d += 18) {
+  for (let d = -layout.h; d < layout.w; d += 18) {
     ctx.beginPath()
-    ctx.moveTo(x + d, y + POSTER_H)
-    ctx.lineTo(x + d + POSTER_H, y)
+    ctx.moveTo(x + d, y + layout.h)
+    ctx.lineTo(x + d + layout.h, y)
     ctx.stroke()
   }
   ctx.restore()
   if (scene.tier) {
-    drawGemPath(ctx, scene.tier, POSTER_CX - 90, POSTER_CY - 90, 180)
+    drawGemPath(ctx, scene.tier, layout.cx - 90, layout.cy - 90, 180)
   }
 }
 
@@ -622,22 +653,22 @@ const drawFoil = (
   p: PreparedShare,
   t: number,
 ) => {
-  const { palette } = p
-  const x = POSTER_X
-  const y = POSTER_Y
+  const { palette, layout } = p
+  const x = layout.x
+  const y = layout.y
   const slide = (t * 0.12) % 1.6
   const sweep = ease(t, 1.5, 2.6)
   ctx.save()
-  roundedRect(ctx, x, y, POSTER_W, POSTER_H, POSTER_RADIUS)
+  roundedRect(ctx, x, y, layout.w, layout.h, POSTER_RADIUS)
   ctx.clip()
   ctx.globalCompositeOperation = 'color-dodge'
-  const span = POSTER_W + POSTER_H
-  const start = x - POSTER_H + (slide - 0.3) * span
+  const span = layout.w + layout.h
+  const start = x - layout.h + (slide - 0.3) * span
   const gradient = ctx.createLinearGradient(
     start,
     y,
     start + span * 0.6,
-    y + POSTER_H,
+    y + layout.h,
   )
   gradient.addColorStop(0, rgba(palette.c2, 0))
   gradient.addColorStop(0.3, rgba(palette.c1, 0.7))
@@ -646,25 +677,25 @@ const drawFoil = (
   gradient.addColorStop(1, rgba(palette.c2, 0))
   ctx.globalAlpha = 0.34 * sweep
   ctx.fillStyle = gradient
-  ctx.fillRect(x, y, POSTER_W, POSTER_H)
+  ctx.fillRect(x, y, layout.w, layout.h)
 
   // A single bright pass across the poster as the card lands.
   const pass = clamp01((t - 1.55) / 0.9)
   if (pass > 0 && pass < 1) {
     ctx.globalCompositeOperation = 'lighter'
-    const px = x - 200 + pass * (POSTER_W + 400)
+    const px = x - 200 + pass * (layout.w + 400)
     const band = ctx.createLinearGradient(
       px - 90,
       y,
       px + 90,
-      y + POSTER_H * 0.35,
+      y + layout.h * 0.35,
     )
     band.addColorStop(0, 'rgba(255, 255, 255, 0)')
     band.addColorStop(0.5, 'rgba(255, 255, 255, 0.4)')
     band.addColorStop(1, 'rgba(255, 255, 255, 0)')
     ctx.globalAlpha = 1
     ctx.fillStyle = band
-    ctx.fillRect(x, y, POSTER_W, POSTER_H)
+    ctx.fillRect(x, y, layout.w, layout.h)
   }
   ctx.restore()
 }
@@ -676,11 +707,11 @@ const drawBorder = (
   p: PreparedShare,
   t: number,
 ) => {
-  const { palette, scene } = p
-  const x = POSTER_X - FRAME
-  const y = POSTER_Y - FRAME
-  const w = POSTER_W + FRAME * 2
-  const h = POSTER_H + FRAME * 2
+  const { palette, scene, layout } = p
+  const x = layout.x - FRAME
+  const y = layout.y - FRAME
+  const w = layout.w + FRAME * 2
+  const h = layout.h + FRAME * 2
   const perimeter = 2 * (w + h) - (8 - 2 * Math.PI) * 36
   const draw = ease(t, 1.25, 2.35)
   const width = scene.tier === 'gold' ? 7 : 5
@@ -771,10 +802,10 @@ const drawFlare = (
   t: number,
 ) => {
   if (!p.premium) return
-  const { palette } = p
+  const { palette, layout } = p
   const alpha = ease(t, 1.5, 2.4) * (0.55 + 0.25 * Math.sin(t * 1.3))
   if (alpha <= 0) return
-  const y = POSTER_CY + Math.sin(t * 0.5) * 30
+  const y = layout.cy + Math.sin(t * 0.5) * 30
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
   const streak = ctx.createLinearGradient(40, 0, SHARE_WIDTH - 40, 0)
@@ -815,7 +846,7 @@ const drawText = (
   p: PreparedShare,
   t: number,
 ) => {
-  const { palette, scene, premium } = p
+  const { palette, scene, premium, layout } = p
   const tier = scene.tier
   const cx = SHARE_WIDTH / 2
   ctx.save()
@@ -832,7 +863,11 @@ const drawText = (
     setTracking(ctx, 8)
     ctx.font = `850 24px ${FONT}`
     ctx.fillStyle = rgba(palette.c1, 1)
-    ctx.fillText(`SHUFFLE PRO${tier === 'jade' ? ' MAX' : ''}`, cx, 984)
+    ctx.fillText(
+      `SHUFFLE PRO${tier === 'jade' ? ' MAX' : ''}`,
+      cx,
+      layout.plateY,
+    )
 
     setTracking(ctx, 14)
     ctx.font = `950 70px ${FONT}`
@@ -841,7 +876,7 @@ const drawText = (
     const gemSize = 62
     const total = gemSize + 26 + nameWidth
     const left = cx - total / 2
-    drawGemPath(ctx, tier, left, 1003, gemSize)
+    drawGemPath(ctx, tier, left, layout.plateY + 19, gemSize)
     ctx.textAlign = 'left'
     const shine = ((t * 0.18) % 1.6) - 0.3
     const foil = ctx.createLinearGradient(left, 0, left + total, 0)
@@ -851,7 +886,7 @@ const drawText = (
     foil.addColorStop(clamp01(shine + 0.2), rgba(palette.c1, 1))
     foil.addColorStop(1, rgba(palette.c2, 1))
     ctx.fillStyle = foil
-    ctx.fillText(name, left + gemSize + 26, 1058)
+    ctx.fillText(name, left + gemSize + 26, layout.plateY + 74)
     setTracking(ctx, 0)
     ctx.restore()
 
@@ -863,7 +898,7 @@ const drawText = (
     found.add(tier)
     order.forEach((slot, index) => {
       const px = cx - 63 + index * 42
-      const py = 1088
+      const py = layout.plateY + 104
       ctx.save()
       ctx.translate(px, py)
       ctx.rotate(Math.PI / 4)
@@ -887,7 +922,7 @@ const drawText = (
 
   // The title: wipes in from the left.
   const titleReveal = ease(t, tier ? 2.3 : 1.7, tier ? 3.1 : 2.5)
-  const titleY = tier ? 1182 : 1056
+  const { titleY } = layout
   ctx.save()
   ctx.beginPath()
   ctx.rect(0, titleY - 100, SHARE_WIDTH * titleReveal, 140)
@@ -939,7 +974,7 @@ export const drawShare = (
   rawT: number,
 ) => {
   const t = Math.max(0, rawT)
-  const { palette, premium } = prepared
+  const { palette, premium, layout } = prepared
 
   ctx.save()
   ctx.clearRect(0, 0, SHARE_WIDTH, SHARE_HEIGHT)
@@ -953,18 +988,18 @@ export const drawShare = (
   const flip = flipState(t)
   ctx.save()
   const lift = (1 - ease(t, 0.2, 1.4)) * 70
-  ctx.translate(POSTER_CX, POSTER_CY + lift)
+  ctx.translate(layout.cx, layout.cy + lift)
   const squash = Math.max(0.02, Math.abs(Math.cos(flip.angle)))
   ctx.scale(flip.progress >= 1 ? 1 : squash, 1)
   ctx.globalAlpha = ease(t, 0.15, 0.6)
-  ctx.translate(-POSTER_CX, -POSTER_CY)
+  ctx.translate(-layout.cx, -layout.cy)
   if (flip.showFront) {
     ctx.drawImage(
       prepared.framedPoster,
-      POSTER_X - GLOW_PAD,
-      POSTER_Y - GLOW_PAD,
-      POSTER_W + GLOW_PAD * 2,
-      POSTER_H + GLOW_PAD * 2,
+      layout.x - GLOW_PAD,
+      layout.y - GLOW_PAD,
+      layout.w + GLOW_PAD * 2,
+      layout.h + GLOW_PAD * 2,
     )
     if (premium) {
       drawFoil(ctx, prepared, t)
@@ -973,10 +1008,10 @@ export const drawShare = (
       // A plain frame for an ordinary pick.
       roundedRect(
         ctx,
-        POSTER_X - FRAME,
-        POSTER_Y - FRAME,
-        POSTER_W + FRAME * 2,
-        POSTER_H + FRAME * 2,
+        layout.x - FRAME,
+        layout.y - FRAME,
+        layout.w + FRAME * 2,
+        layout.h + FRAME * 2,
         36,
       )
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)'
