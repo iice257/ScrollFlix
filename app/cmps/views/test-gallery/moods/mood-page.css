@@ -274,9 +274,10 @@
   bottom: 22px;
   left: 50%;
   translate: -50% 0;
-  font-size: 20px;
-  font-weight: 700;
+  font-size: clamp(22px, 1.9vw, 28px);
+  font-weight: 800;
   letter-spacing: -0.02em;
+  text-shadow: 0 1px 14px rgb(0 0 0 / 0.6);
   white-space: nowrap;
   writing-mode: vertical-rl;
   rotate: 180deg;
@@ -366,11 +367,39 @@
 }
 
 .mood-blend {
+  display: grid;
+  gap: 4px;
   max-width: 34ch;
   color: rgb(255 255 255 / 0.7);
   font-size: 14px;
   font-weight: 600;
   text-align: right;
+}
+
+.mood-fit {
+  color: var(--mood-accent);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.mood-hint {
+  color: rgb(255 255 255 / 0.5);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mood-hint {
+    animation: mood-hint-in 400ms ease 120ms both;
+  }
+}
+
+@keyframes mood-hint-in {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
 }
 
 .mood-cta {
