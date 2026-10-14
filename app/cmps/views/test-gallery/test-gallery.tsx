@@ -634,7 +634,14 @@ const MoviePoster = ({
         crossOrigin={movie.posterDetailUrl ? 'anonymous' : undefined}
         loading={loading}
         onError={() => setLoadState('error')}
-        onLoad={() => setLoadState('loaded')}
+        // The fade starts once the pixels are decoded, not when the bytes land.
+        onLoad={(event) => {
+          const reveal = () => setLoadState('loaded')
+          const image = event.currentTarget
+          if (typeof image.decode === 'function')
+            image.decode().then(reveal, reveal)
+          else reveal()
+        }}
       />
     </span>
   )

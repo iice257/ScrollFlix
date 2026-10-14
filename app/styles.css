@@ -482,16 +482,17 @@
     height: 100%;
     object-fit: cover;
     opacity: 0;
-    transform: scale(1.04);
+    filter: blur(var(--warp-poster-blur, 10px));
+    /* A poster comes in soft and sharpens as it is decoded. */
     transition:
-      opacity 300ms ease,
-      transform 620ms cubic-bezier(0.16, 1, 0.3, 1);
+      opacity 220ms ease-out,
+      filter 220ms ease-out;
   }
 
   .warp-poster-frame[data-poster-state="loaded"] img,
   .warp-poster-frame[data-poster-state="fallback"] img {
     opacity: 1;
-    transform: scale(1);
+    filter: blur(0);
   }
 
   .warp-poster-frame[data-poster-state="loaded"] .warp-poster-placeholder,
@@ -3676,9 +3677,8 @@
     isolation: auto;
   }
 
-  .warp-list-row-poster .warp-poster-frame img {
-    transform: none;
-    transition: opacity 160ms ease;
+  .warp-list-row-poster .warp-poster-frame {
+    --warp-poster-blur: 5px;
   }
 
   .warp-list-row-poster .warp-poster-placeholder {
@@ -5608,6 +5608,12 @@
     .warp-drawer-scrim {
       transition: none;
       animation: none;
+    }
+
+    /* Posters still fade in, without the blur. */
+    .warp-poster-frame img {
+      filter: none;
+      transition: opacity 200ms ease-out;
     }
   }
 
