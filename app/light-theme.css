@@ -981,15 +981,17 @@
 }
 
 .warp-shell[data-theme="light"] .warp-list-row:hover,
-.warp-shell[data-theme="light"] .warp-list-row:has(.warp-list-row-open:focus-visible),
-.warp-shell[data-theme="light"] .warp-list-row.is-active {
-  border-color: rgb(33 26 16 / 0.42);
+.warp-shell[data-theme="light"] .warp-list-row:has(.warp-list-row-open:focus-visible) {
+  border-color: rgb(33 26 16 / 0.4);
+  background: rgb(33 26 16 / 0.07);
   color: rgb(33 26 16 / 0.78);
 }
 
 .warp-shell[data-theme="light"] .warp-list-row.is-active {
-  background: linear-gradient(90deg, rgb(33 26 16 / 0.16), transparent 46%), rgb(33 26 16 / 0.03);
-  box-shadow: inset 3px 0 0 rgb(33 26 16);
+  border-color: rgb(33 26 16 / 0.55);
+  background: linear-gradient(90deg, rgb(33 26 16 / 0.2), transparent 55%), rgb(33 26 16 / 0.03);
+  color: rgb(33 26 16 / 0.78);
+  box-shadow: inset 4px 0 0 rgb(33 26 16);
 }
 
 .warp-shell[data-theme="light"] .warp-list-row.is-random-pulse {
@@ -999,9 +1001,13 @@
 
 .warp-shell[data-theme="light"] .warp-list-row:hover .warp-list-row-poster,
 .warp-shell[data-theme="light"] .warp-list-row:has(.warp-list-row-open:focus-visible)
-    .warp-list-row-poster,
+    .warp-list-row-poster {
+  border-color: rgb(33 26 16 / 0.55);
+}
+
 .warp-shell[data-theme="light"] .warp-list-row.is-active .warp-list-row-poster {
-  border-color: rgb(33 26 16 / 0.52);
+  border-color: rgb(33 26 16);
+  box-shadow: 0 0 0 3px rgb(33 26 16 / 0.16);
 }
 
 .warp-shell[data-theme="light"] .warp-list-error {
