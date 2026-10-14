@@ -112,7 +112,9 @@ test.describe('Gallery user flows', () => {
       'data-movie-id',
       activeId ?? '',
     )
-    const wash = await other.evaluate((el) => getComputedStyle(el).backgroundColor)
+    const wash = await other.evaluate(
+      (el) => getComputedStyle(el).backgroundColor,
+    )
     expect(wash).not.toBe('rgba(0, 0, 0, 0)')
   })
 

@@ -4127,11 +4127,7 @@ const WarpList = ({
   }, [randomRequest])
 
   return (
-    <section
-      ref={listRef}
-      className='warp-list'
-      aria-label='Movie list view'
-    >
+    <section ref={listRef} className='warp-list' aria-label='Movie list view'>
       <header className='warp-list-heading'>
         <h1 className='warp-list-title'>Movie Index</h1>
         <form
