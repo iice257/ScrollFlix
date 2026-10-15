@@ -228,4 +228,62 @@ test.describe('Gallery user flows', () => {
       .evaluate((el) => getComputedStyle(el).animationPlayState)
     expect(paused).toBe('paused')
   })
+
+  test('the mood page says how many films fit the mix', async ({ page }) => {
+    await page
+      .getByRole('button', { name: /pick your mood/i })
+      .first()
+      .click()
+    await expect(page.locator('.mood-fit')).toHaveCount(0)
+
+    await page.locator('.mood-panel').first().click()
+    await expect(page.locator('.mood-fit')).toHaveText(/^[\d,]+ films? fits?$/)
+  })
+
+  test('arrow keys browse the mood worlds', async ({ page }) => {
+    await page
+      .getByRole('button', { name: /pick your mood/i })
+      .first()
+      .click()
+    const panels = page.locator('.mood-panel')
+    await expect(panels).toHaveCount(6)
+
+    await panels.first().focus()
+    await page.keyboard.press('ArrowRight')
+    await expect(panels.nth(1)).toBeFocused()
+    await expect(panels.nth(1)).toHaveClass(/is-open/)
+
+    await page.keyboard.press('End')
+    await expect(panels.nth(5)).toBeFocused()
+    await page.keyboard.press('ArrowRight')
+    await expect(panels.nth(5)).toBeFocused()
+
+    await page.keyboard.press('Home')
+    await expect(panels.first()).toBeFocused()
+  })
+
+  test('the blend tip shows once and goes away for good', async ({ page }) => {
+    const open = () =>
+      page
+        .getByRole('button', { name: /pick your mood/i })
+        .first()
+        .click()
+    await open()
+    const panels = page.locator('.mood-panel')
+    const tip = page.locator('.mood-hint')
+    await expect(tip).toHaveCount(0)
+
+    await panels.nth(0).click()
+    await expect(tip).toBeVisible()
+
+    await panels.nth(1).click()
+    await expect(tip).toHaveCount(0)
+
+    // A second visit with one world chosen does not show it again.
+    await page.getByRole('button', { name: 'Close the mood page' }).click()
+    await expect(page.locator('.mood-page')).toHaveCount(0)
+    await open()
+    await page.locator('.mood-panel').nth(2).click()
+    await expect(tip).toHaveCount(0)
+  })
 })

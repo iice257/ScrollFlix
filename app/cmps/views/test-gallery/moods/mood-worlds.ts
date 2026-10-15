@@ -103,6 +103,51 @@ export const describeBlend = (selected: MoodFilter[]) =>
     .filter(Boolean)
     .join('  +  ')
 
+// "212 films fit": how big the pick is for the mix chosen.
+export const describeFit = (count: number) =>
+  `${count.toLocaleString('en-US')} ${count === 1 ? 'film fits' : 'films fit'}`
+
+// ------------------------------------------------------------- arrow keys
+
+// The panel an arrow key moves to, or null when the key does nothing. The
+// worlds sit in one row, so left and right step through them and Home and End
+// jump to the ends; the edges stop instead of wrapping round.
+export const nextPanelIndex = (
+  current: number,
+  key: string,
+  count: number,
+): number | null => {
+  if (count <= 0) return null
+  const last = count - 1
+  switch (key) {
+    case 'ArrowRight':
+      return Math.min(last, current + 1)
+    case 'ArrowLeft':
+      return Math.max(0, current - 1)
+    case 'Home':
+      return 0
+    case 'End':
+      return last
+    default:
+      return null
+  }
+}
+
+// ------------------------------------------------------------- blend hint
+
+// The tip that two worlds can be blended shows once: the first time exactly
+// one world is chosen, and it goes away when a second one is.
+export type BlendHint = 'pending' | 'showing' | 'done'
+
+export const advanceBlendHint = (
+  hint: BlendHint,
+  chosen: number,
+): BlendHint => {
+  if (hint === 'pending') return chosen === 1 ? 'showing' : 'pending'
+  if (hint === 'showing') return chosen >= 2 ? 'done' : 'showing'
+  return 'done'
+}
+
 // ------------------------------------------------------------------ nudge
 
 export const NUDGE_RULES = {

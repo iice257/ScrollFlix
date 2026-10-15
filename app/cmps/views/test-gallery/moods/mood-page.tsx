@@ -1,6 +1,7 @@
 import { ArrowRight, Check, X } from 'lucide-react'
 import {
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
@@ -12,13 +13,18 @@ import { playCue } from '../../../../audio/sound-engine'
 import { cn } from '../../../../utils/tw'
 import './mood-page.css'
 import { MoodScene } from './mood-art'
+import { hasSeenBlendHint, markBlendHintSeen } from './mood-hint'
 import { LEAN_LAYERS, leanTranslate, stagePosition } from './mood-lean'
 import {
+  type BlendHint,
   MOOD_TIMES,
   MOOD_WORLDS,
   type MoodFilter,
   type MoodTimeId,
+  advanceBlendHint,
   describeBlend,
+  describeFit,
+  nextPanelIndex,
   toggleMood,
 } from './mood-worlds'
 
@@ -51,6 +57,11 @@ const MoodPage = ({
   const [time, setTime] = useState<MoodTimeId>(initialTime)
   const [openId, setOpenId] = useState<MoodFilter>(
     initialMoods[initialMoods.length - 1] ?? tasteLead ?? DEFAULT_OPEN,
+  )
+  // The tip about blending two worlds shows once, the first time exactly one
+  // is chosen, and never again once it has been shown.
+  const [hint, setHint] = useState<BlendHint>(() =>
+    hasSeenBlendHint() ? 'done' : 'pending',
   )
   const stageRef = useRef<HTMLDivElement | null>(null)
   const frameRef = useRef(0)
@@ -120,6 +131,33 @@ const MoodPage = ({
   }, [])
   useEffect(() => () => window.cancelAnimationFrame(frameRef.current), [])
 
+  const chosenCount = selected.length
+  useEffect(() => {
+    setHint((current) => advanceBlendHint(current, chosenCount))
+  }, [chosenCount])
+  useEffect(() => {
+    if (hint === 'showing') markBlendHintSeen()
+  }, [hint])
+
+  // Left and right step through the worlds, Home and End jump to the ends.
+  // Focusing a world opens it, so the arrows browse them like the mouse does.
+  const handleStageKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      const panels = Array.from(
+        event.currentTarget.querySelectorAll<HTMLButtonElement>('.mood-panel'),
+      )
+      const current = panels.findIndex(
+        (panel) => panel === document.activeElement,
+      )
+      if (current < 0) return
+      const next = nextPanelIndex(current, event.key, panels.length)
+      if (next === null) return
+      event.preventDefault()
+      panels[next]?.focus()
+    },
+    [],
+  )
+
   const lead = selected[selected.length - 1]
   const accent =
     MOOD_WORLDS.find((world) => world.id === lead)?.accent ?? '#ffffff'
@@ -160,6 +198,7 @@ const MoodPage = ({
         className='mood-stage'
         onPointerEnter={handlePointerEnter}
         onPointerMove={handlePointerMove}
+        onKeyDown={handleStageKeyDown}
       >
         {MOOD_WORLDS.map((world, index) => {
           const position = selected.indexOf(world.id)
@@ -241,11 +280,21 @@ const MoodPage = ({
         </fieldset>
         <div className='mood-go'>
           <output className='mood-blend'>
-            {nothingFits
-              ? 'Nothing fits that mix. Try a longer time.'
-              : selected.length
-                ? describeBlend(selected)
-                : 'Choose a world to begin'}
+            <span className='mood-blend-names'>
+              {nothingFits
+                ? 'Nothing fits that mix. Try a longer time.'
+                : selected.length
+                  ? describeBlend(selected)
+                  : 'Choose a world to begin'}
+            </span>
+            {matches !== null && !nothingFits ? (
+              <span className='mood-fit'>{describeFit(matches)}</span>
+            ) : null}
+            {hint === 'showing' && selected.length === 1 ? (
+              <span className='mood-hint'>
+                Tip: pick a second world to blend the two.
+              </span>
+            ) : null}
           </output>
           <button
             type='button'
