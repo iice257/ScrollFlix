@@ -3809,20 +3809,26 @@
     text-align: right;
   }
 
+  /* Hover is a light touch: a faint wash and a brighter outline. The active
+     film (the one picked, opened or focused) is the loud one: a bar, a wash
+     that fades across the row, and a ringed poster. */
   .warp-list-row:hover,
-  .warp-list-row:has(.warp-list-row-open:focus-visible),
-  .warp-list-row.is-active {
+  .warp-list-row:has(.warp-list-row-open:focus-visible) {
     outline: none;
-    border-color: rgb(255 255 255 / 0.42);
+    border-color: rgb(255 255 255 / 0.4);
+    background: rgb(255 255 255 / 0.07);
     color: rgb(255 255 255 / 0.78);
-    transform: translateX(6px);
   }
 
   .warp-list-row.is-active {
+    outline: none;
+    border-color: rgb(255 255 255 / 0.55);
     background:
-      linear-gradient(90deg, rgb(255 255 255 / 0.16), transparent 46%),
+      linear-gradient(90deg, rgb(255 255 255 / 0.2), transparent 55%),
       rgb(255 255 255 / 0.03);
-    box-shadow: inset 3px 0 0 #fff;
+    color: rgb(255 255 255 / 0.78);
+    box-shadow: inset 4px 0 0 #fff;
+    transform: translateX(6px);
   }
 
   .warp-list-row.is-random-pulse {
@@ -3833,9 +3839,13 @@
 
   .warp-list-row:hover .warp-list-row-poster,
   .warp-list-row:has(.warp-list-row-open:focus-visible)
-    .warp-list-row-poster,
+    .warp-list-row-poster {
+    border-color: rgb(255 255 255 / 0.55);
+  }
+
   .warp-list-row.is-active .warp-list-row-poster {
-    border-color: rgb(255 255 255 / 0.52);
+    border-color: #fff;
+    box-shadow: 0 0 0 3px rgb(255 255 255 / 0.16);
   }
 
   .warp-list-error {

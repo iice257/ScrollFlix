@@ -85,6 +85,39 @@ test.describe('Gallery user flows', () => {
     await expect(picked).toBeInViewport({ timeout: 5_000 })
   })
 
+  test('hovering an index row does not take the highlight from the active film', async ({
+    page,
+  }) => {
+    test.skip((page.viewportSize()?.width ?? 0) <= 900, 'touch has no hover')
+
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    const list = page.getByRole('region', { name: 'Movie list view' })
+    await expect(list).toBeVisible()
+    await page
+      .getByRole('button', { name: 'Jump to a random movie in the index' })
+      .click()
+    const active = list.locator('.warp-list-row.is-active')
+    await expect(active).toBeInViewport({ timeout: 5_000 })
+    const activeId = await active.getAttribute('data-movie-id')
+
+    // Hovering another row lights it up without moving the highlight.
+    const other = list
+      .locator(`.warp-list-row:not([data-movie-id="${activeId}"])`)
+      .filter({ visible: true })
+      .first()
+    await other.hover()
+    await page.waitForTimeout(400)
+    await expect(other).not.toHaveClass(/is-active/)
+    await expect(list.locator('.warp-list-row.is-active')).toHaveAttribute(
+      'data-movie-id',
+      activeId ?? '',
+    )
+    const wash = await other.evaluate(
+      (el) => getComputedStyle(el).backgroundColor,
+    )
+    expect(wash).not.toBe('rgba(0, 0, 0, 0)')
+  })
+
   test('every dock pill shares one height and one label style', async ({
     page,
   }) => {

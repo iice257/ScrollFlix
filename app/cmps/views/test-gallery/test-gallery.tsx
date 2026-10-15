@@ -3577,9 +3577,6 @@ const chunkRows = <T,>(rows: T[]) => {
 }
 
 const PICK_GLIDE_MS = 520
-// Hover is ignored for a moment after a pick, so a cursor resting on the list
-// cannot take the highlight from the film that was just picked.
-const PICK_HOVER_HOLD_MS = 1300
 
 // Brings a film's row to the middle of the index. The row is measured again on
 // every frame, because rows above it mount and groups expand while the list
@@ -3652,7 +3649,6 @@ type ListRowChunkProps = {
   randomPulseId: string | null
   rows: TestMovie[]
   selectedGenres: string[]
-  onHoverMovie: (movie: TestMovie) => void
   onOpenMovie: (movie: TestMovie) => void
   onSelectMovie: (movie: TestMovie) => void
   onToggleGenre: (movie: TestMovie, genre: string) => void
@@ -3720,7 +3716,6 @@ const ListRowChunk = memo(
     randomPulseId,
     rows,
     selectedGenres,
-    onHoverMovie,
     onOpenMovie,
     onSelectMovie,
     onToggleGenre,
@@ -3795,7 +3790,6 @@ const ListRowChunk = memo(
                 isRandomPulse={randomPulseId === movie.id}
                 movie={movie}
                 selectedGenres={selectedGenres}
-                onHoverMovie={onHoverMovie}
                 onOpenMovie={onOpenMovie}
                 onSelectMovie={onSelectMovie}
                 onToggleGenre={onToggleGenre}
@@ -3813,7 +3807,6 @@ type ListRowProps = {
   isRandomPulse: boolean
   movie: TestMovie
   selectedGenres: string[]
-  onHoverMovie: (movie: TestMovie) => void
   onOpenMovie: (movie: TestMovie) => void
   onSelectMovie: (movie: TestMovie) => void
   onToggleGenre: (movie: TestMovie, genre: string) => void
@@ -3830,7 +3823,6 @@ const ListRow = memo(
     isRandomPulse,
     movie,
     selectedGenres,
-    onHoverMovie,
     onOpenMovie,
     onSelectMovie,
     onToggleGenre,
@@ -3845,7 +3837,6 @@ const ListRow = memo(
           isRandomPulse && 'is-random-pulse',
         )}
         onClick={() => onOpenMovie(movie)}
-        onMouseEnter={() => onHoverMovie(movie)}
       >
         <button
           type='button'
@@ -3922,29 +3913,8 @@ const WarpList = ({
   )
   const pulseTimerRef = useRef<number | null>(null)
 
-  // Rows pass under a resting cursor while the list scrolls, and each one
-  // would otherwise become the active film and re-render the app. Hover only
-  // counts once the list has settled, and renders as an interruptible update.
-  const isScrollingRef = useRef(false)
-  const scrollTimerRef = useRef<number | null>(null)
-  const handleScroll = () => {
-    isScrollingRef.current = true
-    if (scrollTimerRef.current) window.clearTimeout(scrollTimerRef.current)
-    scrollTimerRef.current = window.setTimeout(() => {
-      isScrollingRef.current = false
-    }, 160)
-  }
   const listRef = useRef<HTMLElement | null>(null)
-  const holdHoverUntilRef = useRef(0)
   const [pickScroll, setPickScroll] = useState<{ id: string } | null>(null)
-  const handleHoverMovie = useCallback(
-    (movie: TestMovie) => {
-      if (isScrollingRef.current) return
-      if (performance.now() < holdHoverUntilRef.current) return
-      startTransition(() => onSelectMovie(movie))
-    },
-    [onSelectMovie],
-  )
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const [highlight, setHighlight] = useState(-1)
   const suggestions = useMemo(
@@ -4029,7 +3999,6 @@ const WarpList = ({
   useEffect(
     () => () => {
       if (pulseTimerRef.current) window.clearTimeout(pulseTimerRef.current)
-      if (scrollTimerRef.current) window.clearTimeout(scrollTimerRef.current)
     },
     [],
   )
@@ -4132,7 +4101,6 @@ const WarpList = ({
       return nextGroups
     })
     onPickRandomMovie(movie)
-    holdHoverUntilRef.current = performance.now() + PICK_HOVER_HOLD_MS
     setRandomPulseId(movie.id)
     if (pulseTimerRef.current) window.clearTimeout(pulseTimerRef.current)
     pulseTimerRef.current = window.setTimeout(() => {
@@ -4159,12 +4127,7 @@ const WarpList = ({
   }, [randomRequest])
 
   return (
-    <section
-      ref={listRef}
-      className='warp-list'
-      aria-label='Movie list view'
-      onScroll={handleScroll}
-    >
+    <section ref={listRef} className='warp-list' aria-label='Movie list view'>
       <header className='warp-list-heading'>
         <h1 className='warp-list-title'>Movie Index</h1>
         <form
@@ -4352,7 +4315,6 @@ const WarpList = ({
                         }
                         rows={chunk}
                         selectedGenres={selectedGenres}
-                        onHoverMovie={handleHoverMovie}
                         onOpenMovie={onOpenMovie}
                         onSelectMovie={onSelectMovie}
                         onToggleGenre={handleToggleGenre}
