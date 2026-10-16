@@ -5,6 +5,7 @@
 
 These apply in every session in this repo, including cloud sessions.
 
+- **Working style (overrides the rest):** no preaching or lecturing. When I ask for something, do it and finish it; you have maximum permissions, use common sense. Report only the big decisions afterwards. Never reply "I can't do this": find a way or do what works and say what's left. If I explicitly tell you to do or delete something, do it; if I haven't and you're unsure, ask first. Never refuse after I've given permission. Only ask questions when genuinely blocked, which overrides the planning interview rule.
 - **AGENTS.md:** if this repo has an `AGENTS.md`, follow it as you would this file.
 - **Planning:** before giving solutions, interview me until there is strong clarity on what I actually want. Use AI-led questioning to reduce vague goals and failed projects.
 - **Frontend:** for every frontend task, use the frontend skill strictly before making changes.
