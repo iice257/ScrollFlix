@@ -1,6 +1,6 @@
 # ScrollFlix — for when you can't pick a movie
 
-Stop scrolling lists. Spin a wall of 750 films and stop on whatever catches your eye.
+Stop scrolling lists. Spin a globe of 900 films, drawn from a catalogue of about 9,000, and stop on whatever catches your eye.
 
 ![ScrollFlix](docs/media/wall.png)
 
@@ -70,9 +70,7 @@ ScrollFlix is for people who:
 
 ## Current Status
 
-This is an active personal project. The core app experience is present, with a React interface and a custom WebGL globe.
-
-The public landing page is not live yet.
+This is an active personal project, live at [scroll-flix.vercel.app](https://scroll-flix.vercel.app). The globe shows 900 films at a time, picked from a catalogue of about 9,000 that loads in chunks sized to the device. First-load speed and the details view are the current work.
 
 
 ## Tech Stack
@@ -94,7 +92,7 @@ The app has two main parts, both under `app/cmps/views/test-gallery/`:
 - `test-gallery.tsx` is the page shell. It handles the gallery, index and filters views, movie details, shuffle, and keyboard shortcuts.
 - `infinite-movie-menu.tsx` is the WebGL engine. It lays posters out on a sphere, uploads them into a texture atlas as they load, handles drag, wheel and keyboard rotation with inertia, and picks the poster under a click.
 
-Film data and poster media are served from the `public/` directory.
+Film data and poster media are served from the `public/` directory. The catalogue loads in 2,000-film chunks, and every poster gets a tiny placeholder sprite in its atlas cell until the real image arrives. Voroforce, the Voronoi engine this started on, was removed in favour of the honeycomb globe layout.
 
 ## Project Structure
 
