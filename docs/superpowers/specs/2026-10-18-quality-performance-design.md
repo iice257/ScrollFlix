@@ -81,19 +81,19 @@ The work splits into three independent workstreams plus a final integration pass
 ### Workstream D: live catalogue (data)
 
 1. **Source: the TMDB API.**
-   - Seed from TMDB's public daily ID export (`files.tmdb.org/p/exports/movie_ids_MM_DD_YYYY.json.gz`, no key), keeping entries that are not adult and not video.
+   - Seed the candidate set from `/discover/movie` with `vote_count.gte=MIN_VOTES`, adult and video excluded, partitioned by release year and split by month when a year exceeds TMDB's 500-page cap.
    - Fetch details with `/movie/{id}?append_to_response=keywords,external_ids` using a TMDB read token, at about 40 requests per second with retry and backoff.
 2. **Inclusion.**
    - Has a poster, has a release year, and `vote_count ≥ MIN_VOTES`.
    - `MIN_VOTES` is tuned once, from real counts, to give about 100,000 films (expected around 10). It is not a year cap and not a count cap.
 3. **Nightly refresh.** `.github/workflows/catalog.yml` runs on cron at 03:00 UTC:
    - Fetch `/movie/changes` for the window since the last run.
-   - Add new IDs from the daily export.
+   - Add new films found by running discover over the current and previous year.
    - Refetch only those films.
    - Re-rank by popularity and rebuild the chunks.
    - A full re-seed runs on the 1st of each month to catch anything missed.
 4. **Storage and publishing, with no repo bloat.**
-   - The built catalogue (chunks, text chunks and a state file holding the last-run date) is published as a GitHub Release asset `catalog-latest` (a `.tar.zst` replaced each night).
+   - The built catalogue (chunks, text chunks and a state file holding the last-run date) is published as a GitHub Release asset `catalog-latest` (`catalog.tar.gz`, replaced each night).
    - `npm run build` first runs `npm run catalog:pull`, which downloads and unpacks it into `public/json/catalog/`.
    - Every deploy, whether from git or from the nightly run, therefore ships the newest data.
    - The nightly workflow then calls a Vercel Deploy Hook.
