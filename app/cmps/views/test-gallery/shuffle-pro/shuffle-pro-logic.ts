@@ -14,10 +14,18 @@ export const TIER_LABELS: Record<Tier, string> = {
 
 // ---------------------------------------------------------------- holding
 
+// How far a press may drift and still count as "held still". A finger jitters
+// far more than a mouse, so touch and pen get a wider allowance.
 export const HOLD_STILL_MOVE_PX = 8
+export const HOLD_STILL_MOVE_PX_TOUCH = 24
+
+export const stillMovePxFor = (pointerType?: string) =>
+  pointerType === 'touch' || pointerType === 'pen'
+    ? HOLD_STILL_MOVE_PX_TOUCH
+    : HOLD_STILL_MOVE_PX
 
 export const HOLD_RULES = {
-  normal: { stillMs: 5000, movingMs: 10000 },
+  normal: { stillMs: 3000, movingMs: 6000 },
   immersive: { stillMs: 3000, movingMs: 6000 },
   // Space has no pointer to judge by, and the globe rolls the whole time, so
   // it gets one longer limit.
@@ -31,20 +39,56 @@ export const shouldTriggerHold = ({
   maxMovedPx,
   immersive,
   source = 'pointer',
+  pointerType,
 }: {
   elapsedMs: number
   maxMovedPx: number
   immersive: boolean
   source?: PressSource
+  pointerType?: string
 }) => {
   if (source === 'key') {
     const limits = HOLD_RULES.key
     return elapsedMs >= (immersive ? limits.immersive : limits.normal)
   }
   const rules = immersive ? HOLD_RULES.immersive : HOLD_RULES.normal
-  const still = maxMovedPx <= HOLD_STILL_MOVE_PX
+  const still = maxMovedPx <= stillMovePxFor(pointerType)
   return elapsedMs >= (still ? rules.stillMs : rules.movingMs)
 }
+
+// A held press this long is clearly a hold, not a tap or a drag: start
+// warming the effect up, and show the progress ring.
+export const HOLD_PREWARM_MS = 1500
+
+// How far a held pointer press is toward its trigger, 0..1, for the progress
+// ring. Null while nothing should show: before the ring appears, once the
+// pointer has wandered off (the press is a drag, with a later trigger), and
+// for a held key, which has no point to draw at.
+export const holdProgress = ({
+  elapsedMs,
+  maxMovedPx,
+  immersive,
+  source = 'pointer',
+  pointerType,
+}: {
+  elapsedMs: number
+  maxMovedPx: number
+  immersive: boolean
+  source?: PressSource
+  pointerType?: string
+}): number | null => {
+  if (source === 'key') return null
+  if (elapsedMs < HOLD_PREWARM_MS) return null
+  if (maxMovedPx > stillMovePxFor(pointerType)) return null
+  const rules = immersive ? HOLD_RULES.immersive : HOLD_RULES.normal
+  const span = Math.max(1, rules.stillMs - HOLD_PREWARM_MS)
+  return Math.min(1, Math.max(0, (elapsedMs - HOLD_PREWARM_MS) / span))
+}
+
+// The whole ring fill, from appearing to the trigger moment.
+export const holdRingSpanMs = (immersive: boolean) =>
+  (immersive ? HOLD_RULES.immersive : HOLD_RULES.normal).stillMs -
+  HOLD_PREWARM_MS
 
 // ---------------------------------------------------------------- Space
 
@@ -95,7 +139,11 @@ export const STREAK_RULES = {
 export const reduceStreak = (
   state: StreakState,
   event: StreakEvent,
-  { immersive, random }: { immersive: boolean; random: () => number },
+  {
+    immersive,
+    random,
+    demo = false,
+  }: { immersive: boolean; random: () => number; demo?: boolean },
 ): { state: StreakState; trigger: BaseTier | null } => {
   if (event.type === 'neutral') return { state, trigger: null }
   if (event.type === 'break' || event.type === 'runEnd') {
@@ -116,7 +164,11 @@ export const reduceStreak = (
   } else {
     const rules = STREAK_RULES.normal
     if (next.bigSpinRun >= rules.bigSpinRun) trigger = 'frost'
-    else if (next.streak >= rules.streakRoll && random() < rules.rollChance) {
+    else if (
+      next.streak >= rules.streakRoll &&
+      // Demo mode takes the chance out: the tenth shuffle is Amethyst.
+      (demo || random() < rules.rollChance)
+    ) {
       trigger = 'amethyst'
     }
   }
@@ -140,10 +192,6 @@ export const isNearTrigger = (state: StreakState, immersive: boolean) => {
     state.streak >= rules.streakRoll - 1
   )
 }
-
-// A held press this long is clearly a hold, not a tap or a drag: start
-// warming the effect up.
-export const HOLD_PREWARM_MS = 1500
 
 // ---------------------------------------------------------------- gold
 
@@ -179,8 +227,16 @@ export const resolveTier = (
     found,
     random,
     goldenHour = false,
-  }: { found: FoundPaths; random: () => number; goldenHour?: boolean },
+    demo = false,
+  }: {
+    found: FoundPaths
+    random: () => number
+    goldenHour?: boolean
+    demo?: boolean
+  },
 ): Tier => {
+  // Demo mode is deterministic: the tier is the one the gesture asked for.
+  if (demo) return base
   if (found.gold) {
     const chance = goldenHour
       ? GOLDEN_FOUND_GOLD_CHANCE

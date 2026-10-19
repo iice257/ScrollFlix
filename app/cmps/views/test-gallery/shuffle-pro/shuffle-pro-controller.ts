@@ -23,6 +23,8 @@ import {
   angularSpeedAt,
   axisForDragDirection,
   cameraPullback,
+  holdProgress,
+  holdRingSpanMs,
   isKeyHold,
   isNearTrigger,
   isPathBlocked,
@@ -90,6 +92,9 @@ export type ControllerDeps = {
   getFound: () => FoundPaths
   // True when found paths should keep starting runs (a setting; off by default).
   getRepeatFound?: () => boolean
+  // True in demo mode: found paths never block, the odds are taken out and
+  // the tenth shuffle is Amethyst. A setting; off by default.
+  getDemoMode?: () => boolean
   // The streak count after each shuffle, for the best-streak record.
   onStreak?: (streak: number) => void
   // True while the golden hour is on and Gold is easier to find.
@@ -128,6 +133,18 @@ export type ControllerSnapshot = {
   announcement: string
 }
 
+// The hold ring: where it sits (fractions of the canvas) and how long it takes
+// to fill. It is announced once when it appears and once (null) when it goes,
+// never per frame; the page animates it with CSS for the remaining time.
+export type HoldRing = {
+  nx: number
+  ny: number
+  // Where the fill starts, 0..1 (a little past 0 if a frame was late).
+  progress: number
+  // The time the whole fill takes, from empty to the trigger moment.
+  totalMs: number
+}
+
 export type PressSession = {
   readonly triggered: boolean
 }
@@ -138,6 +155,9 @@ type PressInfo = {
   ny: number
   // A held Space rolls the globe and has its own hold limit.
   source?: PressSource
+  // 'mouse', 'touch' or 'pen': a finger jitters more than a mouse, so the
+  // still allowance depends on it. Unset counts as a mouse.
+  pointerType?: string
 }
 
 type Run = {
@@ -181,8 +201,11 @@ type Press = {
   tier: Tier
   prewarmed: boolean
   source: PressSource
+  pointerType: string | undefined
   // A held key is spinning the globe at the roll speed.
   rolling: boolean
+  // The hold ring is on screen for this press.
+  ringShown: boolean
 }
 
 const SKY_HOLD_LEVEL = 0.6
@@ -216,6 +239,8 @@ export class ShuffleProController {
   } | null = null
   private snapshot: ControllerSnapshot
   private readonly listeners = new Set<() => void>()
+  private readonly holdListeners = new Set<(ring: HoldRing | null) => void>()
+  private readonly streakListeners = new Set<() => void>()
   private lastOmega = 0
   private statsEnabled = false
   // Whether the sky was warmed up for a streak that is one action from a run.
@@ -235,6 +260,65 @@ export class ShuffleProController {
   }
 
   getSnapshot = () => this.snapshot
+
+  // The hold ring appears (a ring) and goes (null). Not part of the snapshot,
+  // so showing it never re-renders the page.
+  subscribeHold = (listener: (ring: HoldRing | null) => void) => {
+    this.holdListeners.add(listener)
+    return () => {
+      this.holdListeners.delete(listener)
+    }
+  }
+
+  // Fires whenever the streak counters change (the demo-mode chip reads them).
+  subscribeStreak = (listener: () => void) => {
+    this.streakListeners.add(listener)
+    return () => {
+      this.streakListeners.delete(listener)
+    }
+  }
+
+  private setStreak(next: StreakState) {
+    if (next === this.streak) return
+    this.streak = next
+    for (const listener of this.streakListeners) listener()
+  }
+
+  // How far the held pointer press is toward starting a run, 0..1; null while
+  // there is nothing to show (no press, under 1.5s, moved, a key, or started).
+  getHoldProgress(): number | null {
+    const press = this.press
+    if (!press || press.triggered || this.phase !== 'armed') return null
+    return holdProgress({
+      elapsedMs: this.deps.now() - press.startedAt,
+      maxMovedPx: press.maxMovedPx,
+      immersive: this.deps.isImmersive(),
+      source: press.source,
+      pointerType: press.pointerType,
+    })
+  }
+
+  private syncHoldRing(press: Press) {
+    const progress = this.getHoldProgress()
+    if (progress !== null && !press.ringShown) {
+      press.ringShown = true
+      const ring: HoldRing = {
+        nx: press.nx,
+        ny: press.ny,
+        progress,
+        totalMs: holdRingSpanMs(this.deps.isImmersive()),
+      }
+      for (const listener of this.holdListeners) listener(ring)
+    } else if (progress === null && press.ringShown) {
+      this.hideHoldRing(press)
+    }
+  }
+
+  private hideHoldRing(press: Press) {
+    if (!press.ringShown) return
+    press.ringShown = false
+    for (const listener of this.holdListeners) listener(null)
+  }
 
   private emit() {
     const next = this.buildSnapshot()
@@ -297,9 +381,10 @@ export class ShuffleProController {
     const result = reduceStreak(this.streak, event, {
       immersive: this.deps.isImmersive(),
       random: this.deps.random,
+      demo: this.demoMode(),
     })
     const before = this.streak
-    this.streak = result.state
+    this.setStreak(result.state)
     this.syncStreakPrewarm(result.state, event.type)
     const reached = result.trigger ? before.streak + 1 : result.state.streak
     if (reached > 0) this.deps.onStreak?.(reached)
@@ -326,11 +411,16 @@ export class ShuffleProController {
     }
   }
 
-  getStreak() {
-    return this.streak
+  getStreak = () => this.streak
+
+  private demoMode() {
+    return this.deps.getDemoMode?.() ?? false
   }
 
+  // Found paths stop the streak triggers (the surprise would wear out); a held
+  // press is deliberate and never asks, and demo mode lifts the rule.
   private isBlocked(tier: Tier) {
+    if (this.demoMode()) return false
     return isPathBlocked(
       tier,
       this.deps.getFound(),
@@ -373,10 +463,13 @@ export class ShuffleProController {
         found: this.deps.getFound(),
         random: this.deps.random,
         goldenHour: this.deps.isGoldenHour?.() ?? false,
+        demo: this.demoMode(),
       }),
       prewarmed: false,
       source: info.source ?? 'pointer',
+      pointerType: info.pointerType,
       rolling: false,
+      ringShown: false,
     }
     this.press = press
     if (this.phase === 'idle') {
@@ -407,6 +500,7 @@ export class ShuffleProController {
     const press = this.press
     if (!press) return false
     this.press = null
+    this.hideHoldRing(press)
     if (!press.triggered) {
       this.cancelPressPrewarm(press)
       this.stopRoll(press)
@@ -461,6 +555,7 @@ export class ShuffleProController {
             found: this.deps.getFound(),
             random: this.deps.random,
             goldenHour: this.deps.isGoldenHour?.() ?? false,
+            demo: this.demoMode(),
           })
     this.beginRun(tier, {
       automatic: true,
@@ -573,6 +668,7 @@ export class ShuffleProController {
       landingDone: false,
     }
     if (this.press) {
+      this.hideHoldRing(this.press)
       this.press.triggered = true
       // The run owns the spin from here; its floor carries the roll's speed.
       this.press.rolling = false
@@ -613,7 +709,7 @@ export class ShuffleProController {
     if (!run.premium) {
       // Released early: an ordinary shuffle, so the show fades quickly.
       this.beginFade(run, 0, NORMAL_FADE_MS)
-      this.streak = this.noteSilently({ type: 'shuffle' })
+      this.setStreak(this.noteSilently({ type: 'shuffle' }))
     }
     this.emit()
   }
@@ -694,7 +790,7 @@ export class ShuffleProController {
     this.deps.onCue?.('end', run.tier)
     this.beginFade(run, 0, NORMAL_FADE_MS)
     run.landingDone = true
-    this.streak = EMPTY_STREAK
+    this.setStreak(EMPTY_STREAK)
     if (this.press) this.press.triggered = true
     this.emit()
   }
@@ -731,7 +827,7 @@ export class ShuffleProController {
       // Everything that built up now settles behind the card.
       this.beginFade(run, SKY_HOLD_LEVEL, 900)
       run.sky.rim = 0.5
-      this.streak = this.noteSilently({ type: 'runEnd' })
+      this.setStreak(this.noteSilently({ type: 'runEnd' }))
     } else {
       this.phase = 'aborting'
       if (!run.fade && !run.skyDone) this.beginFade(run, 0, NORMAL_FADE_MS)
@@ -825,11 +921,9 @@ export class ShuffleProController {
       this.emit()
       return
     }
-    if (
-      !press.prewarmed &&
-      now - press.startedAt >= HOLD_PREWARM_MS &&
-      !this.isBlocked(press.tier)
-    ) {
+    // A deliberate hold always plays its tier, so it is never held back for a
+    // path that was found before; only automatic streaks are.
+    if (!press.prewarmed && now - press.startedAt >= HOLD_PREWARM_MS) {
       press.prewarmed = true
       this.port?.prewarm()
       this.deps.prewarmTier?.(press.tier)
@@ -837,14 +931,15 @@ export class ShuffleProController {
     if (press.source === 'key' && isKeyHold(now - press.startedAt)) {
       this.startRoll(press)
     }
+    this.syncHoldRing(press)
     if (
       shouldTriggerHold({
         elapsedMs: now - press.startedAt,
         maxMovedPx: press.maxMovedPx,
         immersive: this.deps.isImmersive(),
         source: press.source,
-      }) &&
-      !this.isBlocked(press.tier)
+        pointerType: press.pointerType,
+      })
     ) {
       this.beginRun(press.tier, {
         automatic: false,
@@ -1055,7 +1150,7 @@ export class ShuffleProController {
     }
     this.run = null
     this.presented = null
-    if (resetStreak) this.streak = EMPTY_STREAK
+    if (resetStreak) this.setStreak(EMPTY_STREAK)
     if (this.phase !== 'armed') this.phase = 'idle'
     if (this.frameId && this.phase === 'idle') {
       this.deps.caf(this.frameId)
@@ -1065,6 +1160,7 @@ export class ShuffleProController {
 
   dispose() {
     this.teardown(true)
+    if (this.press) this.hideHoldRing(this.press)
     this.press = null
     this.phase = 'idle'
     if (this.frameId) this.deps.caf(this.frameId)

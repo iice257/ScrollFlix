@@ -16,6 +16,7 @@ import {
   hasHoneycombLayout,
   prewarmHoneycombLayout,
 } from './honeycomb-layout'
+import { HoldRing } from './shuffle-pro/hold-ring'
 import { unlockAudio } from './shuffle-pro/shuffle-pro-audio'
 import type {
   PressSession,
@@ -3585,6 +3586,7 @@ export const InfiniteMovieMenu = <T,>({
       ny:
         (event.clientY - event.currentTarget.getBoundingClientRect().top) /
         Math.max(1, event.currentTarget.clientHeight),
+      pointerType: event.pointerType,
     })
     if (proSession === 'consumed') {
       pressRef.current = null
@@ -3751,6 +3753,7 @@ export const InfiniteMovieMenu = <T,>({
           onContextMenu={handleContextMenu}
         />
       )}
+      <HoldRing controller={shufflePro} />
 
       <div className='warp-infinite-sheen' />
 

@@ -77,6 +77,7 @@ export const useShuffleProController = (context: Context) => {
         isReducedMotion: () => readReducedMotion(reducedMotionOverride.current),
         getFound: () => shuffleProStore.get().found,
         getRepeatFound: () => shuffleProStore.get().repeatFound,
+        getDemoMode: () => shuffleProStore.get().demoMode,
         isGoldenHour: () => goldenHourStore.get(),
         recordRun: (tier, movieId) => {
           shuffleProStore.recordRun(tier)
