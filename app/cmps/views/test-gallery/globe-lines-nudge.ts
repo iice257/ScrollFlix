@@ -1,7 +1,7 @@
 // The first-open nudge for the two globe-line settings. The first time the
 // menu opens, each setting that is still at its default and has not been
 // explained yet gets a small tip beside its switch. This is only the
-// bookkeeping; the tip itself is in globe-lines-nudge.tsx.
+// bookkeeping; the tip itself is in globe-lines-tip.tsx.
 //
 // Like the other first-time hints it is a courtesy: storage that is missing
 // or blocked just means a tip may show again.

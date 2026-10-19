@@ -4,8 +4,8 @@ import { constellationSetting, sessionPathSetting } from './globe-lines'
 import {
   LINE_NUDGE_COPY,
   type LineKind,
-  markLineNudgeSeen,
   NUDGE_SEEN_AFTER_MS,
+  markLineNudgeSeen,
   pendingLineNudges,
 } from './globe-lines-nudge'
 import { PATH_INK } from './session-path'
@@ -338,7 +338,6 @@ export const LineNudge = ({
   placement,
   onDismiss,
 }: LineNudgeProps) => (
-  // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: the close button and Esc are the keyboard routes; tapping the tip is a convenience.
   <div className={`warp-nudge is-${placement}`} onClick={onDismiss}>
     <div id={id} role='tooltip' className='warp-nudge-card'>
       <GlobeLinesArt kind={kind} light={light} />

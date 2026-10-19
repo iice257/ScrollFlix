@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { type Page, expect, test } from '@playwright/test'
 
 // The session path and the favorite links start off, and the first time the
 // menu opens each gets a small tip explaining it.
@@ -39,7 +39,10 @@ const openMenu = async (page: Page) => {
 }
 
 const closeMenu = async (page: Page) => {
-  await page.getByRole('button', { name: 'Close about' }).click()
+  await page
+    .getByRole('complementary', { name: 'About ScrollFlix' })
+    .getByRole('button', { name: 'Close about' })
+    .click()
   await expect(
     page.getByRole('complementary', { name: 'About ScrollFlix' }),
   ).toHaveCount(0)
@@ -61,14 +64,12 @@ test.describe('Globe lines start off', () => {
     await openMenu(page)
     for (const name of ['Session path', 'Favorite links']) {
       const group = page.getByRole('group', { name })
-      await expect(group.getByRole('button', { name: 'Off' })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      )
-      await expect(group.getByRole('button', { name: 'On' })).toHaveAttribute(
-        'aria-pressed',
-        'false',
-      )
+      await expect(
+        group.getByRole('button', { name: 'Off', exact: true }),
+      ).toHaveAttribute('aria-pressed', 'true')
+      await expect(
+        group.getByRole('button', { name: 'On', exact: true }),
+      ).toHaveAttribute('aria-pressed', 'false')
     }
   })
 
@@ -178,7 +179,7 @@ test.describe('Globe lines start off', () => {
     await openMenu(page)
     await page
       .getByRole('group', { name: 'Session path' })
-      .getByRole('button', { name: 'On' })
+      .getByRole('button', { name: 'On', exact: true })
       .click()
     // Only the favorite links tip is left.
     await expect(page.getByRole('tooltip')).toHaveCount(1)
@@ -210,7 +211,7 @@ test.describe('Globe lines start off', () => {
     await openMenu(page)
     await page
       .getByRole('group', { name: 'Favorite links' })
-      .getByRole('button', { name: 'On' })
+      .getByRole('button', { name: 'On', exact: true })
       .click()
     await expect(page.getByRole('tooltip')).toHaveCount(1)
     await expect(page.getByRole('tooltip')).toContainText('trail of films')
@@ -235,7 +236,9 @@ test.describe('An explicit choice on the old single switch', () => {
     await expect(page.getByRole('tooltip')).toHaveCount(0)
     for (const name of ['Session path', 'Favorite links']) {
       await expect(
-        page.getByRole('group', { name }).getByRole('button', { name: 'On' }),
+        page
+          .getByRole('group', { name })
+          .getByRole('button', { name: 'On', exact: true }),
       ).toHaveAttribute('aria-pressed', 'true')
     }
   })

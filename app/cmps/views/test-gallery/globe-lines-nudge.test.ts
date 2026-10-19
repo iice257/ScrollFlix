@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
+  SESSION_PATH_LINES_STORAGE_KEY,
   createFlagSetting,
   sessionPathSetting,
-  SESSION_PATH_LINES_STORAGE_KEY,
 } from './globe-lines'
 import {
   hasSeenLineNudge,

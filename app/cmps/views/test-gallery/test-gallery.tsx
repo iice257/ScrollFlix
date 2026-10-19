@@ -77,10 +77,10 @@ import {
 } from '../../ui/tooltip'
 import { constellationSetting } from './constellation'
 import { ConstellationLayer } from './constellation-layer'
+import { formatGenreCount } from './genre-count'
 import { sessionPathSetting } from './globe-lines'
 import type { LineKind } from './globe-lines-nudge'
-import { LineNudge, type LineNudges, useLineNudges } from './globe-lines-nudge'
-import { formatGenreCount } from './genre-count'
+import { LineNudge, type LineNudges, useLineNudges } from './globe-lines-tip'
 import {
   InfiniteMovieMenu,
   type InfiniteMovieMenuControl,
@@ -5217,9 +5217,16 @@ const GlobeLineSetting = ({
   const on = useSyncExternalStore(store.subscribe, store.get, store.get)
   const tipId = useId()
   const tipOpen = nudges.visible.includes(kind)
+  const fieldsetRef = useRef<HTMLFieldSetElement | null>(null)
+  // A tall menu scrolls: bring the first tip's switch into the middle of view.
+  useEffect(() => {
+    if (!tipOpen || kind !== 'path') return
+    fieldsetRef.current?.scrollIntoView({ block: 'center' })
+  }, [kind, tipOpen])
   const describedBy = tipOpen ? tipId : undefined
   return (
     <fieldset
+      ref={fieldsetRef}
       className={cn('warp-about-setting', tipOpen && 'has-nudge')}
       aria-describedby={describedBy}
     >
