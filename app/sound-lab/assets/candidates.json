@@ -1,0 +1,72 @@
+{
+ "hover2": [
+  0.1,
+  0.0664,
+  "rollover3.ogg"
+ ],
+ "hover3": [
+  0.3164,
+  0.1103,
+  "rollover4.ogg"
+ ],
+ "hover4": [
+  0.5767,
+  0.1088,
+  "rollover5.ogg"
+ ],
+ "hover6": [
+  0.8355,
+  0.0551,
+  "tick_004.ogg"
+ ],
+ "tap2": [
+  1.0406,
+  0.0528,
+  "click2.ogg"
+ ],
+ "tap4": [
+  1.2434,
+  0.0971,
+  "click_001.ogg"
+ ],
+ "frost-a": [
+  1.4905,
+  0.95,
+  "synth: glass bells climbing A5 C6 E6 A6, last note rings"
+ ],
+ "frost-b": [
+  2.5905,
+  0.89,
+  "synth: two glass pings, E6 then A6 a fourth up, long shimmer"
+ ],
+ "amethyst-a": [
+  3.6305,
+  1.64,
+  "synth: plucked strings falling E5 D5 C5 A4 over a soft A3 bell"
+ ],
+ "amethyst-b": [
+  5.4205,
+  1.45,
+  "synth: one soft bell chord, A4 E5 C5 struck close together, long ring"
+ ],
+ "jade-b": [
+  7.0205,
+  0.98,
+  "synth: steel-drum hop G5 D5 A5 G5 E6, syncopated"
+ ],
+ "jade-c": [
+  8.1505,
+  1.16,
+  "synth: airy flute rise A5 D6 E6 with breath"
+ ],
+ "gold-b": [
+  9.4605,
+  2.42,
+  "synth: big C5 bell with E5 G5, choir pad C3 G3 E4, shimmering cascade, sub boom"
+ ],
+ "gold-c": [
+  12.0305,
+  2.82,
+  "synth: choir and brass swell on C major rising to a C6 bell strike and sub boom"
+ ]
+}

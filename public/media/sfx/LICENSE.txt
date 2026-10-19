@@ -1,23 +1,36 @@
-	
+Sounds in sprite.mp3
+====================
 
-	Music Jingles
+sprite.mp3 joins every sound the site plays into one file. sprite.json lists
+each clip's position and where it came from (the third field of each entry).
+Two kinds of clip are in it.
 
-	by  Kenney Vleugels (Kenney.nl)
+1. Recordings from Kenney's CC0 packs (6 clips: the clicks)
 
-			------------------------------
+   Their source file names are in sprite.json: rollover2.ogg, tick_001.ogg,
+   click1.ogg, click3.ogg, select_001.ogg, select_007.ogg.
 
-	License (Creative Commons Zero, CC0)
-	http://creativecommons.org/publicdomain/zero/1.0/
+     Interface Sounds  https://kenney.nl/assets/interface-sounds
+     UI Audio          https://kenney.nl/assets/ui-audio
 
-	You may use these assets in personal and commercial projects.
-	Credit (Kenney or www.kenney.nl) would be nice but is not mandatory.
+   by Kenney Vleugels (Kenney.nl). Licence: Creative Commons Zero (CC0),
+   http://creativecommons.org/publicdomain/zero/1.0/
+   You may use these assets in personal and commercial projects. Credit
+   (Kenney or www.kenney.nl) is appreciated but not required.
 
-			------------------------------
+2. Clips synthesised for this project (16 clips)
 
-	Donate:   http://support.kenney.nl
-	Request:  http://request.kenney.nl
+   The globe's spin ticks, the extra hover and tap clicks, and the four reveal
+   jingles (frost, amethyst, jade, gold). They are generated from nothing but
+   sine, noise and envelope maths by scripts/sound/synth.py (seeded, so a
+   rebuild gives the same file), and belong to the project. No recording is
+   sampled.
 
-	Follow on Twitter for updates:
-	@KenneyNL
-These four jingles (jingle-*.mp3) come from Kenney's "Music Jingles" pack
-(https://kenney.nl/assets/music-jingles), CC0 / public domain. Re-encoded to MP3.
+Every clip is gain-matched to the loudness plan in app/audio/sound-plan.json
+and true-peak limited, then encoded to MP3, by scripts/sound/build_sprite.py.
+Nothing is changed otherwise.
+
+The audition page (development only, /sound-lab) also carries held-back clips
+and the jingle candidates that were not chosen, in app/sound-lab/assets/. They
+are not part of the site and are not shipped. The candidate jingles are
+synthesised like the clips above; the held-back clips are from the Kenney packs.
