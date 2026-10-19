@@ -41,3 +41,6 @@ public/tmp.webm
 # Catalogue pipeline scratch (state, output, release asset)
 /.catalog/
 public/json/catalog/
+# Python bytecode from scripts/sound
+__pycache__/
+*.pyc

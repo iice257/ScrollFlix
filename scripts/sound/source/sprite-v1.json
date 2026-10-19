@@ -1,0 +1,282 @@
+{
+ "hover1": [
+  0.0,
+  0.0544,
+  "rollover2.ogg"
+ ],
+ "hover2": [
+  0.1344,
+  0.0664,
+  "rollover3.ogg"
+ ],
+ "hover3": [
+  0.2808,
+  0.1103,
+  "rollover4.ogg"
+ ],
+ "hover4": [
+  0.4711,
+  0.1088,
+  "rollover5.ogg"
+ ],
+ "hover5": [
+  0.66,
+  0.045,
+  "tick_001.ogg"
+ ],
+ "hover6": [
+  0.7849,
+  0.0551,
+  "tick_004.ogg"
+ ],
+ "tap1": [
+  0.9201,
+  0.0909,
+  "click1.ogg"
+ ],
+ "tap2": [
+  1.091,
+  0.0528,
+  "click2.ogg"
+ ],
+ "tap3": [
+  1.2239,
+  0.0832,
+  "click3.ogg"
+ ],
+ "tap4": [
+  1.3871,
+  0.0971,
+  "click_001.ogg"
+ ],
+ "tap5": [
+  1.5642,
+  0.0404,
+  "select_001.ogg"
+ ],
+ "tap6": [
+  1.6846,
+  0.0595,
+  "select_007.ogg"
+ ],
+ "grab1": [
+  1.8241,
+  0.1321,
+  "drop_001.ogg"
+ ],
+ "grab2": [
+  2.0362,
+  0.1882,
+  "drop_002.ogg"
+ ],
+ "grab3": [
+  2.3044,
+  0.1882,
+  "drop_003.ogg"
+ ],
+ "grab4": [
+  2.5725,
+  0.2838,
+  "drop_004.ogg"
+ ],
+ "grab5": [
+  2.9363,
+  0.1393,
+  "scratch_001.ogg"
+ ],
+ "open1": [
+  3.1556,
+  0.3138,
+  "open_002.ogg"
+ ],
+ "open2": [
+  3.5494,
+  0.3138,
+  "open_003.ogg"
+ ],
+ "open3": [
+  3.9432,
+  0.3229,
+  "open_004.ogg"
+ ],
+ "open4": [
+  4.3461,
+  0.418,
+  "maximize_004.ogg"
+ ],
+ "open5": [
+  4.8441,
+  0.5264,
+  "maximize_005.ogg"
+ ],
+ "close1": [
+  5.4504,
+  0.3138,
+  "close_002.ogg"
+ ],
+ "close2": [
+  5.8442,
+  0.3138,
+  "close_003.ogg"
+ ],
+ "close3": [
+  6.238,
+  0.3229,
+  "close_004.ogg"
+ ],
+ "close4": [
+  6.6409,
+  0.418,
+  "minimize_004.ogg"
+ ],
+ "close5": [
+  7.1388,
+  0.5264,
+  "minimize_005.ogg"
+ ],
+ "settle1": [
+  7.7452,
+  0.1199,
+  "bong_001.ogg"
+ ],
+ "settle2": [
+  7.9451,
+  0.2838,
+  "drop_004.ogg"
+ ],
+ "settle3": [
+  8.3089,
+  0.1882,
+  "drop_003.ogg"
+ ],
+ "settle4": [
+  8.5771,
+  0.0995,
+  "pluck_001.ogg"
+ ],
+ "heart1": [
+  8.7566,
+  0.2898,
+  "confirmation_001.ogg"
+ ],
+ "heart2": [
+  9.1265,
+  0.539,
+  "confirmation_002.ogg"
+ ],
+ "heart3": [
+  9.7455,
+  0.322,
+  "confirmation_003.ogg"
+ ],
+ "heart4": [
+  10.1475,
+  0.4904,
+  "confirmation_004.ogg"
+ ],
+ "trail1": [
+  10.7179,
+  0.2755,
+  "glass_001.ogg"
+ ],
+ "trail2": [
+  11.0734,
+  0.1224,
+  "glass_002.ogg"
+ ],
+ "trail3": [
+  11.2759,
+  0.1208,
+  "glass_003.ogg"
+ ],
+ "trail4": [
+  11.4766,
+  0.1321,
+  "glass_005.ogg"
+ ],
+ "trail5": [
+  11.6887,
+  0.1617,
+  "pluck_002.ogg"
+ ],
+ "confirm1": [
+  11.9303,
+  0.3799,
+  "select_003.ogg"
+ ],
+ "confirm2": [
+  12.3902,
+  0.3799,
+  "select_004.ogg"
+ ],
+ "confirm3": [
+  12.8501,
+  0.3799,
+  "select_005.ogg"
+ ],
+ "frost1": [
+  13.3099,
+  0.9557,
+  "Pizzicato jingles/jingles_PIZZI02.ogg"
+ ],
+ "frost2": [
+  14.3457,
+  0.8112,
+  "Pizzicato jingles/jingles_PIZZI15.ogg"
+ ],
+ "frost3": [
+  15.2369,
+  1.1469,
+  "Pizzicato jingles/jingles_PIZZI03.ogg"
+ ],
+ "amethyst1": [
+  16.4637,
+  1.0024,
+  "Pizzicato jingles/jingles_PIZZI01.ogg"
+ ],
+ "amethyst2": [
+  17.5461,
+  0.9231,
+  "Pizzicato jingles/jingles_PIZZI14.ogg"
+ ],
+ "amethyst3": [
+  18.5492,
+  0.7925,
+  "Pizzicato jingles/jingles_PIZZI11.ogg"
+ ],
+ "jade1": [
+  19.4217,
+  0.9089,
+  "Steel jingles/jingles_STEEL10.ogg"
+ ],
+ "jade2": [
+  20.4106,
+  0.9448,
+  "Steel jingles/jingles_STEEL15.ogg"
+ ],
+ "jade3": [
+  21.4354,
+  0.8013,
+  "Steel jingles/jingles_STEEL08.ogg"
+ ],
+ "gold1": [
+  22.3166,
+  0.9089,
+  "Steel jingles/jingles_STEEL16.ogg"
+ ],
+ "gold2": [
+  23.3056,
+  0.9328,
+  "Steel jingles/jingles_STEEL00.ogg"
+ ],
+ "gold3": [
+  24.3184,
+  1.2557,
+  "Steel jingles/jingles_STEEL12.ogg"
+ ],
+ "gold4": [
+  25.6541,
+  1.3873,
+  "Steel jingles/jingles_STEEL02.ogg"
+ ]
+}

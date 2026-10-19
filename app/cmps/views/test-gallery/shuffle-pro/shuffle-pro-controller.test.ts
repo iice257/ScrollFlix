@@ -71,7 +71,7 @@ const setup = (
     }),
   }
 
-  const whoosh = {
+  const wheel = {
     update: vi.fn(),
     fadeOut: vi.fn(),
     stop: vi.fn(),
@@ -93,7 +93,7 @@ const setup = (
     isReducedMotion: () => false,
     getFound: () => options.found ?? {},
     recordRun: (tier) => recorded.push(tier),
-    createWhoosh: () => whoosh,
+    createWheel: () => wheel,
     pickTarget: () => 'target-1',
     prepare: () => {
       calls.push('prepare')
@@ -123,7 +123,7 @@ const setup = (
     advance,
     calls,
     recorded,
-    whoosh,
+    wheel,
     setOmega: (value: number) => {
       omega = value
     },
