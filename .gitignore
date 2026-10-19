@@ -37,3 +37,6 @@ public/tmp.webm
 /playwright/.cache/
 # Stray Tailwind scan caches written to a mangled temp path at the repo root
 /Users0AppData*
+
+# Catalogue pipeline scratch (state, output, release asset)
+/.catalog/
