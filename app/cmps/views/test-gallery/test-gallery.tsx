@@ -148,6 +148,7 @@ import {
   useShuffleProController,
 } from './shuffle-pro/use-shuffle-pro'
 import './session-path.css'
+import { perfFlag } from './perf-probe'
 import { stopsFromPath } from './share/path-art'
 import { useTitleTranslation } from './use-title-translation'
 import { WeatherLayer, type WeatherStorm } from './weather-layer'
@@ -2837,8 +2838,12 @@ export const TestGalleryApp = () => {
       />
       <ConstellationLayer
         controlRef={menuControlRef}
-        ids={savedEntries.map((entry) => entry.id)}
-        path={sessionPath}
+        ids={
+          perfFlag('constellations') === false
+            ? []
+            : savedEntries.map((entry) => entry.id)
+        }
+        path={perfFlag('path') === false ? [] : sessionPath}
         active={
           constellationsOn &&
           mode === 'wall' &&

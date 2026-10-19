@@ -16,6 +16,7 @@ import {
   hasHoneycombLayout,
   prewarmHoneycombLayout,
 } from './honeycomb-layout'
+import { perfProbe } from './perf-probe'
 import { unlockAudio } from './shuffle-pro/shuffle-pro-audio'
 import type {
   PressSession,
@@ -1479,6 +1480,7 @@ class InfiniteMovieEngine<T> {
   // Told after every frame that was drawn.
   onFrame: (() => void) | null = null
   private lastFlickAt = 0
+  private lastFrameDrawn = false
 
   private readonly handleContextLost = (event: Event) => {
     event.preventDefault()
@@ -1598,9 +1600,20 @@ class InfiniteMovieEngine<T> {
     }
     this.time = time
     this.frames += deltaTime / TARGET_FRAME_DURATION
-    if (this.animate(deltaTime)) {
+    const probe = perfProbe()
+    const workStart = probe ? performance.now() : 0
+    const drawn = this.animate(deltaTime)
+    if (drawn) {
       this.render()
       this.onFrame?.()
+    }
+    if (probe) {
+      // Only frames that follow another drawn frame, so a wake-up after rest
+      // is not mistaken for a slow frame.
+      if (drawn && this.lastFrameDrawn && rawDelta > 0 && rawDelta < 250) {
+        probe.frame(rawDelta, performance.now() - workStart)
+      }
+      this.lastFrameDrawn = drawn
     }
     this.checkFlick(time)
     this.frameId = window.requestAnimationFrame((nextTime) =>
