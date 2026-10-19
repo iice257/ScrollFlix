@@ -65,37 +65,9 @@ export const buildConstellation = (
 
 // ---------------------------------------------------------------- setting
 
-export const CONSTELLATIONS_STORAGE_KEY = 'wtw:constellations'
-
-const listeners = new Set<() => void>()
-let enabled: boolean | null = null
-
-const read = () => {
-  try {
-    return window.localStorage.getItem(CONSTELLATIONS_STORAGE_KEY) !== '0'
-  } catch {
-    return true
-  }
-}
-
-export const constellationSetting = {
-  get: () => {
-    enabled ??= read()
-    return enabled
-  },
-  set: (next: boolean) => {
-    enabled = next
-    try {
-      window.localStorage.setItem(CONSTELLATIONS_STORAGE_KEY, next ? '1' : '0')
-    } catch {
-      // Storage can be unavailable (private mode, blocked site data).
-    }
-    for (const listener of listeners) listener()
-  },
-  subscribe: (listener: () => void) => {
-    listeners.add(listener)
-    return () => {
-      listeners.delete(listener)
-    }
-  },
-}
+// Whether the links between saved films are drawn (off until turned on). The
+// session path has its own switch; both live in globe-lines.ts.
+export {
+  CONSTELLATIONS_STORAGE_KEY,
+  constellationSetting,
+} from './globe-lines'
