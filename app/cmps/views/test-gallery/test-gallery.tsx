@@ -215,6 +215,10 @@ type PosterLoadState = 'loading' | 'loaded' | 'error'
 type MotionPhase = 'enter' | 'exit'
 
 const GALLERY_WINDOW_SIZE = 900
+// Posters now come from the TMDB CDN, so the first-load screen can no longer
+// wait for all of them. Once chunk 0 is in and the placeholders are up, the
+// screen lets go after this long and the posters fill in behind it.
+const FIRST_LOAD_MAX_LOCK_MS = 3000
 const MIN_DECISION_FILTER_RESULTS = 24
 const DETAILS_EXPAND_DRAG_PX = 42
 const DETAILS_CLOSE_DRAG_PX = 68
@@ -1529,6 +1533,16 @@ export const TestGalleryApp = () => {
     }
   }, [loadState, visibleMovies.length])
 
+  useEffect(() => {
+    if (initialGalleryReady || loadState !== 'ready') return
+    if (!visibleMovies.length) return
+    const timer = window.setTimeout(
+      () => setInitialGalleryReady(true),
+      FIRST_LOAD_MAX_LOCK_MS,
+    )
+    return () => window.clearTimeout(timer)
+  }, [initialGalleryReady, loadState, visibleMovies.length])
+
   const handleGalleryLoadProgress = useCallback((percent: number) => {
     setGalleryLoadPercent(Math.round(percent))
     if (percent >= 100) setInitialGalleryReady(true)
@@ -2045,9 +2059,11 @@ export const TestGalleryApp = () => {
   const blockWhileLoading = useCallback(
     (event: SyntheticEvent) => {
       if (!loaderLocked) return
+      // The loader card and the Gallery/Index switch stay live: the index
+      // needs only the catalogue, never the globe's posters.
       if (
         event.target instanceof Element &&
-        event.target.closest('.warp-gallery-preloader')
+        event.target.closest('.warp-gallery-preloader, .warp-mode-toggle')
       ) {
         return
       }
