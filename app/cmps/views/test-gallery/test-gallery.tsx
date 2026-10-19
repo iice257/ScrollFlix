@@ -269,6 +269,8 @@ const FULLSCREEN_HINT_STORAGE_KEY = 'wtw:fullscreen-hint-seen'
 const THEME_STORAGE_KEY = 'wtw:theme'
 // Phones sit the globe a little closer; applied as a camera change.
 const MOBILE_GLOBE_ZOOM = 1.085
+// How long a mood run waits for the globe to be rebuilt for the new films.
+const MOOD_RUN_WAIT_MS = 4000
 
 type Theme = 'dark' | 'light'
 
@@ -1609,6 +1611,10 @@ export const TestGalleryApp = () => {
   const [moodShuffleNonce, setMoodShuffleNonce] = useState(0)
   // The bonus run a mood landing earned, waiting for the wall to be rebuilt.
   const pendingMoodRunRef = useRef<MoodRunStart | null>(null)
+  // Then it waits for the globe built for the new films before it starts.
+  const waitingMoodRunRef = useRef<MoodRunStart | null>(null)
+  const moodRunTimerRef = useRef(0)
+  const engineItemsRef = useRef<readonly { id: string }[] | null>(null)
   const recentShufflesRef = useRef<number[]>([])
   const moodNudgeSpentRef = useRef(readSessionFlag(MOOD_NUDGE_STORAGE_KEY))
   const [aboutMaximized, setAboutMaximized] = useState(false)
@@ -1833,6 +1839,8 @@ export const TestGalleryApp = () => {
       [filteredMovies, selectedGenres],
     ),
   )
+  const visibleMoviesRef = useRef(visibleMovies)
+  visibleMoviesRef.current = visibleMovies
 
   // What the saved films say about taste. With three or more saved, random
   // picks lean a little towards films like them (never exclusively).
@@ -2762,9 +2770,22 @@ export const TestGalleryApp = () => {
     handledMoodShuffle.current = moodShuffleNonce
     const moodRun = pendingMoodRunRef.current
     pendingMoodRunRef.current = null
-    if (moodRun && handleMoodRunRef.current(moodRun)) return
-    handleShuffleRef.current()
+    if (!moodRun) {
+      handleShuffleRef.current()
+      return
+    }
+    // The globe is rebuilt for the new films a little after this; the run
+    // waits for that globe (see `handleEngineAttached`), with a time limit so
+    // a globe that never rebuilds still gets its landing.
+    waitingMoodRunRef.current = moodRun
+    window.clearTimeout(moodRunTimerRef.current)
+    moodRunTimerRef.current = window.setTimeout(
+      () => startWaitingMoodRunRef.current(true),
+      MOOD_RUN_WAIT_MS,
+    )
+    startWaitingMoodRunRef.current(false)
   }, [moodShuffleNonce])
+  useEffect(() => () => window.clearTimeout(moodRunTimerRef.current), [])
 
   // Bring the mood page in quietly once the globe is up.
   useEffect(() => {
@@ -2802,6 +2823,33 @@ export const TestGalleryApp = () => {
   )
   const handleMoodRunRef = useRef(handleMoodRun)
   handleMoodRunRef.current = handleMoodRun
+
+  // Starts the waiting bonus run once the globe on screen was built for the
+  // films now showing (or, when `force`, anyway). Falls back to an ordinary
+  // shuffle if the run cannot start.
+  const startWaitingMoodRun = (force: boolean) => {
+    const run = waitingMoodRunRef.current
+    if (!run) return
+    const built = engineItemsRef.current
+    const showing = visibleMoviesRef.current
+    const ready =
+      built !== null &&
+      built.length === showing.length &&
+      built.every((item, index) => item.id === showing[index]?.id)
+    if (!ready && !force) return
+    waitingMoodRunRef.current = null
+    window.clearTimeout(moodRunTimerRef.current)
+    if (!handleMoodRunRef.current(run)) handleShuffleRef.current()
+  }
+  const startWaitingMoodRunRef = useRef(startWaitingMoodRun)
+  startWaitingMoodRunRef.current = startWaitingMoodRun
+  const handleEngineAttached = useCallback(
+    (items: readonly { id: string }[]) => {
+      engineItemsRef.current = items
+      startWaitingMoodRunRef.current(false)
+    },
+    [],
+  )
   useEffect(() => {
     const releaseKey = (shuffleOnTap: boolean) => {
       if (!keyHoldRef.current) return
@@ -2873,6 +2921,7 @@ export const TestGalleryApp = () => {
         onMovingChange={setIsGlobeMoving}
         onOpenMovie={handleOpenFromGlobe}
         onReady={handleGalleryReady}
+        onEngineAttached={handleEngineAttached}
         onSelectMovie={handleSelectMovie}
         onUserSpin={handleUserSpin}
         spinRequest={spinRequest}
@@ -3493,6 +3542,7 @@ type WarpWallProps = {
   onMovingChange: (moving: boolean) => void
   onOpenMovie: (movie: TestMovie, source: 'tap' | 'shuffle') => void
   onReady: () => void
+  onEngineAttached: (items: readonly { id: string }[]) => void
   onSelectMovie: (movie: TestMovie) => void
   onUserSpin: () => void
   spinRequest: { itemId: string; nonce: number } | null
@@ -3515,6 +3565,7 @@ const WarpWall = ({
   onMovingChange,
   onOpenMovie,
   onReady,
+  onEngineAttached,
   onSelectMovie,
   onUserSpin,
   spinRequest,
@@ -3577,6 +3628,7 @@ const WarpWall = ({
         onMovingChange={onMovingChange}
         onOpenItem={handleOpenItem}
         onReady={onReady}
+        onEngineAttached={onEngineAttached}
         onUserSpin={onUserSpin}
         scale={0.9}
         zoom={zoom}
