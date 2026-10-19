@@ -13,7 +13,12 @@ describe('shuffle pro store', () => {
   })
 
   it('starts empty and treats bad data as empty', () => {
-    const empty = { found: {}, totalRuns: 0, bestStreak: 0 }
+    const empty = {
+      found: {},
+      totalRuns: 0,
+      bestStreak: 0,
+      repeatFound: false,
+    }
     expect(parseShuffleProData(null)).toEqual(empty)
     expect(parseShuffleProData('{nope')).toEqual(empty)
     expect(parseShuffleProData('{"v":2,"found":{}}')).toEqual(empty)
@@ -21,7 +26,7 @@ describe('shuffle pro store', () => {
 
   it('records a path with count, first and last time', () => {
     const first = recordRun(
-      { found: {}, totalRuns: 0, bestStreak: 0 },
+      { found: {}, totalRuns: 0, bestStreak: 0, repeatFound: false },
       'frost',
       100,
     )
@@ -51,6 +56,18 @@ describe('shuffle pro store', () => {
     // A run does not wipe it.
     shuffleProStore.recordRun('frost', 1)
     expect(shuffleProStore.get().bestStreak).toBe(7)
+  })
+
+  it('keeps the repeat setting through a reset and a reload', () => {
+    expect(shuffleProStore.get().repeatFound).toBe(false)
+    shuffleProStore.setRepeatFound(true)
+    shuffleProStore.recordRun('frost', 1)
+    shuffleProStore.reset()
+    expect(shuffleProStore.get().repeatFound).toBe(true)
+    const restored = parseShuffleProData(
+      window.localStorage.getItem(SHUFFLE_PRO_STORAGE_KEY),
+    )
+    expect(restored.repeatFound).toBe(true)
   })
 
   it('notifies subscribers and can be reset', () => {

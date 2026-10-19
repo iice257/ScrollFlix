@@ -3,6 +3,8 @@ import {
   EMPTY_STREAK,
   HOLD_PREWARM_MS,
   JADE_PROFILE,
+  KEY_ROLL_OMEGA,
+  KEY_TAP_MAX_MS,
   STANDARD_PROFILE,
   type StreakEvent,
   type StreakState,
@@ -10,7 +12,9 @@ import {
   axisForDragDirection,
   cameraPullback,
   isBigSpin,
+  isKeyHold,
   isNearTrigger,
+  isPathBlocked,
   landingOmega,
   pickLandingTarget,
   precessedAxis,
@@ -57,6 +61,62 @@ describe('shouldTriggerHold', () => {
     expect(
       shouldTriggerHold({ elapsedMs: 5999, maxMovedPx: 50, immersive: true }),
     ).toBe(false)
+  })
+})
+
+describe('Space hold', () => {
+  it('counts a press as a hold from 250ms on, and shorter as a tap', () => {
+    expect(KEY_TAP_MAX_MS).toBe(250)
+    expect(isKeyHold(0)).toBe(false)
+    expect(isKeyHold(249)).toBe(false)
+    expect(isKeyHold(250)).toBe(true)
+    expect(isKeyHold(4000)).toBe(true)
+  })
+
+  it('starts Shuffle Pro after 10s, wherever the pointer is', () => {
+    const args = { maxMovedPx: 0, immersive: false, source: 'key' } as const
+    expect(shouldTriggerHold({ ...args, elapsedMs: 5000 })).toBe(false)
+    expect(shouldTriggerHold({ ...args, elapsedMs: 9999 })).toBe(false)
+    expect(shouldTriggerHold({ ...args, elapsedMs: 10000 })).toBe(true)
+  })
+
+  it('starts Shuffle Pro after 6s when immersive', () => {
+    const args = { maxMovedPx: 0, immersive: true, source: 'key' } as const
+    expect(shouldTriggerHold({ ...args, elapsedMs: 5999 })).toBe(false)
+    expect(shouldTriggerHold({ ...args, elapsedMs: 6000 })).toBe(true)
+  })
+
+  it('rolls well below Shuffle Pro speed', () => {
+    expect(KEY_ROLL_OMEGA).toBeGreaterThan(STANDARD_PROFILE.omegaMin)
+    expect(KEY_ROLL_OMEGA).toBeLessThan(STANDARD_PROFILE.omegaMax * 0.7)
+  })
+})
+
+describe('isPathBlocked', () => {
+  it('lets a path that has not been found through', () => {
+    expect(isPathBlocked('frost', {}, false)).toBe(false)
+    expect(isPathBlocked('jade', { frost: 1 }, false)).toBe(false)
+  })
+
+  it('blocks a path once it is found', () => {
+    expect(isPathBlocked('frost', { frost: 1 }, false)).toBe(true)
+    expect(isPathBlocked('amethyst', { frost: 1, amethyst: 2 }, false)).toBe(
+      true,
+    )
+  })
+
+  it('lets every path through when repeats are on', () => {
+    expect(isPathBlocked('frost', { frost: 1 }, true)).toBe(false)
+    expect(
+      isPathBlocked('gold', { frost: 1, amethyst: 1, jade: 1, gold: 1 }, true),
+    ).toBe(false)
+  })
+
+  it('still lets a found path through when it would become the first Gold', () => {
+    const found = { frost: 1, amethyst: 1, jade: 1 }
+    expect(isPathBlocked('frost', found, false)).toBe(false)
+    expect(isPathBlocked('gold', { ...found, gold: 1 }, false)).toBe(true)
+    expect(isPathBlocked('frost', { ...found, gold: 1 }, false)).toBe(true)
   })
 })
 

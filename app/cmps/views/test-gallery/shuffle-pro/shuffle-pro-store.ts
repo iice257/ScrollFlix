@@ -12,9 +12,16 @@ export type ShuffleProData = {
   totalRuns: number
   // The longest streak of shuffles reached, kept for the run recap.
   bestStreak: number
+  // Off by default: a path stops starting runs once it has been found.
+  repeatFound: boolean
 }
 
-const EMPTY: ShuffleProData = { found: {}, totalRuns: 0, bestStreak: 0 }
+const EMPTY: ShuffleProData = {
+  found: {},
+  totalRuns: 0,
+  bestStreak: 0,
+  repeatFound: false,
+}
 const TIERS: readonly Tier[] = ['frost', 'amethyst', 'jade', 'gold']
 
 const isNumber = (value: unknown): value is number =>
@@ -29,6 +36,7 @@ export const parseShuffleProData = (raw: string | null): ShuffleProData => {
       found?: Record<string, Partial<FoundEntry>>
       totalRuns?: unknown
       bestStreak?: unknown
+      repeatFound?: unknown
     }
     if (parsed?.v !== 1 || typeof parsed.found !== 'object' || !parsed.found) {
       return EMPTY
@@ -57,6 +65,7 @@ export const parseShuffleProData = (raw: string | null): ShuffleProData => {
       bestStreak: isNumber(parsed.bestStreak)
         ? Math.max(0, Math.floor(parsed.bestStreak))
         : 0,
+      repeatFound: parsed.repeatFound === true,
     }
   } catch {
     return EMPTY
@@ -127,7 +136,11 @@ export const shuffleProStore = {
     const data = load()
     if (streak > data.bestStreak) save({ ...data, bestStreak: streak })
   },
+  setRepeatFound(repeatFound: boolean) {
+    save({ ...load(), repeatFound })
+  },
+  // Clears what was found; the repeat setting is a preference and stays.
   reset() {
-    save(EMPTY)
+    save({ ...EMPTY, repeatFound: load().repeatFound })
   },
 }

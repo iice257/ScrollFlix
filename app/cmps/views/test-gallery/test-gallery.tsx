@@ -40,12 +40,14 @@ import {
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
   Suspense,
+  type SyntheticEvent,
   lazy,
   memo,
   startTransition,
   useCallback,
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -75,12 +77,19 @@ import {
 } from '../../ui/tooltip'
 import { constellationSetting } from './constellation'
 import { ConstellationLayer } from './constellation-layer'
+import { formatGenreCount } from './genre-count'
 import {
   InfiniteMovieMenu,
   type InfiniteMovieMenuControl,
   type InfiniteMovieMenuItem,
 } from './infinite-movie-menu'
 import { matchesFilmLink, pickLandingMovie } from './landing'
+import {
+  centeredScrollTop,
+  glideStart,
+  pickRandomRow,
+  visibleGenreTags,
+} from './list-scroll'
 import { MoodFunnel, MoodLine, MoodNudge } from './moods/mood-entry'
 import {
   MOOD_GENRES,
@@ -632,7 +641,14 @@ const MoviePoster = ({
         crossOrigin={movie.posterDetailUrl ? 'anonymous' : undefined}
         loading={loading}
         onError={() => setLoadState('error')}
-        onLoad={() => setLoadState('loaded')}
+        // The fade starts once the pixels are decoded, not when the bytes land.
+        onLoad={(event) => {
+          const reveal = () => setLoadState('loaded')
+          const image = event.currentTarget
+          if (typeof image.decode === 'function')
+            image.decode().then(reveal, reveal)
+          else reveal()
+        }}
       />
     </span>
   )
@@ -1992,7 +2008,9 @@ export const TestGalleryApp = () => {
   }, [])
   useGoldenHourScheduler(initialGalleryReady)
   const [shuffleSpinning, setShuffleSpinning] = useState(false)
-  const isSpinActive = shuffleProSnapshot.canSkip || shuffleSpinning
+  // Skip exists only while a Shuffle Pro run is spinning; an ordinary shuffle
+  // always plays out, and pressing Shuffle again simply starts another.
+  const isSpinActive = shuffleProSnapshot.canSkip
   // True while Space is held down on the globe and the controller owns it.
   const keyHoldRef = useRef(false)
   // The premium frame stays on the card until it has finished closing.
@@ -2053,6 +2071,8 @@ export const TestGalleryApp = () => {
         : [...currentGenres, genre],
     )
   }, [])
+
+  const clearGenres = useCallback(() => setSelectedGenres([]), [])
 
   const clearAllFilters = useCallback(() => {
     setContentFilter('all')
@@ -2179,7 +2199,9 @@ export const TestGalleryApp = () => {
     selectedGenres,
     selectedMoodFilters,
     selectedYear,
+    totalCount: movies.length,
     onClear: clearAllFilters,
+    onClearGenres: clearGenres,
     onSelectContentFilter: selectContentFilter,
     onToggleGenre: toggleGenre,
     onToggleMoodFilter: toggleMoodFilter,
@@ -2382,11 +2404,64 @@ export const TestGalleryApp = () => {
     weightOf,
   ])
 
-  // Skip finishes whatever spin is running: a Shuffle Pro run or a normal one.
+  // Skip finishes a Shuffle Pro run. Ordinary shuffles can't be skipped.
   const handleSkip = useCallback(() => {
     if (shuffleProController.getSnapshot().canSkip) shuffleProController.skip()
-    else menuControlRef.current?.skipSpin()
   }, [shuffleProController])
+
+  // While the first-load screen is up nothing else answers: the globe can't
+  // be dragged, scrolled or clicked, keys do nothing, and the loader card
+  // flashes red to say so. Its own buttons (Skip, sound) still work.
+  const loaderLocked = mode === 'wall' && !initialGalleryReady
+  const preloaderRef = useRef<HTMLOutputElement | null>(null)
+  const lastDeniedAt = useRef(Number.NEGATIVE_INFINITY)
+  const flashLoader = useCallback(() => {
+    const node = preloaderRef.current
+    const now = performance.now()
+    if (!node || now - lastDeniedAt.current < 450) return
+    lastDeniedAt.current = now
+    node.classList.remove('is-denied')
+    // Reading a layout property restarts the animation if it is mid-flash.
+    void node.offsetWidth
+    node.classList.add('is-denied')
+  }, [])
+  const blockWhileLoading = useCallback(
+    (event: SyntheticEvent) => {
+      if (!loaderLocked) return
+      if (
+        event.target instanceof Element &&
+        event.target.closest('.warp-gallery-preloader')
+      ) {
+        return
+      }
+      event.stopPropagation()
+      // Wheel listeners are passive; there is nothing to cancel on them.
+      if (event.type !== 'wheel') event.preventDefault()
+      flashLoader()
+    },
+    [flashLoader, loaderLocked],
+  )
+  useEffect(() => {
+    if (!loaderLocked) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const locked =
+        event.key === ' ' ||
+        event.key === 'Enter' ||
+        event.key.startsWith('Arrow')
+      if (!locked) return
+      if (
+        event.target instanceof Element &&
+        event.target.closest('.warp-gallery-preloader')
+      ) {
+        return
+      }
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      flashLoader()
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [flashLoader, loaderLocked])
 
   // A drag that turned the globe a quarter turn or more counts toward the
   // streak; five in a row start a Frost run on their own.
@@ -2618,11 +2693,16 @@ export const TestGalleryApp = () => {
           handleSkip()
           return
         }
-        // On the globe, Space works like pressing the globe: a tap shuffles
-        // (counted toward the streak, even mid-spin) and holding it charges a
-        // Shuffle Pro run. Which one it was is only known on key up.
+        // On the globe a tap shuffles (counted toward the streak, even
+        // mid-spin). Holding rolls the globe at the regular shuffle speed
+        // until it is let go, and a long enough hold starts Shuffle Pro. Which
+        // one it was is only known on key up.
         if (mode === 'wall' && !detailsMovieId) {
-          const session = shuffleProController.pressStart({ nx: 0.5, ny: 0.5 })
+          const session = shuffleProController.pressStart({
+            nx: 0.5,
+            ny: 0.5,
+            source: 'key',
+          })
           if (session === 'consumed') return
           keyHoldRef.current = session !== null
           if (session) return
@@ -2708,6 +2788,9 @@ export const TestGalleryApp = () => {
       data-theme={theme}
       data-immersive={immersive ? 'true' : 'false'}
       data-golden={goldenHour ? 'true' : 'false'}
+      onPointerDownCapture={blockWhileLoading}
+      onClickCapture={blockWhileLoading}
+      onWheelCapture={blockWhileLoading}
     >
       {immersive ? (
         <ImmersiveExitPill onExit={() => void exitImmersive()} />
@@ -2782,11 +2865,13 @@ export const TestGalleryApp = () => {
           isFiltered={selectedFilterCount > 0}
           totalCount={movies.length}
           facetCatalog={facetCatalog}
+          selectedGenres={selectedGenres}
           onApplyFacet={handleApplyFacet}
           onOpenMovie={handleOpenMovie}
           onPickRandomMovie={handlePickRandomMovie}
           onSearchQueryChange={setListSearchQuery}
           onSelectMovie={handleSelectMovie}
+          onToggleGenre={toggleGenre}
         />
       ) : null}
 
@@ -3213,8 +3298,14 @@ export const TestGalleryApp = () => {
 
       {mode === 'wall' ? (
         <output
+          ref={preloaderRef}
           className='warp-gallery-preloader'
           data-state={initialGalleryReady ? 'ready' : 'loading'}
+          onAnimationEnd={(event) => {
+            if (event.animationName === 'warp-preloader-denied') {
+              event.currentTarget.classList.remove('is-denied')
+            }
+          }}
           aria-hidden={initialGalleryReady ? 'true' : undefined}
           aria-live='polite'
         >
@@ -3464,11 +3555,13 @@ type WarpListProps = {
   isFiltered: boolean
   totalCount: number
   facetCatalog: FacetCatalog
+  selectedGenres: string[]
   onApplyFacet: (facet: SearchFacet) => void
   onOpenMovie: (movie: TestMovie) => void
   onPickRandomMovie: (movie: TestMovie) => void
   onSearchQueryChange: (searchQuery: string) => void
   onSelectMovie: (movie: TestMovie) => void
+  onToggleGenre: (genre: string) => void
 }
 
 // The index can hold tens of thousands of films, so rows render in chunks as
@@ -3485,6 +3578,69 @@ const chunkRows = <T,>(rows: T[]) => {
   return chunks
 }
 
+const PICK_GLIDE_MS = 520
+
+// Brings a film's row to the middle of the index. The row is measured again on
+// every frame, because rows above it mount and groups expand while the list
+// moves. A target many screens away is reached by a jump to just short of it
+// followed by a short glide. Any input from the person ends the glide.
+const glideToRow = (
+  scroller: HTMLElement,
+  movieId: string,
+  instant: boolean,
+): (() => void) | undefined => {
+  const measure = () => {
+    const row = scroller.querySelector<HTMLElement>(
+      `[data-movie-id="${CSS.escape(movieId)}"]`,
+    )
+    if (!row) return null
+    const rowRect = row.getBoundingClientRect()
+    return centeredScrollTop({
+      rowTop:
+        rowRect.top - scroller.getBoundingClientRect().top + scroller.scrollTop,
+      rowHeight: rowRect.height,
+      viewportHeight: scroller.clientHeight,
+      scrollHeight: scroller.scrollHeight,
+    })
+  }
+
+  const first = measure()
+  if (first === null) return undefined
+  if (instant) {
+    scroller.scrollTop = first
+    return undefined
+  }
+
+  scroller.scrollTop = glideStart(
+    scroller.scrollTop,
+    first,
+    scroller.clientHeight,
+  )
+  const from = scroller.scrollTop
+  const startedAt = performance.now()
+  let frame = 0
+  const interruptions = ['wheel', 'touchstart', 'pointerdown'] as const
+  const stop = () => {
+    window.cancelAnimationFrame(frame)
+    for (const type of interruptions) scroller.removeEventListener(type, stop)
+  }
+  for (const type of interruptions) {
+    scroller.addEventListener(type, stop, { passive: true })
+  }
+  const step = (now: number) => {
+    const progress = Math.min(1, (now - startedAt) / PICK_GLIDE_MS)
+    const target = measure() ?? first
+    scroller.scrollTop =
+      progress >= 1
+        ? target
+        : from + (target - from) * (1 - (1 - progress) ** 3)
+    if (progress < 1) frame = window.requestAnimationFrame(step)
+    else stop()
+  }
+  frame = window.requestAnimationFrame(step)
+  return stop
+}
+
 type ListRowChunkProps = {
   // The film that is active or pulsing, only passed to the chunk holding it,
   // so a hover re-renders one chunk instead of every row on screen.
@@ -3494,9 +3650,10 @@ type ListRowChunkProps = {
   isCollapsed: boolean
   randomPulseId: string | null
   rows: TestMovie[]
-  onHoverMovie: (movie: TestMovie) => void
+  selectedGenres: string[]
   onOpenMovie: (movie: TestMovie) => void
   onSelectMovie: (movie: TestMovie) => void
+  onToggleGenre: (movie: TestMovie, genre: string) => void
 }
 
 // How far past the viewport a chunk keeps its rows. Beyond it the rows are
@@ -3560,13 +3717,17 @@ const ListRowChunk = memo(
     isCollapsed,
     randomPulseId,
     rows,
-    onHoverMovie,
+    selectedGenres,
     onOpenMovie,
     onSelectMovie,
+    onToggleGenre,
   }: ListRowChunkProps) => {
     const chunkRef = useRef<HTMLDivElement | null>(null)
     const measuredHeight = useRef<number | null>(null)
-    const [isNear, setIsNear] = useState(false)
+    // A chunk that mounts already forced visible (the film just clicked or
+    // picked, after the list was rebuilt around it) starts as near, so it is
+    // not dropped to a placeholder for a frame when the force moves on.
+    const [isNear, setIsNear] = useState(forceVisible)
     const shouldRender = eager || forceVisible || isNear
 
     // Kept in a ref so the observer callback sees whether rows are mounted.
@@ -3630,9 +3791,10 @@ const ListRowChunk = memo(
                 isCollapsed={isCollapsed}
                 isRandomPulse={randomPulseId === movie.id}
                 movie={movie}
-                onHoverMovie={onHoverMovie}
+                selectedGenres={selectedGenres}
                 onOpenMovie={onOpenMovie}
                 onSelectMovie={onSelectMovie}
+                onToggleGenre={onToggleGenre}
               />
             ))
           : null}
@@ -3646,51 +3808,84 @@ type ListRowProps = {
   isCollapsed: boolean
   isRandomPulse: boolean
   movie: TestMovie
-  onHoverMovie: (movie: TestMovie) => void
+  selectedGenres: string[]
   onOpenMovie: (movie: TestMovie) => void
   onSelectMovie: (movie: TestMovie) => void
+  onToggleGenre: (movie: TestMovie, genre: string) => void
 }
 
 // Memoised so hovering a row re-renders only the rows whose state changed.
+// The row is a div holding two kinds of button (the film, and one chip per
+// genre), because a button cannot contain another button. A click anywhere
+// else on the row opens the film too.
 const ListRow = memo(
   ({
     isActive,
     isCollapsed,
     isRandomPulse,
     movie,
-    onHoverMovie,
+    selectedGenres,
     onOpenMovie,
     onSelectMovie,
-  }: ListRowProps) => (
-    <button
-      type='button'
-      data-movie-id={movie.id}
-      className={cn(
-        'warp-list-row',
-        isActive && 'is-active',
-        isRandomPulse && 'is-random-pulse',
-      )}
-      tabIndex={isCollapsed ? -1 : undefined}
-      onClick={() => onOpenMovie(movie)}
-      onFocus={() => onSelectMovie(movie)}
-      onMouseEnter={() => onHoverMovie(movie)}
-    >
-      <span className='warp-list-row-poster' aria-hidden='true'>
-        <MoviePoster movie={movie} size='list' />
-      </span>
-      <span className='warp-list-row-main'>
-        <span className='warp-list-row-title'>{movie.title}</span>
-        <span className='warp-list-row-meta'>{formatMovieMeta(movie)}</span>
-      </span>
-      <span className='warp-list-row-genres'>
-        {(movie.genres.length ? movie.genres : ['Movie'])
-          .slice(0, 3)
-          .map((genre) => (
-            <span key={genre}>{genre}</span>
-          ))}
-      </span>
-    </button>
-  ),
+    onToggleGenre,
+  }: ListRowProps) => {
+    const tabIndex = isCollapsed ? -1 : undefined
+    return (
+      <div
+        data-movie-id={movie.id}
+        className={cn(
+          'warp-list-row',
+          isActive && 'is-active',
+          isRandomPulse && 'is-random-pulse',
+        )}
+        onClick={() => onOpenMovie(movie)}
+      >
+        <button
+          type='button'
+          className='warp-list-row-open'
+          tabIndex={tabIndex}
+          onFocus={() => onSelectMovie(movie)}
+        >
+          <span className='warp-list-row-poster' aria-hidden='true'>
+            <MoviePoster movie={movie} size='list' />
+          </span>
+          <span className='warp-list-row-main'>
+            <span className='warp-list-row-title'>{movie.title}</span>
+            <span className='warp-list-row-meta'>{formatMovieMeta(movie)}</span>
+          </span>
+        </button>
+        <span className='warp-list-row-genres'>
+          {movie.genres.length ? (
+            visibleGenreTags(movie.genres, selectedGenres).map((genre) => {
+              const isOn = selectedGenres.includes(genre)
+              return (
+                <button
+                  type='button'
+                  key={genre}
+                  data-genre={genre}
+                  className={cn('warp-list-row-tag', isOn && 'is-on')}
+                  aria-pressed={isOn}
+                  aria-label={`${isOn ? 'Remove' : 'Filter by'} ${genre}`}
+                  tabIndex={tabIndex}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onToggleGenre(movie, genre)
+                  }}
+                >
+                  <span>{genre}</span>
+                  {isOn ? (
+                    <X aria-hidden='true' size={11} strokeWidth={3.4} />
+                  ) : null}
+                </button>
+              )
+            })
+          ) : (
+            <span className='warp-list-row-tag is-plain'>Movie</span>
+          )}
+        </span>
+      </div>
+    )
+  },
 )
 const WarpList = ({
   activeMovieId,
@@ -3705,11 +3900,13 @@ const WarpList = ({
   isFiltered,
   totalCount,
   facetCatalog,
+  selectedGenres,
   onApplyFacet,
   onOpenMovie,
   onPickRandomMovie,
   onSearchQueryChange,
   onSelectMovie,
+  onToggleGenre,
 }: WarpListProps) => {
   const [randomPulseId, setRandomPulseId] = useState<string | null>(null)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
@@ -3718,25 +3915,8 @@ const WarpList = ({
   )
   const pulseTimerRef = useRef<number | null>(null)
 
-  // Rows pass under a resting cursor while the list scrolls, and each one
-  // would otherwise become the active film and re-render the app. Hover only
-  // counts once the list has settled, and renders as an interruptible update.
-  const isScrollingRef = useRef(false)
-  const scrollTimerRef = useRef<number | null>(null)
-  const handleScroll = () => {
-    isScrollingRef.current = true
-    if (scrollTimerRef.current) window.clearTimeout(scrollTimerRef.current)
-    scrollTimerRef.current = window.setTimeout(() => {
-      isScrollingRef.current = false
-    }, 160)
-  }
-  const handleHoverMovie = useCallback(
-    (movie: TestMovie) => {
-      if (isScrollingRef.current) return
-      startTransition(() => onSelectMovie(movie))
-    },
-    [onSelectMovie],
-  )
+  const listRef = useRef<HTMLElement | null>(null)
+  const [pickScroll, setPickScroll] = useState<{ id: string } | null>(null)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const [highlight, setHighlight] = useState(-1)
   const suggestions = useMemo(
@@ -3821,7 +4001,6 @@ const WarpList = ({
   useEffect(
     () => () => {
       if (pulseTimerRef.current) window.clearTimeout(pulseTimerRef.current)
-      if (scrollTimerRef.current) window.clearTimeout(scrollTimerRef.current)
     },
     [],
   )
@@ -3854,8 +4033,66 @@ const WarpList = ({
     })
   }
 
+  // A genre chip changes which films the list holds. The film whose chip was
+  // clicked is in the new list too, so it stays where it was under the cursor
+  // instead of the list jumping to wherever that scroll offset now lands.
+  const anchorRef = useRef<{
+    id: string
+    genre: string
+    top: number
+    at: number
+    refocus: boolean
+  } | null>(null)
+  const handleToggleGenre = useCallback(
+    (movie: TestMovie, genre: string) => {
+      const scroller = listRef.current
+      const row = scroller?.querySelector<HTMLElement>(
+        `[data-movie-id="${CSS.escape(movie.id)}"]`,
+      )
+      if (scroller && row) {
+        anchorRef.current = {
+          id: movie.id,
+          genre,
+          refocus: row.contains(document.activeElement),
+          top:
+            row.getBoundingClientRect().top -
+            scroller.getBoundingClientRect().top,
+          at: performance.now(),
+        }
+      }
+      onSelectMovie(movie)
+      onToggleGenre(genre)
+    },
+    [onSelectMovie, onToggleGenre],
+  )
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: realign when the list itself changes
+  useLayoutEffect(() => {
+    const anchor = anchorRef.current
+    anchorRef.current = null
+    const scroller = listRef.current
+    if (!anchor || !scroller || performance.now() - anchor.at > 1000) return
+    const row = scroller.querySelector<HTMLElement>(
+      `[data-movie-id="${CSS.escape(anchor.id)}"]`,
+    )
+    if (!row) return
+    const top =
+      row.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+    scroller.scrollTop += top - anchor.top
+    // The row's chips are new elements after the rebuild; keep the keyboard
+    // on the one that was pressed.
+    if (anchor.refocus) {
+      row
+        .querySelector<HTMLElement>(
+          `[data-genre="${CSS.escape(anchor.genre)}"]`,
+        )
+        ?.focus({ preventScroll: true })
+    }
+  }, [movies])
+
   const handlePickRandomMovie = () => {
-    const movie = movies[Math.floor(Math.random() * Math.max(movies.length, 1))]
+    // From every film in the list, not the rows that happen to be mounted.
+    const movie = pickRandomRow(movies, activeMovieId, Math.random)
     if (!movie) return
 
     const movieGroup = getMovieListGroupKey(movie, grouping, popularityGroups)
@@ -3872,40 +4109,16 @@ const WarpList = ({
       setRandomPulseId(null)
       pulseTimerRef.current = null
     }, 1100)
-
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        const scroller = document.querySelector<HTMLElement>('.warp-list')
-        const row = document.querySelector<HTMLElement>(
-          `[data-movie-id="${movie.id}"]`,
-        )
-        if (!scroller || !row) return
-
-        const startTop = scroller.scrollTop
-        const maxTop = Math.max(
-          0,
-          scroller.scrollHeight - scroller.clientHeight,
-        )
-        const targetTop = Math.max(
-          0,
-          Math.min(
-            maxTop,
-            row.offsetTop - scroller.clientHeight / 2 + row.clientHeight / 2,
-          ),
-        )
-        const duration = 520
-        const startTime = performance.now()
-        const animateScroll = (time: number) => {
-          const progress = Math.min(1, (time - startTime) / duration)
-          const eased = 1 - (1 - progress) ** 3
-          scroller.scrollTop = startTop + (targetTop - startTop) * eased
-          if (progress < 1) window.requestAnimationFrame(animateScroll)
-        }
-
-        window.requestAnimationFrame(animateScroll)
-      })
-    })
+    setPickScroll({ id: movie.id })
   }
+
+  // Runs once the pick's row is mounted (its chunk is forced visible and its
+  // group expanded in the same commit), so the row can be measured.
+  useLayoutEffect(() => {
+    const scroller = listRef.current
+    if (!pickScroll || !scroller) return
+    return glideToRow(scroller, pickScroll.id, readReducedMotion(null))
+  }, [pickScroll])
 
   const randomRequestRef = useRef(randomRequest)
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new request picks
@@ -3916,11 +4129,7 @@ const WarpList = ({
   }, [randomRequest])
 
   return (
-    <section
-      className='warp-list'
-      aria-label='Movie list view'
-      onScroll={handleScroll}
-    >
+    <section ref={listRef} className='warp-list' aria-label='Movie list view'>
       <header className='warp-list-heading'>
         <h1 className='warp-list-title'>Movie Index</h1>
         <form
@@ -4098,15 +4307,19 @@ const WarpList = ({
                           activeChunkKey === chunkKey ? activeMovieId : null
                         }
                         eager={eagerChunkKeys.has(chunkKey)}
-                        forceVisible={pulseChunkKey === chunkKey}
+                        forceVisible={
+                          pulseChunkKey === chunkKey ||
+                          activeChunkKey === chunkKey
+                        }
                         isCollapsed={isCollapsed}
                         randomPulseId={
                           pulseChunkKey === chunkKey ? randomPulseId : null
                         }
                         rows={chunk}
-                        onHoverMovie={handleHoverMovie}
+                        selectedGenres={selectedGenres}
                         onOpenMovie={onOpenMovie}
                         onSelectMovie={onSelectMovie}
+                        onToggleGenre={handleToggleGenre}
                       />
                     )
                   })}
@@ -4388,7 +4601,9 @@ type FilterSectionsProps = {
   selectedGenres: string[]
   selectedMoodFilters: MoodFilter[]
   selectedYear: YearFilter | null
+  totalCount: number
   onClear: () => void
+  onClearGenres: () => void
   onSelectContentFilter: (contentFilter: ContentFilter) => void
   onToggleGenre: (genre: string) => void
   onToggleMoodFilter: (moodFilter: MoodFilter) => void
@@ -4408,7 +4623,9 @@ const FilterSections = ({
   selectedGenres,
   selectedMoodFilters,
   selectedYear,
+  totalCount,
   onClear,
+  onClearGenres,
   onSelectContentFilter,
   onToggleGenre,
   onToggleMoodFilter,
@@ -4551,9 +4768,20 @@ const FilterSections = ({
         <p>Genres</p>
         <small>The more the merrier</small>
         <div className='warp-fs-chips'>
+          <button
+            type='button'
+            className={cn(
+              'warp-fs-chip',
+              !selectedGenres.length && 'is-active',
+            )}
+            aria-pressed={!selectedGenres.length}
+            onClick={onClearGenres}
+          >
+            <span>All</span>
+            <span>{formatGenreCount(totalCount)}</span>
+          </button>
           {genres.map(({ genre, count }) => {
-            const active =
-              !selectedGenres.length || selectedGenres.includes(genre)
+            const active = selectedGenres.includes(genre)
             return (
               <button
                 type='button'
@@ -4563,7 +4791,7 @@ const FilterSections = ({
                 onClick={() => onToggleGenre(genre)}
               >
                 <span>{genre}</span>
-                <span>{count}</span>
+                <span>{formatGenreCount(count)}</span>
               </button>
             )
           })}
@@ -4885,6 +5113,38 @@ const ConstellationSetting = () => {
   )
 }
 
+// Found Shuffle Pro paths stop starting runs; this brings them all back.
+const RepeatPathsSetting = () => {
+  const on = useSyncExternalStore(
+    shuffleProStore.subscribe,
+    () => shuffleProStore.get().repeatFound,
+    () => shuffleProStore.get().repeatFound,
+  )
+  return (
+    <fieldset className='warp-about-setting'>
+      <legend>Repeat found paths</legend>
+      <div className='warp-theme-switch'>
+        {([true, false] as const).map((option) => (
+          <button
+            type='button'
+            key={String(option)}
+            aria-pressed={on === option}
+            className={cn(on === option && 'is-active')}
+            onClick={() => shuffleProStore.setRepeatFound(option)}
+          >
+            {option ? (
+              <Sparkles aria-hidden='true' />
+            ) : (
+              <X aria-hidden='true' />
+            )}
+            {option ? 'On' : 'Off'}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
 const AboutDrawer = ({
   theme,
   movieCount,
@@ -4947,6 +5207,7 @@ const AboutDrawer = ({
           <div className='warp-about-settings'>
             <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
             <ConstellationSetting />
+            <RepeatPathsSetting />
             <SoundSettingsPanel />
           </div>
         </section>
@@ -5052,6 +5313,7 @@ const AboutDrawer = ({
       <ShuffleProShelf onShare={onShareRecap} />
       <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
       <ConstellationSetting />
+      <RepeatPathsSetting />
       <SoundSettingsPanel categories={false} />
       <button type='button' className='warp-party-entry' onClick={onStartParty}>
         <Users aria-hidden='true' />

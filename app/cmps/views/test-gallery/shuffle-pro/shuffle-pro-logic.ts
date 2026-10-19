@@ -19,21 +19,47 @@ export const HOLD_STILL_MOVE_PX = 8
 export const HOLD_RULES = {
   normal: { stillMs: 5000, movingMs: 10000 },
   immersive: { stillMs: 3000, movingMs: 6000 },
+  // Space has no pointer to judge by, and the globe rolls the whole time, so
+  // it gets one longer limit.
+  key: { normal: 10000, immersive: 6000 },
 } as const
+
+export type PressSource = 'pointer' | 'key'
 
 export const shouldTriggerHold = ({
   elapsedMs,
   maxMovedPx,
   immersive,
+  source = 'pointer',
 }: {
   elapsedMs: number
   maxMovedPx: number
   immersive: boolean
+  source?: PressSource
 }) => {
+  if (source === 'key') {
+    const limits = HOLD_RULES.key
+    return elapsedMs >= (immersive ? limits.immersive : limits.normal)
+  }
   const rules = immersive ? HOLD_RULES.immersive : HOLD_RULES.normal
   const still = maxMovedPx <= HOLD_STILL_MOVE_PX
   return elapsedMs >= (still ? rules.stillMs : rules.movingMs)
 }
+
+// ---------------------------------------------------------------- Space
+
+// Space held at least this long is a hold: the globe starts rolling. Anything
+// shorter is a tap, which is one ordinary shuffle. Operating-system key repeat
+// is ignored, so only the first key down of a press counts.
+export const KEY_TAP_MAX_MS = 250
+
+export const isKeyHold = (heldMs: number) => heldMs >= KEY_TAP_MAX_MS
+
+// How fast the globe rolls while Space is held, in rad/s. An ordinary shuffle
+// is an ease-out that opens near 15 rad/s and covers a half turn in about
+// 0.85s, so about 4 rad/s on average. The roll is never near Shuffle Pro's top
+// speed (STANDARD_PROFILE.omegaMax).
+export const KEY_ROLL_OMEGA = 4
 
 // ---------------------------------------------------------------- big spins
 
@@ -130,6 +156,18 @@ const GOLDEN_FOUND_GOLD_CHANCE = 0.5
 
 export const hasUnlockedGold = (found: FoundPaths) =>
   Boolean(found.frost && found.amethyst && found.jade)
+
+// A path that has been found stops starting runs, so the surprise isn't worn
+// out; the "Repeat found paths" setting turns every path back on. A base tier
+// that would be upgraded to a Gold that isn't found yet still goes through.
+export const isPathBlocked = (
+  tier: Tier,
+  found: FoundPaths,
+  repeatFound: boolean,
+) => {
+  if (repeatFound || !found[tier]) return false
+  return !(tier !== 'gold' && hasUnlockedGold(found) && !found.gold)
+}
 
 // Gold rule: once Frost, Amethyst and Jade are all found, the next run of any
 // kind becomes Gold; after Gold has been found, any run has a 10% chance.

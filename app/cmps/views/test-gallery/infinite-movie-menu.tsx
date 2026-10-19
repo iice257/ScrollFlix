@@ -99,8 +99,6 @@ export type PosterProjector = (
 ) => [number, number] | null
 
 export type InfiniteMovieMenuControl = {
-  // Finishes a Shuffle spin now, settling on its poster within 300ms.
-  skipSpin: () => void
   // Where a film's poster is on screen right now, or null if it isn't shown.
   getPosterRect: (itemId: string) => PosterRect | null
   // Where each of these films' posters is on screen, for those facing the
@@ -302,6 +300,11 @@ const GLOBE_READY_LATE_FRACTION = 0.75
 const GLOBE_READY_LATE_MS = 9000
 // Longest stretch of texture uploads before handing the thread back.
 const UPLOAD_SLICE_MS = 8
+// A poster that has just been decoded eases from a soft blur to sharp (or, with
+// reduced motion, fades in over the soft version) in this long.
+const POSTER_REVEAL_MS = 220
+// Blur radius at the start of the reveal, as a share of the poster width.
+const POSTER_REVEAL_SOFTNESS = 0.1
 
 // A timer rather than scheduler.yield, so the browser can paint and handle
 // input between slices instead of running every continuation first.
@@ -602,6 +605,13 @@ uniform int uAtlasSize;
 uniform float uAtlasPadding;
 uniform float uExposure;
 uniform vec4 uTint;
+// Per-poster reveal clock: the time each cell's full poster arrived (0 = none).
+uniform sampler2D uRevealTex;
+uniform float uRevealActive;
+uniform float uRevealSeconds;
+uniform float uRevealSoftness;
+uniform float uReducedMotion;
+uniform float uNow;
 
 out vec4 outColor;
 
@@ -614,6 +624,21 @@ float roundedRectMask(vec2 uv) {
   vec2 q = abs(uv - vec2(0.5)) - vec2(0.34, 0.39);
   float dist = length(max(q, 0.0)) - 0.11;
   return 1.0 - smoothstep(0.0, 0.024, dist);
+}
+
+// Nine-point soft look of a poster tile, two rings of eight taps around the
+// centre, kept inside the tile so neighbours never bleed in.
+vec4 blurTile(vec2 uv, float radius, vec2 tileSpan, vec2 tileOrigin) {
+  vec4 sum = texture(uTex, uv * tileSpan + tileOrigin) * 0.2;
+  for (int i = 0; i < 8; i++) {
+    float a = float(i) * 0.7853982;
+    vec2 dir = vec2(cos(a), sin(a));
+    vec2 inner = clamp(uv + dir * radius * 0.5, 0.0, 1.0);
+    vec2 outer = clamp(uv + dir * radius, 0.0, 1.0);
+    sum += texture(uTex, inner * tileSpan + tileOrigin) * 0.05;
+    sum += texture(uTex, outer * tileSpan + tileOrigin) * 0.05;
+  }
+  return sum;
 }
 
 void main() {
@@ -640,6 +665,21 @@ void main() {
     color /= 6.0;
   } else {
     color = texture(uTex, vUvs * tileSpan + tileOrigin);
+    if (uRevealActive > 0.5) {
+      float arrived = texelFetch(uRevealTex, ivec2(cellX, cellY), 0).r;
+      float progress = arrived > 0.0
+        ? clamp((uNow - arrived) / uRevealSeconds, 0.0, 1.0)
+        : 1.0;
+      if (progress < 1.0) {
+        if (uReducedMotion > 0.5) {
+          vec4 soft = blurTile(vUvs, uRevealSoftness, tileSpan, tileOrigin);
+          color = mix(soft, color, progress);
+        } else {
+          float eased = 1.0 - pow(1.0 - progress, 3.0);
+          color = blurTile(vUvs, uRevealSoftness * (1.0 - eased), tileSpan, tileOrigin);
+        }
+      }
+    }
   }
   float mask = roundedRectMask(vUvs);
   outColor = color;
@@ -1374,6 +1414,11 @@ class InfiniteMovieEngine<T> {
   private program: WebGLProgram
   private vao: WebGLVertexArrayObject | null = null
   private texture: WebGLTexture | null = null
+  // One float per poster cell: when its full poster arrived (see the shader).
+  private revealTexture: WebGLTexture | null = null
+  private readonly revealEpoch = performance.now()
+  private revealUntil = 0
+  private revealPending = false
   private control: ArcballControl
   private frameId = 0
   private time = 0
@@ -1496,6 +1541,12 @@ class InfiniteMovieEngine<T> {
       uItemCount: gl.getUniformLocation(program, 'uItemCount'),
       uAtlasSize: gl.getUniformLocation(program, 'uAtlasSize'),
       uAtlasPadding: gl.getUniformLocation(program, 'uAtlasPadding'),
+      uRevealTex: gl.getUniformLocation(program, 'uRevealTex'),
+      uRevealActive: gl.getUniformLocation(program, 'uRevealActive'),
+      uRevealSeconds: gl.getUniformLocation(program, 'uRevealSeconds'),
+      uRevealSoftness: gl.getUniformLocation(program, 'uRevealSoftness'),
+      uReducedMotion: gl.getUniformLocation(program, 'uReducedMotion'),
+      uNow: gl.getUniformLocation(program, 'uNow'),
     }
 
     this.instancePositions = createHoneycombSpherePositions(
@@ -1623,11 +1674,13 @@ class InfiniteMovieEngine<T> {
     this.canvas.removeEventListener('webglcontextlost', this.handleContextLost)
     if (!this.gl.isContextLost()) {
       if (this.texture) this.gl.deleteTexture(this.texture)
+      if (this.revealTexture) this.gl.deleteTexture(this.revealTexture)
       this.geometryBuffers.forEach((buffer) => this.gl.deleteBuffer(buffer))
       if (this.vao) this.gl.deleteVertexArray(this.vao)
       // The program stays cached with the context for the next engine.
     }
     this.texture = null
+    this.revealTexture = null
     this.vao = null
     this.canvas.dataset.webglState = 'disposed'
   }
@@ -2215,6 +2268,7 @@ class InfiniteMovieEngine<T> {
         Math.floor(maxTextureSize / Math.max(1, this.atlasSize)),
       ),
     )
+    this.initRevealTexture()
     this.canvas.dataset.atlasSize = String(this.atlasSize)
     this.canvas.dataset.atlasCellSize = String(this.atlasCellSize)
     this.canvas.dataset.atlasTextureSize = String(
@@ -2250,6 +2304,54 @@ class InfiniteMovieEngine<T> {
         error instanceof Error ? error.message : 'Poster loading failed',
       )
     })
+  }
+
+  private initRevealTexture() {
+    const gl = this.gl
+    this.revealTexture = gl.createTexture()
+    gl.bindTexture(gl.TEXTURE_2D, this.revealTexture)
+    // Float textures only filter with an extension; the shader fetches texels.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.R32F,
+      this.atlasSize,
+      this.atlasSize,
+      0,
+      gl.RED,
+      gl.FLOAT,
+      new Float32Array(this.atlasSize * this.atlasSize),
+    )
+    gl.bindTexture(gl.TEXTURE_2D, this.texture)
+  }
+
+  // Seconds on the reveal clock; always above zero, which means "no reveal".
+  private revealNow() {
+    return (performance.now() - this.revealEpoch) / 1000 + 1
+  }
+
+  private markPosterArrived(index: number) {
+    if (!this.revealTexture) return
+    const gl = this.gl
+    gl.activeTexture(gl.TEXTURE1)
+    gl.bindTexture(gl.TEXTURE_2D, this.revealTexture)
+    gl.texSubImage2D(
+      gl.TEXTURE_2D,
+      0,
+      index % this.atlasSize,
+      Math.floor(index / this.atlasSize),
+      1,
+      1,
+      gl.RED,
+      gl.FLOAT,
+      new Float32Array([this.revealNow()]),
+    )
+    gl.activeTexture(gl.TEXTURE0)
+    this.revealUntil = performance.now() + POSTER_REVEAL_MS + 120
   }
 
   private async loadTextureImages(
@@ -2522,6 +2624,7 @@ class InfiniteMovieEngine<T> {
       this.gl.UNSIGNED_BYTE,
       uploadCanvas,
     )
+    this.markPosterArrived(index)
     this.renderDirty = true
   }
 
@@ -2632,6 +2735,14 @@ class InfiniteMovieEngine<T> {
         orientation[3] * last[3],
     )
     const skyUp = this.skyState !== null && this.skyState.intensity > 0.002
+    if (performance.now() < this.revealUntil) {
+      this.renderDirty = true
+      this.revealPending = true
+    } else if (this.revealPending) {
+      // One closing frame with the reveal switched off.
+      this.renderDirty = true
+      this.revealPending = false
+    }
     const isStill =
       !skyUp &&
       !this.renderDirty &&
@@ -2763,6 +2874,20 @@ class InfiniteMovieEngine<T> {
       Math.min(0.12, ICON_TEXTURE_PADDING / this.atlasCellSize),
     )
     gl.uniform1i(this.locations.uTex, 0)
+    gl.uniform1i(this.locations.uRevealTex, 1)
+    gl.uniform1f(
+      this.locations.uRevealActive,
+      performance.now() < this.revealUntil ? 1 : 0,
+    )
+    gl.uniform1f(this.locations.uRevealSeconds, POSTER_REVEAL_MS / 1000)
+    gl.uniform1f(this.locations.uRevealSoftness, POSTER_REVEAL_SOFTNESS)
+    gl.uniform1f(
+      this.locations.uReducedMotion,
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 1 : 0,
+    )
+    gl.uniform1f(this.locations.uNow, this.revealNow())
+    gl.activeTexture(gl.TEXTURE1)
+    gl.bindTexture(gl.TEXTURE_2D, this.revealTexture)
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
     gl.bindVertexArray(this.vao)
@@ -3030,11 +3155,6 @@ export const InfiniteMovieMenu = <T,>({
   shuffleProRef.current = shufflePro
   const onActiveItemChangeRef = useRef(onActiveItemChange)
   onActiveItemChangeRef.current = onActiveItemChange
-  // The Shuffle spin in flight, so Skip can finish it.
-  const spinInFlightRef = useRef<{
-    item: InfiniteMovieMenuItem<T>
-    arrive: (index: number) => void
-  } | null>(null)
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
   // Consumed once, by the first engine build that has items to face.
@@ -3394,17 +3514,14 @@ export const InfiniteMovieMenu = <T,>({
       return
     }
     const arrive = (index: number) => {
-      spinInFlightRef.current = null
       activeItemRef.current = item
       setActiveItem(item)
       onActiveItemChange(item)
       engine.setDetailFocus(item.id, true, 'fast', index)
       onOpenItem?.(item, 'shuffle')
     }
-    spinInFlightRef.current = { item, arrive }
     engine.spinToItem(item.id, arrive)
     return () => {
-      spinInFlightRef.current = null
       engine.cancelSpin()
     }
   }, [spinRequest])
@@ -3412,12 +3529,6 @@ export const InfiniteMovieMenu = <T,>({
   useEffect(() => {
     if (!controlRef) return
     controlRef.current = {
-      skipSpin: () => {
-        const spin = spinInFlightRef.current
-        const engine = engineRef.current
-        if (!spin || !engine) return
-        engine.settleToItem(spin.item.id, 300, (index) => spin.arrive(index))
-      },
       getPosterRect: (itemId) =>
         engineRef.current?.getPosterRect(itemId) ?? null,
       getPosterPoints: (ids) => engineRef.current?.getPosterPoints(ids) ?? [],

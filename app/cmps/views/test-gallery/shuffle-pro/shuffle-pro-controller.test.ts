@@ -4,6 +4,7 @@ import {
   ShuffleProController,
   type ShuffleProPort,
 } from './shuffle-pro-controller'
+import { KEY_ROLL_OMEGA } from './shuffle-pro-logic'
 import type { SkyState } from './sky-pass'
 
 const setup = (
@@ -209,6 +210,121 @@ describe('ShuffleProController: holding', () => {
     expect(h.getSky()?.intensity).toBeGreaterThan(0.9)
     h.advance(2000)
     expect(h.getOmega()).toBeGreaterThan(6.6)
+  })
+})
+
+const holdKey = (h: ReturnType<typeof setup>, ms: number) => {
+  const session = h.controller.pressStart({ nx: 0.5, ny: 0.5, source: 'key' })
+  if (session === 'consumed' || session === null) throw new Error('no press')
+  h.advance(ms)
+  return session
+}
+
+describe('ShuffleProController: holding Space', () => {
+  it('leaves a tap alone: no roll, and the release is a plain shuffle', () => {
+    const h = setup()
+    holdKey(h, 200)
+    expect(h.calls).not.toContain('startAutoSpin')
+    expect(h.controller.pressRelease()).toBe(false)
+    expect(h.controller.getSnapshot().phase).toBe('idle')
+  })
+
+  it('rolls the globe at the regular shuffle speed once held past 250ms', () => {
+    const h = setup()
+    holdKey(h, 240)
+    expect(h.calls).not.toContain('startAutoSpin')
+    h.advance(40)
+    expect(h.calls.filter((c) => c === 'startAutoSpin')).toHaveLength(1)
+    expect(h.getOmega()).toBe(KEY_ROLL_OMEGA)
+    expect(h.controller.getSnapshot().phase).toBe('armed')
+  })
+
+  it('keeps rolling at the same speed and never starts Shuffle Pro early', () => {
+    const h = setup()
+    holdKey(h, 9900)
+    expect(h.getOmega()).toBe(KEY_ROLL_OMEGA)
+    expect(h.controller.getSnapshot().phase).toBe('armed')
+    expect(h.calls).not.toContain('sky:on')
+    expect(h.calls.filter((c) => c === 'startAutoSpin')).toHaveLength(1)
+  })
+
+  it('lets the roll go on release and hands the landing to a shuffle', () => {
+    const h = setup()
+    holdKey(h, 3000)
+    expect(h.controller.pressRelease()).toBe(false)
+    expect(h.calls).toContain('stopAutoSpin')
+    expect(h.controller.getSnapshot().phase).toBe('idle')
+    expect(h.calls).not.toContain('sky:on')
+  })
+
+  it('starts Shuffle Pro after 10s without the globe slowing down', () => {
+    const h = setup()
+    const session = holdKey(h, 10100)
+    expect(session.triggered).toBe(true)
+    expect(h.controller.getSnapshot().phase).toBe('windup')
+    expect(h.controller.getSnapshot().tier).toBe('frost')
+    expect(h.getOmega()).toBeGreaterThanOrEqual(KEY_ROLL_OMEGA)
+    h.advance(1000)
+    expect(h.getOmega()).toBeGreaterThanOrEqual(KEY_ROLL_OMEGA)
+    h.advance(4000)
+    expect(h.getOmega()).toBeGreaterThan(KEY_ROLL_OMEGA * 1.5)
+  })
+
+  it('starts Shuffle Pro after 6s when immersive', () => {
+    const h = setup({ isImmersive: () => true })
+    holdKey(h, 6100)
+    expect(h.controller.getSnapshot().phase).toBe('windup')
+    expect(h.controller.getSnapshot().tier).toBe('jade')
+  })
+
+  it('does not roll for reduced motion', () => {
+    const h = setup({ isReducedMotion: () => true })
+    holdKey(h, 3000)
+    expect(h.calls).not.toContain('startAutoSpin')
+    expect(h.controller.pressRelease()).toBe(false)
+    expect(h.calls).not.toContain('stopAutoSpin')
+  })
+})
+
+describe('ShuffleProController: found paths', () => {
+  it('does not start a Frost hold again once Frost is found', () => {
+    const h = setup({}, { found: { frost: 1 } })
+    hold(h, 6000)
+    expect(h.controller.getSnapshot().phase).toBe('armed')
+    expect(h.calls).not.toContain('sky:on')
+    expect(h.calls).not.toContain('prewarm')
+  })
+
+  it('starts it again when repeats are on', () => {
+    const h = setup({ getRepeatFound: () => true }, { found: { frost: 1 } })
+    hold(h, 5100)
+    expect(h.controller.getSnapshot().phase).toBe('windup')
+  })
+
+  it('keeps a Space hold rolling past 10s for a found path', () => {
+    const h = setup({}, { found: { frost: 1 } })
+    holdKey(h, 12000)
+    expect(h.controller.getSnapshot().phase).toBe('armed')
+    expect(h.getOmega()).toBe(KEY_ROLL_OMEGA)
+  })
+
+  it('swallows a streak trigger for a found path and starts the streak over', () => {
+    const h = setup({ random: () => 0 }, { found: { amethyst: 1 } })
+    let trigger: string | null = null
+    for (let i = 0; i < 10; i += 1) {
+      trigger = h.controller.noteAction({ type: 'shuffle' })
+    }
+    expect(trigger).toBeNull()
+    expect(h.controller.getStreak().streak).toBe(0)
+  })
+
+  it('still hands a streak trigger over for a path not found yet', () => {
+    const h = setup({ random: () => 0 }, { found: { frost: 1 } })
+    let trigger: string | null = null
+    for (let i = 0; i < 10; i += 1) {
+      trigger = h.controller.noteAction({ type: 'shuffle' })
+    }
+    expect(trigger).toBe('amethyst')
   })
 })
 
