@@ -18,3 +18,23 @@ export const markBlendHintSeen = () => {
     // Private mode or blocked storage: nothing to remember it with.
   }
 }
+
+// The quiet "you keep coming back" line shows once, the first time a world is
+// one landing from an Eclipse.
+const ECLIPSE_HINT_KEY = 'wtw:mood-eclipse-hint:v1'
+
+export const hasSeenEclipseHint = () => {
+  try {
+    return window.localStorage.getItem(ECLIPSE_HINT_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export const markEclipseHintSeen = () => {
+  try {
+    window.localStorage.setItem(ECLIPSE_HINT_KEY, '1')
+  } catch {
+    // Private mode or blocked storage: nothing to remember it with.
+  }
+}
