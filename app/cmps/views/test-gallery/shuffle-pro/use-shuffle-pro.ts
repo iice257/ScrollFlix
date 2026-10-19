@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { pickWeighted } from '../moods/taste'
 import { sessionPathStore } from '../session-path'
 import { goldenHourStore } from './golden-hour'
-import { createWheel, playLandingClick } from './shuffle-pro-audio'
+import { createWhoosh, playLandingThud } from './shuffle-pro-audio'
 import {
   type ControllerSnapshot,
   ShuffleProController,
@@ -83,7 +83,7 @@ export const useShuffleProController = (context: Context) => {
           if (movieId) sessionPathStore.add(movieId, tier)
         },
         onStreak: (streak) => shuffleProStore.recordStreak(streak),
-        createWheel,
+        createWhoosh,
         prewarmTier: (tier) => {
           if (tier) {
             startTierPreload(tier)
@@ -92,7 +92,7 @@ export const useShuffleProController = (context: Context) => {
         },
         onCue: (cue, tier) => {
           if (cue === 'land') {
-            playLandingClick(tier)
+            playLandingThud(tier)
             startPresentationMusic(tier)
           } else if (cue !== 'peak') stopPresentationMusic()
         },

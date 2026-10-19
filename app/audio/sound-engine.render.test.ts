@@ -109,9 +109,19 @@ describe('rendering a cue', () => {
 
   it('plays one click for every cue, from the hover, tap or spin family', () => {
     for (const cue of Object.keys(CUE_SPECS) as (keyof typeof CUE_SPECS)[]) {
+      if (CUE_SPECS[cue].layers.length === 0) continue
       const layers = play(cue, 1)[0].layers
       expect(layers, cue).toHaveLength(1)
       expect(['hover', 'tap', 'spin'], cue).toContain(layers[0].group)
+    }
+  })
+
+  it('leaves the shuffle start and the landing to their synthesised voices', () => {
+    for (const cue of ['shuffleStart', 'landing'] as const) {
+      expect(CUE_SPECS[cue].layers, cue).toHaveLength(0)
+      const played = play(cue, 1)[0]
+      expect(played.layers, cue).toHaveLength(0)
+      expect(played.synth, cue).toBe(true)
     }
   })
 

@@ -11,7 +11,9 @@
 // quiet apart from the Easter egg.
 //   shuffle  shuffleStart, landing, settle, trailPoint
 //   ui       heart, moodPick, moodGo, confirm, hover, tap, grab, open, close,
-//            spinTick
+//            spinTick (unused)
+//   shuffleStart and landing are the two cues that stay synthesised: a soft
+//   whoosh and a low thump, with no clips.
 // The Shuffle Pro Easter egg voices live in shuffle-pro-audio.ts and are
 // gated by `eggs`, not by the master switch.
 
@@ -262,6 +264,15 @@ const TRAIL_NOTES = [
   659.25, 783.99, 880, 1046.5, 1174.66, 1318.51, 1567.98, 1760,
 ]
 
+// These two voices were tuned when the output went through a compressor with
+// makeup gain, which lifted quiet sounds by about 7 dB and held loud ones near
+// where they were. The output chain is now a plain soft limiter (above), so a
+// quiet voice needs the lift written in. The whoosh is quiet, so it takes the
+// full lift; the thump already peaks at about -10 dBFS, so it takes a little.
+// Both stay under the peak of the click cues (about -1 dBFS).
+const SYNTH_TRIM = 2.2
+const LOW_TRIM = 1.25
+
 const VOICES: Record<Cue, (audio: AudioOut, strength: number) => void> = {
   // The globe's detent has no synthesised stand-in: silence beats a beep.
   spinTick: () => {},
@@ -273,7 +284,7 @@ const VOICES: Record<Cue, (audio: AudioOut, strength: number) => void> = {
       q: 0.9,
       attack: 0.12,
       decay: 0.4,
-      gain: 0.09,
+      gain: 0.09 * SYNTH_TRIM,
     })
   },
   // The globe settling on a movie: a soft low thump.
@@ -282,14 +293,14 @@ const VOICES: Record<Cue, (audio: AudioOut, strength: number) => void> = {
       freq: 150,
       toFreq: 52,
       decay: 0.22,
-      gain: 0.3 * strength,
+      gain: 0.3 * strength * LOW_TRIM,
     })
     burst(audio, {
       centerHz: 420,
       q: 0.7,
       type: 'lowpass',
       decay: 0.05,
-      gain: 0.1 * strength,
+      gain: 0.1 * strength * LOW_TRIM,
     })
   },
   heart: (audio) => {

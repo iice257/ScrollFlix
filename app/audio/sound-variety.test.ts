@@ -1,14 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  SPIN_MAX_RATE,
-  SPIN_MIN_SPEED,
-  createBag,
-  createSpinTicker,
-  humanize,
-  panFromPointer,
-  recencyDb,
-  spinStrength,
-} from './sound-variety'
+import { createBag, humanize, panFromPointer, recencyDb } from './sound-variety'
 
 // A repeatable dice roll, so a failure can be reproduced.
 const seeded = (start: number) => {
@@ -95,52 +86,5 @@ describe('stereo position', () => {
   it('is centred when there is nothing to measure', () => {
     expect(panFromPointer(Number.NaN, 1000)).toBe(0)
     expect(panFromPointer(10, 0)).toBe(0)
-  })
-})
-
-describe('spin ticks', () => {
-  const ticksOver = (speed: number, seconds: number) => {
-    const ticker = createSpinTicker(seeded(8))
-    const out = []
-    for (let t = 0; t < seconds * 1000; t += 16) {
-      out.push(...ticker.update(speed, 16))
-    }
-    return out
-  }
-
-  it('are silent while the globe drifts or stands still', () => {
-    expect(ticksOver(0, 2)).toHaveLength(0)
-    expect(ticksOver(SPIN_MIN_SPEED * 0.9, 2)).toHaveLength(0)
-  })
-
-  it('come faster as the globe speeds up, but never faster than the cap', () => {
-    const slow = ticksOver(1, 2).length
-    const medium = ticksOver(4, 2).length
-    const fast = ticksOver(40, 2).length
-    expect(slow).toBeGreaterThan(0)
-    expect(medium).toBeGreaterThan(slow)
-    expect(fast).toBeGreaterThanOrEqual(medium)
-    expect(fast / 2).toBeLessThanOrEqual(SPIN_MAX_RATE + 3)
-  })
-
-  it('get louder and higher with speed', () => {
-    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
-    const slow = ticksOver(1, 3)
-    const fast = ticksOver(12, 3)
-    expect(mean(fast.map((t) => t.gainDb))).toBeGreaterThan(
-      mean(slow.map((t) => t.gainDb)) + 4,
-    )
-    expect(mean(fast.map((t) => t.rate))).toBeGreaterThan(
-      mean(slow.map((t) => t.rate)),
-    )
-    expect(spinStrength(0)).toBe(0)
-    expect(spinStrength(100)).toBe(1)
-  })
-
-  it('stays quiet after the globe stops, even if frames arrive late', () => {
-    const ticker = createSpinTicker(seeded(1))
-    ticker.update(5, 16)
-    expect(ticker.update(0, 16)).toHaveLength(0)
-    expect(ticker.update(5, 5000).length).toBeLessThanOrEqual(2)
   })
 })

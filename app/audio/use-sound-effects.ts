@@ -1,8 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { type Cue, playCue, unlockAudio } from './sound-engine'
 import { trackPointer } from './sound-pointer'
-import { isCategoryOn, soundStore } from './sound-settings'
-import { createSpinTicker } from './sound-variety'
+import { soundStore } from './sound-settings'
 
 // Plays a cue whenever `value` changes, never on the first render. Picking the
 // cue from the new and old value keeps open and close audibly related.
@@ -82,56 +81,6 @@ export const useInterfaceSounds = () => {
       document.removeEventListener('pointerover', onOver, true)
     }
   }, [])
-}
-
-// What the globe offers the ticker: its speed in rad/s right now.
-export type SpinSource = { getSpinSpeed: () => number }
-
-// Soft ticks while the globe turns, louder and higher the faster it goes. The
-// frame loop only runs while interface sound is on, so it costs nothing
-// otherwise. `muted` silences it while a Shuffle spin has its own sounds.
-export const useSpinTicks = (
-  source: { current: SpinSource | null },
-  muted: boolean,
-) => {
-  const mutedRef = useRef(muted)
-  mutedRef.current = muted
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const ticker = createSpinTicker()
-    let frame = 0
-    let last = 0
-    const loop = (now: number) => {
-      frame = window.requestAnimationFrame(loop)
-      const dt = now - last
-      last = now
-      if (mutedRef.current) {
-        ticker.reset()
-        return
-      }
-      const speed = source.current?.getSpinSpeed() ?? 0
-      for (const tick of ticker.update(speed, dt)) {
-        playCue('spinTick', 1, { gainDb: tick.gainDb, rate: tick.rate })
-      }
-    }
-    const sync = () => {
-      const on = isCategoryOn(soundStore.get(), 'ui')
-      if (on && !frame) {
-        last = performance.now()
-        frame = window.requestAnimationFrame(loop)
-      } else if (!on && frame) {
-        window.cancelAnimationFrame(frame)
-        frame = 0
-        ticker.reset()
-      }
-    }
-    sync()
-    const unsubscribe = soundStore.subscribe(sync)
-    return () => {
-      unsubscribe()
-      window.cancelAnimationFrame(frame)
-    }
-  }, [source])
 }
 
 // With sound on, the first real gesture anywhere unlocks audio (browsers only
