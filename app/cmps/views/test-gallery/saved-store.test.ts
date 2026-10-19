@@ -44,6 +44,32 @@ describe('saved movies', () => {
     ])
   })
 
+  it('legacy ids read back migrated', () => {
+    const parsed = parseSaved(
+      JSON.stringify([
+        { id: '0-27205', savedAt: 5 },
+        { id: 'c11', savedAt: 4 },
+        // The same film saved under an old id and its new one: one entry.
+        { id: '412-155', savedAt: 3 },
+        { id: 'c155', savedAt: 2 },
+      ]),
+    )
+    expect(parsed).toEqual([
+      { id: 'c27205', savedAt: 5 },
+      { id: 'c11', savedAt: 4 },
+      { id: 'c155', savedAt: 3 },
+    ])
+  })
+
+  it('finds a film saved under an old id through the store', () => {
+    window.localStorage.setItem(
+      SAVED_STORAGE_KEY,
+      JSON.stringify([{ id: '9-27205', savedAt: 1 }]),
+    )
+    savedStore.reset()
+    expect(savedStore.has('c27205')).toBe(true)
+  })
+
   it('removes a movie', () => {
     const entries = addSaved(addSaved([], 'a', 1), 'b', 2)
     expect(removeSaved(entries, 'a').map((entry) => entry.id)).toEqual(['b'])

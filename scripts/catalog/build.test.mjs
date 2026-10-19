@@ -270,7 +270,7 @@ describe('nightly', () => {
 
 // Bootstrap converts the data the repo shipped before catalogue v2. Once
 // those files are retired from the repo there is nothing left to convert.
-describe.skipIf(!existsSync(join(root, 'public/json/catalog/manifest.json')))(
+describe.skipIf(!existsSync(join(root, 'public/json/0.json')))(
   'bootstrap',
   () => {
     it('bootstrap converts v1 local + catalogue rows to 10,000 v2 films with ids unchanged', async () => {

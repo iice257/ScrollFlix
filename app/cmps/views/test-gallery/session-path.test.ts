@@ -49,4 +49,13 @@ describe('parsePath', () => {
       { id: 'b', tier: null, at: 0 },
     ])
   })
+
+  it('migrates ids from before catalogue v2', () => {
+    expect(
+      parsePath('[{"id":"12-27205","tier":"gold"},{"id":"c11","tier":null}]'),
+    ).toEqual([
+      { id: 'c27205', tier: 'gold', at: 0 },
+      { id: 'c11', tier: null, at: 0 },
+    ])
+  })
 })

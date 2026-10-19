@@ -21,7 +21,6 @@
 		"test:e2e:headed": "playwright test --headed",
 		"test:e2e:ui": "playwright test --ui",
 		"test:e2e:debug": "playwright test --debug",
-		"media:posters": "node scripts/generate-poster-thumbnails.mjs",
 		"media:sprite": "node scripts/generate-poster-sprite.mjs",
 		"theme:light": "node scripts/generate-light-theme.mjs",
 		"catalog:build": "node scripts/catalog/build.mjs",
