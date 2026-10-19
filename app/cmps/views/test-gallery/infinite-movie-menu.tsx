@@ -118,6 +118,9 @@ export type InfiniteMovieMenuControl = {
   setOnFlick: (
     listener: ((speed: number, direction: number) => void) | null,
   ) => void
+  // How fast the globe is turning right now, in rad/s; 0 once it has stopped
+  // drawing. Read it once per frame to drive things that follow the spin.
+  getSpinSpeed: () => number
 }
 
 type Vec2 = [number, number]
@@ -1548,6 +1551,7 @@ class InfiniteMovieEngine<T> {
     this.time = time
     this.frames += deltaTime / TARGET_FRAME_DURATION
     if (this.animate(deltaTime)) {
+      this.lastDrawAt = time
       this.render()
       this.onFrame?.()
     }
@@ -1872,6 +1876,17 @@ class InfiniteMovieEngine<T> {
   }
 
   getAngularSpeed() {
+    return this.angularSpeed()
+  }
+
+  // When the globe last drew a frame, so a stopped or hidden globe reads as
+  // still instead of holding its last speed.
+  private lastDrawAt = 0
+
+  // The speed as the viewer sees it: 0 once the globe has stopped drawing.
+  getSpinSpeed() {
+    if (this.paused || this.disposed) return 0
+    if (performance.now() - this.lastDrawAt > 120) return 0
     return this.angularSpeed()
   }
 
@@ -3414,6 +3429,7 @@ export const InfiniteMovieMenu = <T,>({
       setOnFlick: (listener) => {
         flickListenerRef.current = listener
       },
+      getSpinSpeed: () => engineRef.current?.getSpinSpeed() ?? 0,
     }
     return () => {
       controlRef.current = null

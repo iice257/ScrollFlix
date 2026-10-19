@@ -30,7 +30,7 @@ export type SoundSettings = {
 
 export const DEFAULT_SOUND_SETTINGS: SoundSettings = {
   enabled: false,
-  volume: 0.6,
+  volume: 0.8,
   eggs: true,
   categories: { shuffle: true, ui: true },
 }
