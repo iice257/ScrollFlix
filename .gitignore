@@ -40,3 +40,4 @@ public/tmp.webm
 
 # Catalogue pipeline scratch (state, output, release asset)
 /.catalog/
+public/json/catalog/
