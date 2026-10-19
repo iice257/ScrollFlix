@@ -1,4 +1,4 @@
-import type { Tier } from './shuffle-pro-logic'
+import { MOOD_PATHS, type MoodPath, type Tier } from './shuffle-pro-logic'
 
 // Found Shuffle Pro paths persist across refreshes (a future stats page reads
 // them). Streak counters deliberately do not: they live in memory only.
@@ -9,6 +9,9 @@ export type FoundEntry = { count: number; firstAt: number; lastAt: number }
 
 export type ShuffleProData = {
   found: Partial<Record<Tier, FoundEntry>>
+  // The bonus paths only the mood page starts. Kept apart from `found`, so
+  // they never count toward Gold.
+  moodPaths: Partial<Record<MoodPath, FoundEntry>>
   totalRuns: number
   // The longest streak of shuffles reached, kept for the run recap.
   bestStreak: number
@@ -18,6 +21,7 @@ export type ShuffleProData = {
 
 const EMPTY: ShuffleProData = {
   found: {},
+  moodPaths: {},
   totalRuns: 0,
   bestStreak: 0,
   repeatFound: false,
@@ -34,6 +38,7 @@ export const parseShuffleProData = (raw: string | null): ShuffleProData => {
     const parsed = JSON.parse(raw) as {
       v?: unknown
       found?: Record<string, Partial<FoundEntry>>
+      moodPaths?: Record<string, Partial<FoundEntry>>
       totalRuns?: unknown
       bestStreak?: unknown
       repeatFound?: unknown
@@ -41,27 +46,39 @@ export const parseShuffleProData = (raw: string | null): ShuffleProData => {
     if (parsed?.v !== 1 || typeof parsed.found !== 'object' || !parsed.found) {
       return EMPTY
     }
-    const found: ShuffleProData['found'] = {}
-    for (const tier of TIERS) {
-      const entry = parsed.found[tier]
-      if (
-        entry &&
-        isNumber(entry.count) &&
-        isNumber(entry.firstAt) &&
-        isNumber(entry.lastAt)
-      ) {
-        found[tier] = {
-          count: Math.max(1, Math.floor(entry.count)),
-          firstAt: entry.firstAt,
-          lastAt: entry.lastAt,
+    const readEntries = <Key extends string>(
+      source: Record<string, Partial<FoundEntry>> | undefined,
+      keys: readonly Key[],
+    ) => {
+      const entries: Partial<Record<Key, FoundEntry>> = {}
+      for (const key of keys) {
+        const entry = source?.[key]
+        if (
+          entry &&
+          isNumber(entry.count) &&
+          isNumber(entry.firstAt) &&
+          isNumber(entry.lastAt)
+        ) {
+          entries[key] = {
+            count: Math.max(1, Math.floor(entry.count)),
+            firstAt: entry.firstAt,
+            lastAt: entry.lastAt,
+          }
         }
       }
+      return entries
     }
+    const found = readEntries(parsed.found, TIERS)
+    const moodPaths = readEntries(parsed.moodPaths, MOOD_PATHS)
     return {
       found,
+      moodPaths,
       totalRuns: isNumber(parsed.totalRuns)
         ? Math.max(0, Math.floor(parsed.totalRuns))
-        : Object.values(found).reduce((sum, e) => sum + (e?.count ?? 0), 0),
+        : Object.values({ ...found, ...moodPaths }).reduce(
+            (sum, e) => sum + (e?.count ?? 0),
+            0,
+          ),
       bestStreak: isNumber(parsed.bestStreak)
         ? Math.max(0, Math.floor(parsed.bestStreak))
         : 0,
@@ -83,6 +100,26 @@ export const recordRun = (
     found: {
       ...data.found,
       [tier]: {
+        count: (previous?.count ?? 0) + 1,
+        firstAt: previous?.firstAt ?? now,
+        lastAt: now,
+      },
+    },
+    totalRuns: data.totalRuns + 1,
+  }
+}
+
+export const recordMoodRun = (
+  data: ShuffleProData,
+  path: MoodPath,
+  now: number,
+): ShuffleProData => {
+  const previous = data.moodPaths[path]
+  return {
+    ...data,
+    moodPaths: {
+      ...data.moodPaths,
+      [path]: {
         count: (previous?.count ?? 0) + 1,
         firstAt: previous?.firstAt ?? now,
         lastAt: now,
@@ -130,6 +167,9 @@ export const shuffleProStore = {
   },
   recordRun(tier: Tier, now = Date.now()) {
     save(recordRun(load(), tier, now))
+  },
+  recordMoodRun(path: MoodPath, now = Date.now()) {
+    save(recordMoodRun(load(), path, now))
   },
   // Remembers the longest streak; only a new best is written.
   recordStreak(streak: number) {

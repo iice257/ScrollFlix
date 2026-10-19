@@ -1368,3 +1368,21 @@
     animation: none;
   }
 }
+
+/* ---------------------------------------------------- mood-page bonus paths */
+
+.sp-shelf-mood {
+  margin-top: 10px;
+}
+
+.sp-shelf-slot[data-mood-path="resonance"][data-found="true"] .sp-shelf-gem {
+  box-shadow: 0 0 22px rgb(167 139 250 / 0.32);
+}
+
+.sp-shelf-slot[data-mood-path="eclipse"][data-found="true"] .sp-shelf-gem {
+  box-shadow: 0 0 22px rgb(167 139 250 / 0.36);
+}
+
+.sp-shelf-slot[data-mood-path="wanderer"][data-found="true"] .sp-shelf-gem {
+  box-shadow: 0 0 22px rgb(255 122 47 / 0.3);
+}

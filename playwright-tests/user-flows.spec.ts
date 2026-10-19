@@ -240,6 +240,35 @@ test.describe('Gallery user flows', () => {
     await expect(page.locator('.mood-fit')).toHaveText(/^[\d,]+ films? fits?$/)
   })
 
+  test('an odd pair of worlds hums together, quietly', async ({ page }) => {
+    const openMoods = () =>
+      page
+        .getByRole('button', { name: /pick your mood/i })
+        .first()
+        .click()
+    const hummers = page.locator('.mood-panel[data-hum="true"]')
+    const cta = page.locator('.mood-cta')
+
+    // An ordinary pair does nothing: no hum, no glow.
+    await openMoods()
+    await page.locator('.mood-panel').nth(0).click()
+    await page.locator('.mood-panel').nth(1).click()
+    await expect(page.locator('.mood-panel.is-selected')).toHaveCount(2)
+    await expect(hummers).toHaveCount(0)
+    await expect(cta).not.toHaveAttribute('data-armed', 'true')
+    await page.getByRole('button', { name: 'Close the mood page' }).click()
+    await expect(page.locator('.mood-page')).toHaveCount(0)
+
+    // Dark and funny pull against each other: both panels hum and the button
+    // glows, with no words about it.
+    await openMoods()
+    await page.locator('.mood-panel').nth(1).click()
+    await expect(hummers).toHaveCount(0)
+    await page.locator('.mood-panel').nth(2).click()
+    await expect(hummers).toHaveCount(2)
+    await expect(cta).toHaveAttribute('data-armed', 'true')
+  })
+
   test('arrow keys browse the mood worlds', async ({ page }) => {
     await page
       .getByRole('button', { name: /pick your mood/i })

@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
+import { type MoodRunStart, paletteFromAccents } from './mood-run'
 import {
   type ControllerDeps,
   ShuffleProController,
   type ShuffleProPort,
 } from './shuffle-pro-controller'
-import { KEY_ROLL_OMEGA } from './shuffle-pro-logic'
+import { KEY_ROLL_OMEGA, STANDARD_PROFILE } from './shuffle-pro-logic'
 import type { SkyState } from './sky-pass'
 
 const setup = (
@@ -16,6 +17,7 @@ const setup = (
   const frames = new Map<number, () => void>()
   const calls: string[] = []
   const recorded: string[] = []
+  const recordedMood: string[] = []
   let omega = 0
   let sky: SkyState | null = null
   let landOnArrive: (() => void) | null = null
@@ -93,6 +95,7 @@ const setup = (
     isReducedMotion: () => false,
     getFound: () => options.found ?? {},
     recordRun: (tier) => recorded.push(tier),
+    recordMoodRun: (path) => recordedMood.push(path),
     createWheel: () => wheel,
     pickTarget: () => 'target-1',
     prepare: () => {
@@ -123,6 +126,7 @@ const setup = (
     advance,
     calls,
     recorded,
+    recordedMood,
     wheel,
     setOmega: (value: number) => {
       omega = value
@@ -399,7 +403,11 @@ describe('ShuffleProController: releasing', () => {
     h.arriveLandOn()
     const snapshot = h.controller.getSnapshot()
     expect(snapshot.phase).toBe('presented')
-    expect(snapshot.presented).toEqual({ movieId: 'target-1', tier: 'frost' })
+    expect(snapshot.presented).toEqual({
+      movieId: 'target-1',
+      tier: 'frost',
+      mood: null,
+    })
     expect(h.recorded).toEqual(['frost'])
     // The sky holds at 60% behind the card, then fades when it closes.
     h.advance(1200)
@@ -488,6 +496,7 @@ describe('ShuffleProController: skip and abort', () => {
     expect(h.controller.getSnapshot().presented).toEqual({
       movieId: 'auto-target',
       tier: 'frost',
+      mood: null,
     })
   })
 
@@ -606,5 +615,62 @@ describe('ShuffleProController: subscription', () => {
     h.controller.dispose()
     expect(h.getSky()).toBeNull()
     expect(h.controller.getSnapshot().phase).toBe('idle')
+  })
+
+  describe('mood runs', () => {
+    const start = (overrides: Partial<MoodRunStart> = {}): MoodRunStart => ({
+      path: 'resonance',
+      look: 'amethyst',
+      palette: paletteFromAccents(['#a78bfa', '#ffd23f']),
+      energy: 1,
+      length: 0.5,
+      density: 0.6,
+      ...overrides,
+    })
+
+    it('runs in the mood colours and shortens with the length', () => {
+      const h = setup()
+      expect(h.controller.startMoodRun(start(), 'mood-target')).toBe(true)
+      const sky = h.getSky()
+      expect(sky?.tier).toBe('amethyst')
+      expect(sky?.palette).toEqual(start().palette)
+      expect(sky?.density).toBe(0.6)
+      // Half the wind-up of a standard run: the peak lands at 2.5s, not 5s.
+      h.advance(STANDARD_PROFILE.peakMs / 2 + 100)
+      expect(h.controller.getSnapshot().phase).toBe('peak')
+    })
+
+    it('records the mood path, not a tier, and presents it', () => {
+      const h = setup()
+      h.controller.startMoodRun(start({ path: 'eclipse' }), 'mood-target')
+      h.advance(1500)
+      h.controller.skip()
+      h.arriveSettle()
+      expect(h.recordedMood).toEqual(['eclipse'])
+      expect(h.recorded).toEqual([])
+      const presented = h.controller.getSnapshot().presented
+      expect(presented?.movieId).toBe('mood-target')
+      expect(presented?.mood?.path).toBe('eclipse')
+      expect(presented?.mood?.look).toBe('amethyst')
+    })
+
+    it('does not start while another run is going', () => {
+      const h = setup()
+      h.controller.startAutomatic('frost', 'x')
+      expect(h.controller.startMoodRun(start(), 'y')).toBe(false)
+    })
+
+    it('leaves ordinary runs on the tier colours', () => {
+      const h = setup()
+      h.controller.startAutomatic('jade', 'x')
+      expect(h.getSky()?.palette).toBeNull()
+      expect(h.getSky()?.density).toBe(1)
+    })
+
+    it('warms the sky up only while idle', () => {
+      const h = setup()
+      h.controller.prewarm()
+      expect(h.calls).toContain('prewarm')
+    })
   })
 })

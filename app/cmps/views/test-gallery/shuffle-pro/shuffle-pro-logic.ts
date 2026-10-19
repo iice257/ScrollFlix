@@ -246,6 +246,55 @@ export const JADE_PROFILE: RunProfile = {
 export const profileFor = (tier: Tier): RunProfile =>
   tier === 'jade' ? JADE_PROFILE : STANDARD_PROFILE
 
+// A profile stretched or squeezed in time (`length`) and pushed harder or
+// softer (`energy`, which scales the top spin speed). Mood runs use it so the
+// time choice sets how long a run lasts and the lead mood sets how it moves.
+export const scaleProfile = (
+  profile: RunProfile,
+  { length, energy }: { length: number; energy: number },
+): RunProfile => {
+  const ms = (value: number) => Math.round(value * length)
+  return {
+    ...profile,
+    windupMs: ms(profile.windupMs),
+    peakMs: ms(profile.peakMs),
+    omegaMax: profile.omegaMax * energy,
+    skyStartMs: ms(profile.skyStartMs),
+    skyDurationMs: ms(profile.skyDurationMs),
+    colorStartMs: ms(profile.colorStartMs),
+    colorDurationMs: ms(profile.colorDurationMs),
+    particlesStartMs: ms(profile.particlesStartMs),
+    particlesDurationMs: ms(profile.particlesDurationMs),
+    autoPeakHoldMs: ms(profile.autoPeakHoldMs),
+  }
+}
+
+// ---------------------------------------------------------------- mood paths
+
+// Bonus paths that only the mood page can start. They are kept apart from the
+// four tiers: finding one never counts toward Gold and never marks a tier as
+// found. A path that has been found stops starting runs unless "Repeat found
+// paths" is on, like the tiers.
+export type MoodPath = 'resonance' | 'eclipse' | 'wanderer'
+
+export const MOOD_PATHS: readonly MoodPath[] = [
+  'resonance',
+  'eclipse',
+  'wanderer',
+]
+
+export const MOOD_PATH_LABELS: Record<MoodPath, string> = {
+  resonance: 'Resonance',
+  eclipse: 'Eclipse',
+  wanderer: 'Wanderer',
+}
+
+export const isMoodPathBlocked = (
+  path: MoodPath,
+  found: Partial<Record<MoodPath, unknown>>,
+  repeatFound: boolean,
+) => !repeatFound && Boolean(found[path])
+
 export const PEAK_DRIFT = 0.04
 const PEAK_DRIFT_PERIOD_MS = 1700
 

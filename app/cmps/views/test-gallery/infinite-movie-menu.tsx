@@ -62,6 +62,9 @@ type InfiniteMovieMenuProps<T> = {
   // Spin to this item, then open it (Shuffle). The nonce re-triggers repeats.
   spinRequest?: { itemId: string; nonce: number } | null
   onReady?: () => void
+  // Called once a globe built for this exact set of items is running (the
+  // globe is rebuilt, a little late, when the films change).
+  onEngineAttached?: (items: InfiniteMovieMenuItem<T>[]) => void
   onUserSpin?: () => void
   // Camera zoom (>1 pulls the globe closer); applied in 3D, never via CSS.
   zoom?: number
@@ -3114,6 +3117,7 @@ export const InfiniteMovieMenu = <T,>({
   onMovingChange,
   onOpenItem,
   onReady,
+  onEngineAttached,
   onUserSpin,
   zoom = 1,
   initialFaceId = null,
@@ -3183,6 +3187,8 @@ export const InfiniteMovieMenu = <T,>({
   // the current globe keeps running, and the engine only switches once the
   // layout is ready.
   const [engineItems, setEngineItems] = useState(items)
+  const onEngineAttachedRef = useRef(onEngineAttached)
+  onEngineAttachedRef.current = onEngineAttached
   useEffect(() => {
     if (items === engineItems) return
     const { instanceCount, sphereRadius } = getGlobeShape(items.length)
@@ -3322,6 +3328,7 @@ export const InfiniteMovieMenu = <T,>({
       }
       portRef.current = shuffleProPort
       shuffleProRef.current?.attachPort(shuffleProPort)
+      onEngineAttachedRef.current?.(engineItems)
       if (initialFaceRef.current) {
         engine.faceItem(initialFaceRef.current)
         initialFaceRef.current = null

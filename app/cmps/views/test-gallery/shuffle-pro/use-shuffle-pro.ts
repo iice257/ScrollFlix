@@ -82,6 +82,10 @@ export const useShuffleProController = (context: Context) => {
           shuffleProStore.recordRun(tier)
           if (movieId) sessionPathStore.add(movieId, tier)
         },
+        recordMoodRun: (path, movieId) => {
+          shuffleProStore.recordMoodRun(path)
+          if (movieId) sessionPathStore.add(movieId)
+        },
         onStreak: (streak) => shuffleProStore.recordStreak(streak),
         createWheel,
         prewarmTier: (tier) => {
