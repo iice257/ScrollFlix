@@ -64,6 +64,7 @@ import {
   useAudioUnlockOnGesture,
   useInterfaceSounds,
   useSoundEffects,
+  useSpinTicks,
 } from '../../../audio/use-sound-effects'
 import { useMediaQuery } from '../../../hooks/use-media-query'
 import { isIOS, syncBrowserChrome } from '../../../utils/platform'
@@ -2056,6 +2057,7 @@ export const TestGalleryApp = () => {
 
   useAudioUnlockOnGesture()
   useInterfaceSounds()
+  useSpinTicks(menuControlRef, isSpinActive)
   useSoundEffects({
     savedCount: savedEntries.length,
     detailsOpen: Boolean(detailsMovieId),

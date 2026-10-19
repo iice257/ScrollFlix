@@ -1,0 +1,856 @@
+{
+ "spriteSha1": "12f61260e6b691b3e7895e4430f083fc965ff610",
+ "clips": {
+  "hover2": {
+   "durationMs": 66.4,
+   "lufs": -34.01,
+   "truePeakDb": -16.29,
+   "samplePeakDb": -16.29,
+   "centroidHz": 4945,
+   "rolloffHz": 9586,
+   "lowShare": 0.089,
+   "midShare": 0.166,
+   "highShare": 0.745,
+   "attackMs": 37.27,
+   "flatness": 0.0001,
+   "tonal": true,
+   "f0Hz": 7754.9,
+   "midi": 118.67,
+   "note": "B8",
+   "source": "rollover3.ogg",
+   "role": "hover",
+   "flags": [
+    "SOFT-ATTACK 37.27 ms"
+   ],
+   "kind": "demoted",
+   "cue": "hover",
+   "desc": "held back: SOFT-ATTACK 37.27 ms",
+   "gainDb": -2.54,
+   "limited": false
+  },
+  "hover3": {
+   "durationMs": 110.3,
+   "lufs": -34.03,
+   "truePeakDb": -12.11,
+   "samplePeakDb": -12.18,
+   "centroidHz": 1276,
+   "rolloffHz": 4898,
+   "lowShare": 0.0,
+   "midShare": 0.894,
+   "highShare": 0.106,
+   "attackMs": 14.69,
+   "flatness": 0.0,
+   "tonal": true,
+   "f0Hz": 603.6,
+   "midi": 74.47,
+   "note": "D5",
+   "source": "rollover4.ogg",
+   "role": "hover",
+   "flags": [
+    "SOFT-ATTACK 14.69 ms"
+   ],
+   "kind": "demoted",
+   "cue": "hover",
+   "desc": "held back: SOFT-ATTACK 9.0 ms",
+   "gainDb": 2.34,
+   "limited": false
+  },
+  "hover4": {
+   "durationMs": 108.8,
+   "lufs": -34.02,
+   "truePeakDb": -11.02,
+   "samplePeakDb": -11.06,
+   "centroidHz": 795,
+   "rolloffHz": 1154,
+   "lowShare": 0.172,
+   "midShare": 0.801,
+   "highShare": 0.027,
+   "attackMs": 9.08,
+   "flatness": 0.0,
+   "tonal": true,
+   "f0Hz": 759.6,
+   "midi": 78.45,
+   "note": "F#5",
+   "source": "rollover5.ogg",
+   "role": "hover",
+   "flags": [
+    "DULL 795 Hz",
+    "SOFT-ATTACK 9.08 ms"
+   ],
+   "kind": "demoted",
+   "cue": "hover",
+   "desc": "held back: DULL 793 Hz, SOFT-ATTACK 9.08 ms",
+   "gainDb": 3.41,
+   "limited": false
+  },
+  "hover6": {
+   "durationMs": 55.1,
+   "lufs": -34.07,
+   "truePeakDb": -16.32,
+   "samplePeakDb": -16.37,
+   "centroidHz": 3411,
+   "rolloffHz": 3914,
+   "lowShare": 0.037,
+   "midShare": 0.028,
+   "highShare": 0.936,
+   "attackMs": 18.4,
+   "flatness": 0.0001,
+   "tonal": true,
+   "f0Hz": 3610.0,
+   "midi": 105.44,
+   "note": "A7",
+   "source": "tick_004.ogg",
+   "role": "hover",
+   "flags": [
+    "SOFT-ATTACK 18.4 ms"
+   ],
+   "kind": "demoted",
+   "cue": "hover",
+   "desc": "held back: SOFT-ATTACK 18.42 ms",
+   "gainDb": -2.02,
+   "limited": false
+  },
+  "tap2": {
+   "durationMs": 52.8,
+   "lufs": -28.03,
+   "truePeakDb": -6.18,
+   "samplePeakDb": -6.24,
+   "centroidHz": 293,
+   "rolloffHz": 1254,
+   "lowShare": 0.81,
+   "midShare": 0.174,
+   "highShare": 0.016,
+   "attackMs": 1.83,
+   "flatness": 0.0,
+   "tonal": true,
+   "f0Hz": 1055.6,
+   "midi": 84.15,
+   "note": "C6",
+   "source": "click2.ogg",
+   "role": "tap",
+   "flags": [
+    "DULL 293 Hz"
+   ],
+   "kind": "demoted",
+   "cue": "tap",
+   "desc": "held back: DULL 292 Hz",
+   "gainDb": 3.42,
+   "limited": false
+  },
+  "tap4": {
+   "durationMs": 97.1,
+   "lufs": -28.01,
+   "truePeakDb": -2.94,
+   "samplePeakDb": -2.99,
+   "centroidHz": 358,
+   "rolloffHz": 2326,
+   "lowShare": 0.837,
+   "midShare": 0.101,
+   "highShare": 0.062,
+   "attackMs": 0.12,
+   "flatness": 0.0002,
+   "tonal": true,
+   "f0Hz": 227.5,
+   "midi": 57.58,
+   "note": "A#3",
+   "source": "click_001.ogg",
+   "role": "tap",
+   "flags": [
+    "DULL 358 Hz"
+   ],
+   "kind": "demoted",
+   "cue": "tap",
+   "desc": "held back: DULL 329 Hz",
+   "gainDb": 14.88,
+   "limited": false
+  },
+  "frost-a": {
+   "durationMs": 950.0,
+   "lufs": -23.0,
+   "truePeakDb": -11.85,
+   "samplePeakDb": -11.93,
+   "centroidHz": 2097,
+   "rolloffHz": 4857,
+   "lowShare": 0.0,
+   "midShare": 0.866,
+   "highShare": 0.134,
+   "attackMs": 170.0,
+   "flatness": 0.0,
+   "tonal": true,
+   "f0Hz": 1046.5,
+   "midi": 84.0,
+   "note": "C6",
+   "source": "synth: glass bells climbing A5 C6 E6 A6, last note rings",
+   "role": "frost",
+   "flags": [],
+   "kind": "jingle",
+   "tier": "frost",
+   "desc": "glass bells climbing A5 C6 E6 A6, last note rings",
+   "notes": [
+    {
+     "t": 0.0,
+     "note": "A5",
+     "midi": 81
+    },
+    {
+     "t": 0.085,
+     "note": "C6",
+     "midi": 84
+    },
+    {
+     "t": 0.17,
+     "note": "E6",
+     "midi": 88
+    },
+    {
+     "t": 0.255,
+     "note": "A6",
+     "midi": 93
+    }
+   ],
+   "noteCheck": [
+    {
+     "t": 0.0,
+     "note": "A5",
+     "midi": 81,
+     "found": true,
+     "cents": 0.0
+    },
+    {
+     "t": 0.085,
+     "note": "C6",
+     "midi": 84,
+     "found": true,
+     "cents": 0.2
+    },
+    {
+     "t": 0.17,
+     "note": "E6",
+     "midi": 88,
+     "found": true,
+     "cents": -0.2
+    },
+    {
+     "t": 0.255,
+     "note": "A6",
+     "midi": 93,
+     "found": true,
+     "cents": 0.0
+    }
+   ],
+   "gainDb": -17.03,
+   "limited": false
+  },
+  "frost-b": {
+   "durationMs": 890.0,
+   "lufs": -23.0,
+   "truePeakDb": -11.51,
+   "samplePeakDb": -11.54,
+   "centroidHz": 2062,
+   "rolloffHz": 4856,
+   "lowShare": 0.0,
+   "midShare": 0.879,
+   "highShare": 0.121,
+   "attackMs": 160.06,
+   "flatness": 0.0,
+   "tonal": true,
+   "f0Hz": 1760.0,
+   "midi": 93.0,
+   "note": "A6",
+   "source": "synth: two glass pings, E6 then A6 a fourth up, long shimmer",
+   "role": "frost",
+   "flags": [],
+   "kind": "jingle",
+   "tier": "frost",
+   "desc": "two glass pings, E6 then A6 a fourth up, long shimmer",
+   "notes": [
+    {
+     "t": 0.0,
+     "note": "E6",
+     "midi": 88
+    },
+    {
+     "t": 0.16,
+     "note": "A6",
+     "midi": 93
+    }
+   ],
+   "noteCheck": [
+    {
+     "t": 0.0,
+     "note": "E6",
+     "midi": 88,
+     "found": true,
+     "cents": -0.2
+    },
+    {
+     "t": 0.16,
+     "note": "A6",
+     "midi": 93,
+     "found": true,
+     "cents": 0.0
+    }
+   ],
+   "gainDb": -15.31,
+   "limited": false
+  },
+  "amethyst-a": {
+   "durationMs": 1640.0,
+   "lufs": -22.1,
+   "truePeakDb": -7.5,
+   "samplePeakDb": -7.66,
+   "centroidHz": 705,
+   "rolloffHz": 2193,
+   "lowShare": 0.126,
+   "midShare": 0.778,
+   "highShare": 0.096,
+   "attackMs": 424.92,
+   "flatness": 0.0001,
+   "tonal": true,
+   "f0Hz": 1745.5,
+   "midi": 92.86,
+   "note": "A6",
+   "source": "synth: plucked strings falling E5 D5 C5 A4 over a soft A3 bell",
+   "role": "amethyst",
+   "flags": [],
+   "kind": "jingle",
+   "tier": "amethyst",
+   "desc": "plucked strings falling E5 D5 C5 A4 over a soft A3 bell",
+   "notes": [
+    {
+     "t": 0.0,
+     "note": "E5",
+     "midi": 76
+    },
+    {
+     "t": 0.14,
+     "note": "D5",
+     "midi": 74
+    },
+    {
+     "t": 0.28,
+     "note": "C5",
+     "midi": 72
+    },
+    {
+     "t": 0.42,
+     "note": "A4",
+     "midi": 69
+    },
+    {
+     "t": 0.42,
+     "note": "A3",
+     "midi": 57
+    }
+   ],
+   "noteCheck": [
+    {
+     "t": 0.0,
+     "note": "E5",
+     "midi": 76,
+     "found": true,
+     "cents": -16.6
+    },
+    {
+     "t": 0.14,
+     "note": "D5",
+     "midi": 74,
+     "found": true,
+     "cents": -16.1
+    },
+    {
+     "t": 0.28,
+     "note": "C5",
+     "midi": 72,
+     "found": true,
+     "cents": -14.4
+    },
+    {
+     "t": 0.42,
+     "note": "A4",
+     "midi": 69,
+     "found": true,
+     "cents": -7.9
+    },
+    {
+     "t": 0.42,
+     "note": "A3",
+     "midi": 57,
+     "found": true,
+     "cents": 0.7
+    }
+   ],
+   "gainDb": -8.99,
+   "limited": false
+  },
+  "amethyst-b": {
+   "durationMs": 1450.0,
+   "lufs": -22.0,
+   "truePeakDb": -9.67,
+   "samplePeakDb": -9.68,
+   "centroidHz": 489,
+   "rolloffHz": 784,
+   "lowShare": 0.0,
+   "midShare": 1.0,
+   "highShare": 0.0,
+   "attackMs": 12.94,
+   "flatness": 0.0,
+   "tonal": true,
+   "f0Hz": 440.0,
+   "midi": 69.0,
+   "note": "A4",
+   "source": "synth: one soft bell chord, A4 E5 C5 struck close together, long ring",
+   "role": "amethyst",
+   "flags": [],
+   "kind": "jingle",
+   "tier": "amethyst",
+   "desc": "one soft bell chord, A4 E5 C5 struck close together, long ring",
+   "notes": [
+    {
+     "t": 0.0,
+     "note": "A4",
+     "midi": 69
+    },
+    {
+     "t": 0.07,
+     "note": "E5",
+     "midi": 76
+    },
+    {
+     "t": 0.14,
+     "note": "C5",
+     "midi": 72
+    }
+   ],
+   "noteCheck": [
+    {
+     "t": 0.0,
+     "note": "A4",
+     "midi": 69,
+     "found": true,
+     "cents": -0.7
+    },
+    {
+     "t": 0.07,
+     "note": "E5",
+     "midi": 76,
+     "found": true,
+     "cents": -0.2
+    },
+    {
+     "t": 0.14,
+     "note": "C5",
+     "midi": 72,
+     "found": true,
+     "cents": 0.2
+    }
+   ],
+   "gainDb": -14.01,
+   "limited": false
+  },
+  "jade-b": {
+   "durationMs": 980.0,
+   "lufs": -21.0,
+   "truePeakDb": -10.08,
+   "samplePeakDb": -10.08,
+   "centroidHz": 1188,
+   "rolloffHz": 2634,
+   "lowShare": 0.0,
+   "midShare": 0.936,
+   "highShare": 0.064,
+   "attackMs": 91.9,
+   "flatness": 0.0,
+   "tonal": true,
+   "f0Hz": 587.0,
+   "midi": 73.99,
+   "note": "D5",
+   "source": "synth: steel-drum hop G5 D5 A5 G5 E6, syncopated",
+   "role": "jade",
+   "flags": [],
+   "kind": "jingle",
+   "tier": "jade",
+   "desc": "steel-drum hop G5 D5 A5 G5 E6, syncopated",
+   "notes": [
+    {
+     "t": 0.0,
+     "note": "G5",
+     "midi": 79
+    },
+    {
+     "t": 0.09,
+     "note": "D5",
+     "midi": 74
+    },
+    {
+     "t": 0.18,
+     "note": "A5",
+     "midi": 81
+    },
+    {
+     "t": 0.32,
+     "note": "G5",
+     "midi": 79
+    },
+    {
+     "t": 0.41,
+     "note": "E6",
+     "midi": 88
+    }
+   ],
+   "noteCheck": [
+    {
+     "t": 0.0,
+     "note": "G5",
+     "midi": 79,
+     "found": true,
+     "cents": -5.5
+    },
+    {
+     "t": 0.09,
+     "note": "D5",
+     "midi": 74,
+     "found": true,
+     "cents": -3.0
+    },
+    {
+     "t": 0.18,
+     "note": "A5",
+     "midi": 81,
+     "found": true,
+     "cents": -5.8
+    },
+    {
+     "t": 0.32,
+     "note": "G5",
+     "midi": 79,
+     "found": true,
+     "cents": -6.3
+    },
+    {
+     "t": 0.41,
+     "note": "E6",
+     "midi": 88,
+     "found": true,
+     "cents": -3.6
+    }
+   ],
+   "gainDb": -15.68,
+   "limited": false
+  },
+  "jade-c": {
+   "durationMs": 1160.0,
+   "lufs": -21.0,
+   "truePeakDb": -12.39,
+   "samplePeakDb": -12.4,
+   "centroidHz": 1263,
+   "rolloffHz": 1325,
+   "lowShare": 0.0,
+   "midShare": 0.97,
+   "highShare": 0.03,
+   "attackMs": 260.0,
+   "flatness": 0.0,
+   "tonal": true,
+   "f0Hz": 879.3,
+   "midi": 80.99,
+   "note": "A5",
+   "source": "synth: airy flute rise A5 D6 E6 with breath",
+   "role": "jade",
+   "flags": [],
+   "kind": "jingle",
+   "tier": "jade",
+   "desc": "airy flute rise A5 D6 E6 with breath",
+   "notes": [
+    {
+     "t": 0.0,
+     "note": "A5",
+     "midi": 81
+    },
+    {
+     "t": 0.12,
+     "note": "D6",
+     "midi": 86
+    },
+    {
+     "t": 0.24,
+     "note": "E6",
+     "midi": 88
+    }
+   ],
+   "noteCheck": [
+    {
+     "t": 0.0,
+     "note": "A5",
+     "midi": 81,
+     "found": true,
+     "cents": -1.4
+    },
+    {
+     "t": 0.12,
+     "note": "D6",
+     "midi": 86,
+     "found": true,
+     "cents": -1.4
+    },
+    {
+     "t": 0.24,
+     "note": "E6",
+     "midi": 88,
+     "found": true,
+     "cents": -1.6
+    }
+   ],
+   "gainDb": -14.04,
+   "limited": false
+  },
+  "gold-b": {
+   "durationMs": 2420.0,
+   "lufs": -18.0,
+   "truePeakDb": -3.25,
+   "samplePeakDb": -3.25,
+   "centroidHz": 1008,
+   "rolloffHz": 1567,
+   "lowShare": 0.001,
+   "midShare": 0.974,
+   "highShare": 0.025,
+   "attackMs": 96.81,
+   "flatness": 0.0,
+   "tonal": true,
+   "f0Hz": 784.2,
+   "midi": 79.0,
+   "note": "G5",
+   "source": "synth: big C5 bell with E5 G5, choir pad C3 G3 E4, shimmering cascade, sub boom",
+   "role": "gold",
+   "flags": [],
+   "kind": "jingle",
+   "tier": "gold",
+   "desc": "big C5 bell with E5 G5, choir pad C3 G3 E4, shimmering cascade, sub boom",
+   "notes": [
+    {
+     "t": 0.0,
+     "note": "C5",
+     "midi": 72
+    },
+    {
+     "t": 0.05,
+     "note": "E5",
+     "midi": 76
+    },
+    {
+     "t": 0.1,
+     "note": "G5",
+     "midi": 79
+    },
+    {
+     "t": 0.0,
+     "note": "C3",
+     "midi": 48
+    },
+    {
+     "t": 0.0,
+     "note": "G3",
+     "midi": 55
+    },
+    {
+     "t": 0.0,
+     "note": "E4",
+     "midi": 64
+    },
+    {
+     "t": 0.35,
+     "note": "C6",
+     "midi": 84
+    },
+    {
+     "t": 0.45,
+     "note": "E6",
+     "midi": 88
+    },
+    {
+     "t": 0.55,
+     "note": "G6",
+     "midi": 91
+    },
+    {
+     "t": 0.65,
+     "note": "C7",
+     "midi": 96
+    }
+   ],
+   "noteCheck": [
+    {
+     "t": 0.0,
+     "note": "C5",
+     "midi": 72,
+     "found": true,
+     "cents": 0.2
+    },
+    {
+     "t": 0.05,
+     "note": "E5",
+     "midi": 76,
+     "found": true,
+     "cents": -1.2
+    },
+    {
+     "t": 0.1,
+     "note": "G5",
+     "midi": 79,
+     "found": true,
+     "cents": 0.1
+    },
+    {
+     "t": 0.0,
+     "note": "C3",
+     "midi": 48,
+     "found": false,
+     "cents": -1.0
+    },
+    {
+     "t": 0.0,
+     "note": "G3",
+     "midi": 55,
+     "found": false,
+     "cents": -3.9
+    },
+    {
+     "t": 0.0,
+     "note": "E4",
+     "midi": 64,
+     "found": true,
+     "cents": -0.2
+    },
+    {
+     "t": 0.35,
+     "note": "C6",
+     "midi": 84,
+     "found": true,
+     "cents": -1.0
+    },
+    {
+     "t": 0.45,
+     "note": "E6",
+     "midi": 88,
+     "found": true,
+     "cents": 1.7
+    },
+    {
+     "t": 0.55,
+     "note": "G6",
+     "midi": 91,
+     "found": true,
+     "cents": 0.1
+    },
+    {
+     "t": 0.65,
+     "note": "C7",
+     "midi": 96,
+     "found": true,
+     "cents": -0.1
+    }
+   ],
+   "gainDb": -12.69,
+   "limited": false
+  },
+  "gold-c": {
+   "durationMs": 2820.0,
+   "lufs": -18.0,
+   "truePeakDb": -5.15,
+   "samplePeakDb": -5.15,
+   "centroidHz": 914,
+   "rolloffHz": 1440,
+   "lowShare": 0.091,
+   "midShare": 0.893,
+   "highShare": 0.016,
+   "attackMs": 730.54,
+   "flatness": 0.0,
+   "tonal": true,
+   "f0Hz": 261.8,
+   "midi": 60.01,
+   "note": "C4",
+   "source": "synth: choir and brass swell on C major rising to a C6 bell strike and sub boom",
+   "role": "gold",
+   "flags": [],
+   "kind": "jingle",
+   "tier": "gold",
+   "desc": "choir and brass swell on C major rising to a C6 bell strike and sub boom",
+   "notes": [
+    {
+     "t": 0.0,
+     "note": "C3",
+     "midi": 48
+    },
+    {
+     "t": 0.0,
+     "note": "G3",
+     "midi": 55
+    },
+    {
+     "t": 0.0,
+     "note": "C4",
+     "midi": 60
+    },
+    {
+     "t": 0.0,
+     "note": "E4",
+     "midi": 64
+    },
+    {
+     "t": 0.0,
+     "note": "G4",
+     "midi": 67
+    },
+    {
+     "t": 0.85,
+     "note": "C6",
+     "midi": 84
+    }
+   ],
+   "noteCheck": [
+    {
+     "t": 0.0,
+     "note": "C3",
+     "midi": 48,
+     "found": true,
+     "cents": -1.0
+    },
+    {
+     "t": 0.0,
+     "note": "G3",
+     "midi": 55,
+     "found": true,
+     "cents": -0.7
+    },
+    {
+     "t": 0.0,
+     "note": "C4",
+     "midi": 60,
+     "found": true,
+     "cents": 1.4
+    },
+    {
+     "t": 0.0,
+     "note": "E4",
+     "midi": 64,
+     "found": true,
+     "cents": -4.0
+    },
+    {
+     "t": 0.0,
+     "note": "G4",
+     "midi": 67,
+     "found": true,
+     "cents": -0.7
+    },
+    {
+     "t": 0.85,
+     "note": "C6",
+     "midi": 84,
+     "found": true,
+     "cents": -0.4
+    }
+   ],
+   "gainDb": -13.63,
+   "limited": false
+  }
+ }
+}
