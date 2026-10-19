@@ -6,7 +6,7 @@
 //        -> presented -> idle        (plus aborting, on Esc)
 
 import type { MoodPresentation, MoodRunStart } from './mood-run'
-import type { Wheel } from './shuffle-pro-audio'
+import type { Whoosh } from './shuffle-pro-audio'
 import {
   type BaseTier,
   EMPTY_STREAK,
@@ -97,7 +97,7 @@ export type ControllerDeps = {
   recordRun: (tier: Tier, movieId?: string) => void
   // A mood run landed: its own record, apart from the tiers.
   recordMoodRun?: (path: MoodPath, movieId?: string) => void
-  createWheel: (tier: Tier) => Wheel | null
+  createWhoosh: (tier: Tier) => Whoosh | null
   // A random visible movie that is not the one the globe is already on.
   pickTarget: () => string | null
   // Closes overlays before a run takes over the screen.
@@ -151,7 +151,7 @@ type Run = {
   peaked: boolean
   targetId: string | null
   reduced: boolean
-  wheel: Wheel | null
+  whoosh: Whoosh | null
   sky: SkyState
   shocked: boolean
   // Landing / skip bookkeeping.
@@ -558,7 +558,7 @@ export class ShuffleProController {
       peaked: false,
       targetId: options.targetId,
       reduced,
-      wheel: reduced ? null : this.deps.createWheel(tier),
+      whoosh: reduced ? null : this.deps.createWhoosh(tier),
       sky,
       shocked: false,
       releasedAt: null,
@@ -607,8 +607,8 @@ export class ShuffleProController {
     this.phase = 'landing'
     port.stopAutoSpin(LANDING_TAU_MS)
     port.setCameraPull(0, LANDING_PULL_FREQ, LANDING_PULL_ZETA)
-    run.wheel?.fadeOut(1400)
-    run.wheel = null
+    run.whoosh?.fadeOut(1400)
+    run.whoosh = null
     this.deps.vibrate(15)
     if (!run.premium) {
       // Released early: an ordinary shuffle, so the show fades quickly.
@@ -658,8 +658,8 @@ export class ShuffleProController {
     port.cancelLanding()
     port.stopAutoSpin(LANDING_TAU_MS)
     port.setCameraPull(0, LANDING_PULL_FREQ, LANDING_PULL_ZETA)
-    run.wheel?.fadeOut(500)
-    run.wheel = null
+    run.whoosh?.fadeOut(500)
+    run.whoosh = null
     if (!run.premium) this.beginFade(run, 0, NORMAL_FADE_MS)
     const targetId = run.targetId
     if (targetId) {
@@ -689,8 +689,8 @@ export class ShuffleProController {
     port.cancelLanding()
     port.stopAutoSpin(LANDING_TAU_MS)
     port.setCameraPull(0, LANDING_PULL_FREQ, LANDING_PULL_ZETA)
-    run.wheel?.fadeOut(500)
-    run.wheel = null
+    run.whoosh?.fadeOut(500)
+    run.whoosh = null
     this.deps.onCue?.('end', run.tier)
     this.beginFade(run, 0, NORMAL_FADE_MS)
     run.landingDone = true
@@ -905,7 +905,7 @@ export class ShuffleProController {
       } else {
         sky.rim = 0.35 * reveal.color
       }
-      run.wheel?.update(omega, run.profile.omegaMax, reveal.sky)
+      run.whoosh?.update(omega, run.profile.omegaMax, reveal.sky)
       this.lastOmega = omega
       return
     }
@@ -1045,8 +1045,8 @@ export class ShuffleProController {
     const run = this.run
     if (this.press) this.stopRoll(this.press)
     if (run) {
-      run.wheel?.stop()
-      run.wheel = null
+      run.whoosh?.stop()
+      run.whoosh = null
       this.deps.onCue?.('end', run.tier)
       port?.cancelLanding()
       port?.stopAutoSpin(LANDING_TAU_MS)

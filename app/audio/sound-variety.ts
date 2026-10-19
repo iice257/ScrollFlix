@@ -1,7 +1,6 @@
 // The parts of "variety" that are pure logic, so they can be tested without an
 // audio device: a shuffle bag that never repeats, small human-sized random
-// changes, pointer panning, and the ticker that turns globe speed into soft
-// ticks.
+// changes and pointer panning.
 
 export type Random = () => number
 
@@ -95,52 +94,4 @@ export const panFromPointer = (x: number, width: number, reach = 0.7) => {
   if (!Number.isFinite(x) || width <= 0) return 0
   const unit = Math.min(1, Math.max(-1, (x / width) * 2 - 1))
   return unit * reach
-}
-
-// -------------------------------------------------------------- spin ticks
-
-export type SpinTick = { gainDb: number; rate: number }
-
-const smooth = (t: number) => {
-  const c = Math.min(1, Math.max(0, t))
-  return c * c * (3 - 2 * c)
-}
-
-export const SPIN_MIN_SPEED = 0.25 // rad/s, below this the globe is drifting
-export const SPIN_FULL_SPEED = 10 // rad/s at which ticks reach full strength
-export const SPIN_MAX_RATE = 22 // ticks per second, however fast it turns
-const SPIN_ARC = (2 * Math.PI) / 48 // one tick per 7.5 degrees of rotation
-
-// How strong the ticks are at a speed, 0..1.
-export const spinStrength = (speed: number) => smooth(speed / SPIN_FULL_SPEED)
-
-// Turns globe speed into ticks: one per slice of rotation, thinned so a hard
-// flick is a fast ratchet and not a buzz. Louder and slightly higher the faster
-// it goes. Call once per frame with the speed in rad/s and the frame time.
-export const createSpinTicker = (random: Random = Math.random) => {
-  let angle = 0
-  return {
-    update: (speed: number, dtMs: number): SpinTick[] => {
-      if (!(speed >= SPIN_MIN_SPEED) || dtMs <= 0) {
-        angle = 0
-        return []
-      }
-      const arc = Math.max(SPIN_ARC, speed / SPIN_MAX_RATE)
-      angle += (speed * Math.min(dtMs, 100)) / 1000
-      const ticks: SpinTick[] = []
-      const strength = spinStrength(speed)
-      while (angle >= arc && ticks.length < 2) {
-        angle -= arc
-        ticks.push({
-          gainDb: -6 + 10 * strength + between(random, -1.2, 1.2),
-          rate: semisToRate(-1.5 + 5 * strength + between(random, -0.4, 0.4)),
-        })
-      }
-      if (angle > arc) angle = arc
-      return ticks
-    },
-    reset: () => {
-      angle = 0
-    },
-  }
 }

@@ -1,46 +1,65 @@
-// The Shuffle Pro Easter egg sounds: a wheel of clicks, like a roulette wheel.
+// The Shuffle Pro Easter egg sounds, all procedural Web Audio:
 //
-//   wheel    one click per slice of rotation as the globe spins up, thinning
-//            out and fading as it slows to rest, so the landing is a wheel
-//            running down
-//   click    the last tick of the wheel as the card opens: lower and firmer
-//            than the rest (gold a little lower still)
+//   whoosh   band-passed noise that sweeps up with the spin, a low rumble, and
+//            a quiet tonal drone (tuned per path) that swells with the sky
+//   thud     the landing, as the card opens
 //
-// The clicks are the same spin and tap clips the interface uses, from the
-// sprite. The reveal jingle (shuffle-pro-music.ts) is the only music.
+// The reveal jingle (shuffle-pro-music.ts) is the only music, so there is no
+// chime at the peak.
 //
 // They follow the "Easter egg sounds" switch, not the master sound switch, so
 // they stay audible by default. The AudioContext itself lives in the shared
 // engine and is only created inside a real user gesture.
 
 import {
-  type Bank,
-  getBank,
-  loadBank,
-  pickVariant,
-  playClip,
-} from '../../../../audio/sound-bank'
-import { getAudio } from '../../../../audio/sound-engine'
+  burst,
+  getAudio,
+  getNoiseBuffer,
+  pluck,
+} from '../../../../audio/sound-engine'
 import { soundStore } from '../../../../audio/sound-settings'
-import {
-  SPIN_MIN_SPEED,
-  createSpinTicker,
-  dbToGain,
-  semisToRate,
-} from '../../../../audio/sound-variety'
-import { type Tier, landingOmega } from './shuffle-pro-logic'
+import type { Tier } from './shuffle-pro-logic'
 
 export { unlockAudio } from '../../../../audio/sound-engine'
 
-// The spin clips are levelled for a pointer's detent. A wheel is the sound of
-// the moment, so its clicks sit this much higher.
-export const WHEEL_BOOST_DB = 8
-const COAST_FRAME_MS = 16
+export const WHOOSH_BAND_MIN_HZ = 200
+export const WHOOSH_BAND_MAX_HZ = 2400
+export const WHOOSH_RUMBLE_MIN_HZ = 40
+export const WHOOSH_RUMBLE_MAX_HZ = 60
+export const WHOOSH_NOISE_GAIN = 0.2
+export const WHOOSH_RUMBLE_GAIN = 0.1
+export const DRONE_GAIN = 0.07
 
-export type Wheel = {
+// The whoosh was tuned when the output went through a compressor with makeup
+// gain (about +7 dB on quiet sounds, about +1 dB at its loudest). The output is
+// now a plain soft limiter, so the lift is written in here. At full spin the
+// whoosh peaks near -7 dBFS, under the click cues.
+export const WHOOSH_TRIM = 1.5
+
+// How loud and how bright the whoosh is for a spin speed.
+export const whooshParams = (omega: number, omegaMax: number) => {
+  const level = Math.min(1, Math.max(0, omega / Math.max(0.0001, omegaMax)))
+  return {
+    bandHz:
+      WHOOSH_BAND_MIN_HZ + (WHOOSH_BAND_MAX_HZ - WHOOSH_BAND_MIN_HZ) * level,
+    noiseGain: WHOOSH_NOISE_GAIN * level,
+    rumbleHz:
+      WHOOSH_RUMBLE_MIN_HZ +
+      (WHOOSH_RUMBLE_MAX_HZ - WHOOSH_RUMBLE_MIN_HZ) * level,
+    rumbleGain: WHOOSH_RUMBLE_GAIN * level,
+  }
+}
+
+// Root note of each path's drone, in Hz: A2, G2, E2, C2.
+export const DRONE_ROOT_HZ: Record<Tier, number> = {
+  frost: 110,
+  amethyst: 98,
+  jade: 82.41,
+  gold: 65.41,
+}
+
+export type Whoosh = {
   update: (omega: number, omegaMax: number, sky?: number) => void
-  // Lets go of the spin: the clicks carry on, slowing the way the globe does,
-  // for at most `ms`.
   fadeOut: (ms: number) => void
   stop: () => void
 }
@@ -48,80 +67,116 @@ export type Wheel = {
 const eggsOn = () => soundStore.get().eggs
 
 // Returns null when the Easter egg sounds are off or audio was never unlocked.
-export const createWheel = (_tier: Tier = 'frost'): Wheel | null => {
+export const createWhoosh = (tier: Tier = 'frost'): Whoosh | null => {
   if (!eggsOn()) return null
   const audio = getAudio()
   if (!audio) return null
   const { ctx, out } = audio
-  void loadBank(ctx)
 
-  const ticker = createSpinTicker()
-  let lastAt = performance.now()
-  let lastOmega = 0
-  let coastTimer = 0
-  let stopped = false
+  try {
+    const master = ctx.createGain()
+    master.gain.value = WHOOSH_TRIM
+    master.connect(out)
 
-  const click = (omega: number, dtMs: number) => {
-    const bank: Bank | null = getBank(ctx)
-    if (!bank) return
-    for (const tick of ticker.update(omega, dtMs)) {
-      const clip = pickVariant(bank.manifest, 'spin')
-      if (!clip) return
-      playClip(ctx, out, clip, {
-        gain: dbToGain(tick.gainDb + WHEEL_BOOST_DB),
-        rate: tick.rate,
-        pan: 0,
-      })
+    const noise = ctx.createBufferSource()
+    noise.buffer = getNoiseBuffer(ctx)
+    noise.loop = true
+    const band = ctx.createBiquadFilter()
+    band.type = 'bandpass'
+    band.Q.value = 0.9
+    band.frequency.value = WHOOSH_BAND_MIN_HZ
+    const noiseGain = ctx.createGain()
+    noiseGain.gain.value = 0
+    noise.connect(band).connect(noiseGain).connect(master)
+
+    const rumble = ctx.createOscillator()
+    rumble.type = 'sine'
+    rumble.frequency.value = WHOOSH_RUMBLE_MIN_HZ
+    const rumbleGain = ctx.createGain()
+    rumbleGain.gain.value = 0
+    rumble.connect(rumbleGain).connect(master)
+
+    // The drone: the root and its fifth, slightly detuned so they beat slowly.
+    const droneGain = ctx.createGain()
+    droneGain.gain.value = 0
+    droneGain.connect(master)
+    const root = DRONE_ROOT_HZ[tier]
+    const droneOscillators = [
+      { ratio: 1, detune: -4 },
+      { ratio: 1, detune: 5 },
+      { ratio: 1.5, detune: 0 },
+    ].map(({ ratio, detune }) => {
+      const osc = ctx.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = root * ratio
+      osc.detune.value = detune
+      osc.connect(droneGain)
+      return osc
+    })
+
+    noise.start()
+    rumble.start()
+    for (const osc of droneOscillators) osc.start()
+
+    let stopped = false
+    const stop = () => {
+      if (stopped) return
+      stopped = true
+      try {
+        noise.stop()
+        rumble.stop()
+        for (const osc of droneOscillators) osc.stop()
+      } catch {
+        // Already stopped.
+      }
+      master.disconnect()
     }
-  }
 
-  const stop = () => {
-    stopped = true
-    window.clearInterval(coastTimer)
-  }
-
-  return {
-    update: (omega) => {
-      if (stopped) return
-      const now = performance.now()
-      click(omega, now - lastAt)
-      lastAt = now
-      lastOmega = omega
-    },
-    fadeOut: (ms) => {
-      if (stopped) return
-      const releasedAt = performance.now()
-      lastAt = releasedAt
-      window.clearInterval(coastTimer)
-      coastTimer = window.setInterval(() => {
-        const now = performance.now()
-        const omega = landingOmega(lastOmega, now - releasedAt)
-        if (now - releasedAt > ms || omega < SPIN_MIN_SPEED) {
-          stop()
-          return
-        }
-        click(omega, now - lastAt)
-        lastAt = now
-      }, COAST_FRAME_MS)
-    },
-    stop,
+    return {
+      update: (omega, omegaMax, sky = 0) => {
+        if (stopped) return
+        const params = whooshParams(omega, omegaMax)
+        const now = ctx.currentTime
+        band.frequency.setTargetAtTime(params.bandHz, now, 0.08)
+        noiseGain.gain.setTargetAtTime(params.noiseGain, now, 0.08)
+        rumble.frequency.setTargetAtTime(params.rumbleHz, now, 0.12)
+        rumbleGain.gain.setTargetAtTime(params.rumbleGain, now, 0.12)
+        droneGain.gain.setTargetAtTime(DRONE_GAIN * sky, now, 0.25)
+      },
+      fadeOut: (ms) => {
+        if (stopped) return
+        const now = ctx.currentTime
+        master.gain.cancelScheduledValues(now)
+        master.gain.setValueAtTime(master.gain.value, now)
+        master.gain.linearRampToValueAtTime(0, now + ms / 1000)
+        window.setTimeout(stop, ms + 80)
+      },
+      stop,
+    }
+  } catch {
+    return null
   }
 }
 
-// The landing, as the card opens: the last click of the wheel.
-export const playLandingClick = (tier: Tier) => {
+// The landing, as the card opens. Gold gets a longer, deeper boom.
+export const playLandingThud = (tier: Tier) => {
   if (!eggsOn()) return
   const audio = getAudio()
   if (!audio) return
   try {
-    const bank = getBank(audio.ctx)
-    const clip = bank ? pickVariant(bank.manifest, 'tap') : null
-    if (!clip) return
     const gold = tier === 'gold'
-    playClip(audio.ctx, audio.out, clip, {
-      gain: dbToGain(gold ? 5 : 3),
-      rate: semisToRate(gold ? -8 : -6),
-      pan: 0,
+    pluck(audio, {
+      freq: gold ? 120 : 150,
+      toFreq: gold ? 38 : 48,
+      decay: gold ? 0.7 : 0.38,
+      gain: gold ? 0.5 : 0.4,
+    })
+    burst(audio, {
+      centerHz: 380,
+      q: 0.7,
+      type: 'lowpass',
+      decay: 0.06,
+      gain: 0.14,
     })
   } catch {
     // Sound must never break the run.

@@ -8,9 +8,13 @@
 //
 //   hover     the softest click, as the pointer crosses a control
 //   tap       the press: the same click, a little firmer
-//   spinTick  the globe's detents, scaled by speed (see sound-variety.ts)
 //   the rest  tap, tuned: up for open, save and confirm; down for close,
-//             grab, settle and landing
+//             grab and settle
+//
+// Two cues are not clicks: shuffleStart and landing have no layers on purpose,
+// so they play their synthesised voices (a soft whoosh as the globe sets off,
+// a low thump as it lands). The spinTick clips stay in the sprite, but nothing
+// plays them: the turning globe is silent apart from those two.
 
 import type { SoundCategory } from './sound-settings'
 import type { Humanize } from './sound-variety'
@@ -128,21 +132,21 @@ export const CUE_SPECS: Record<Cue, CueSpec> = {
     pan: 'center',
     layers: tapClick(7, 2),
   },
+  // The globe sets off for a random film: the soft synthesised whoosh.
   shuffleStart: {
     category: 'shuffle',
     minIntervalMs: 200,
     humanize: hum(0.2, 0.8),
     pan: 'center',
-    layers: tapClick(-5, 1),
+    layers: [],
   },
-  // The globe settles on a film: the last click of the wheel, low and firm.
+  // The globe settles on a film: the soft synthesised low thump.
   landing: {
     category: 'shuffle',
     minIntervalMs: 200,
     humanize: hum(0.4, 1),
     pan: 'center',
-    strength: { gainDb: [-40, 0] },
-    layers: tapClick(-6, 3),
+    layers: [],
   },
   // A drag or flick comes to rest; a harder one lands lower and firmer.
   settle: {
