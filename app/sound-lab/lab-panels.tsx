@@ -216,10 +216,10 @@ const CUE_NOTES: Record<Cue, string> = {
   trailPoint: 'A film joins the path: the click steps up along the path.',
   moodPick: 'Choosing a mood world: the click climbs along the row.',
   moodGo: 'Landing on a film from the mood page: the tap click, high.',
-  landing: 'The globe settles on a film: the last click, low and firm.',
-  shuffleStart: 'The globe sets off for a random film: a low click.',
-  spinTick:
-    'The globe’s detents. Clicks that follow its speed, like a wheel; play the globe to hear them.',
+  landing: 'The globe settles on a film: a soft low thump (synthesised).',
+  shuffleStart:
+    'The globe sets off for a random film: a soft whoosh (synthesised).',
+  spinTick: 'The globe’s detents. Not played by the site any more.',
 }
 
 const CUE_ROLE: Partial<Record<Cue, string>> = {
@@ -232,7 +232,6 @@ const CUE_ROLE: Partial<Record<Cue, string>> = {
   heart: 'tap',
   confirm: 'tap',
   trailPoint: 'tap',
-  landing: 'tap',
   spinTick: 'spin',
 }
 
