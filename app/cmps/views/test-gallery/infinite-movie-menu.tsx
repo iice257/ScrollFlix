@@ -11,12 +11,21 @@ import {
 import { createPortal } from 'react-dom'
 import { cn } from '../../../utils/tw'
 import {
+  type ConstellationInput,
+  DRAW_IN_MS,
+  type GeometryWorld,
+  createConstellationInput,
+  createGeometryCache,
+} from './constellation-geometry'
+import { ConstellationPass, type ConstellationView } from './constellation-pass'
+import {
   type HoneycombVec3 as Vec3,
   createHoneycombSpherePositions,
   hasHoneycombLayout,
   prewarmHoneycombLayout,
 } from './honeycomb-layout'
 import { perfProbe } from './perf-probe'
+import { buildPosterIndex } from './poster-index'
 import { unlockAudio } from './shuffle-pro/shuffle-pro-audio'
 import type {
   PressSession,
@@ -89,30 +98,15 @@ export type PosterRect = {
 
 export type PosterPoint = PosterRect & { id: string; depth: number }
 
-// A poster's centre on the sphere, in the globe's own units (front is +z).
-export type PosterWorld = { id: string; x: number; y: number; z: number }
-
-// Turns a point in those units into viewport pixels (null if behind the eye).
-export type PosterProjector = (
-  x: number,
-  y: number,
-  z: number,
-) => [number, number] | null
-
 export type InfiniteMovieMenuControl = {
   // Where a film's poster is on screen right now, or null if it isn't shown.
   getPosterRect: (itemId: string) => PosterRect | null
   // Where each of these films' posters is on screen, for those facing the
   // viewer. Cheap: one pass over the globe.
   getPosterPoints: (ids: ReadonlySet<string>) => PosterPoint[]
-  // Where each of these films sits on the sphere right now, on either side of
-  // it, and a projector to put any point of the sphere on screen. Used to draw
-  // paths that run around the globe.
-  getPosterWorld: (ids: ReadonlySet<string>) => PosterWorld[]
-  getProjector: () => PosterProjector
-  // Called after every frame the globe actually draws (it only draws when
-  // something moved).
-  setOnFrame: (listener: (() => void) | null) => void
+  // The saved-film constellations and the session path, drawn by the globe
+  // itself in its own pass (so they turn with it and cost no extra canvas).
+  setConstellations: (input: ConstellationInput) => void
   // Called with the speed (rad/s) and direction (-1 or 1) of a very fast flick.
   setOnFlick: (
     listener: ((speed: number, direction: number) => void) | null,
@@ -125,6 +119,8 @@ type Mat4 = Float32Array
 
 const SPHERE_RADIUS = 2.58
 const TARGET_FRAME_DURATION = 1000 / 60
+// How often the constellations twinkle while the globe is otherwise at rest.
+const TWINKLE_FRAME_MS = 1000 / 15
 const ICON_TEXTURE_CELL_SIZE = 128
 const ICON_TEXTURE_PADDING = 12
 // Globe density: up to ICON_INSTANCE_COUNT posters. Smaller sets shrink the
@@ -1477,10 +1473,33 @@ class InfiniteMovieEngine<T> {
   onSpinActive: ((active: boolean) => void) | null = null
   // Told when the globe is turning very fast because it was flicked.
   onFlick: ((speed: number, direction: number) => void) | null = null
-  // Told after every frame that was drawn.
-  onFrame: (() => void) | null = null
   private lastFlickAt = 0
   private lastFrameDrawn = false
+  // Constellations and the session path, drawn after the posters.
+  private constellations: ConstellationPass | null = null
+  private readonly constellationInput = createConstellationInput()
+  private readonly constellationCache = createGeometryCache()
+  private readonly constellationWorld: GeometryWorld
+  private constellationsStale = true
+  private posterIndex: Map<string, number> | null = null
+  private readonly constellationEpochMs = Date.now()
+  private constellationDrawInUntil = 0
+  private lastTwinkleAt = 0
+  private readonly viewProjection = identityMat4()
+  private pxScale = 1
+  private readonly reducedMotionQuery =
+    typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-reduced-motion: reduce)')
+      : null
+  private readonly constellationView: ConstellationView = {
+    viewProjection: this.viewProjection,
+    width: 1,
+    height: 1,
+    pxScale: 1,
+    nowSeconds: 0,
+    twinkleSeconds: 0,
+    light: false,
+  }
 
   private readonly handleContextLost = (event: Event) => {
     event.preventDefault()
@@ -1552,6 +1571,11 @@ class InfiniteMovieEngine<T> {
       instanceCount,
       this.sphereRadius,
     )
+    this.constellationWorld = {
+      positionOf: (index) => this.instancePositions[index],
+      maxLinkLength: this.sphereRadius * 1.25,
+      epochMs: this.constellationEpochMs,
+    }
     this.instanceMatricesArray = new Float32Array(
       this.instancePositions.length * 16,
     )
@@ -1603,10 +1627,7 @@ class InfiniteMovieEngine<T> {
     const probe = perfProbe()
     const workStart = probe ? performance.now() : 0
     const drawn = this.animate(deltaTime)
-    if (drawn) {
-      this.render()
-      this.onFrame?.()
-    }
+    if (drawn) this.render()
     if (probe) {
       // Only frames that follow another drawn frame, so a wake-up after rest
       // is not mistaken for a slow frame.
@@ -1669,6 +1690,7 @@ class InfiniteMovieEngine<T> {
         this.gl.drawingBufferHeight,
       )
     }
+    this.pxScale = this.canvas.width / Math.max(1, this.canvas.clientWidth)
     this.updateProjectionMatrix()
   }
 
@@ -1680,6 +1702,7 @@ class InfiniteMovieEngine<T> {
     this.cleanupCallbacks.forEach((cleanup) => cleanup())
     this.control.dispose()
     this.sky?.dispose()
+    this.constellations?.dispose()
     this.canvas.removeEventListener('webglcontextlost', this.handleContextLost)
     if (!this.gl.isContextLost()) {
       if (this.texture) this.gl.deleteTexture(this.texture)
@@ -2133,44 +2156,6 @@ class InfiniteMovieEngine<T> {
       })
     })
     return [...found.values()]
-  }
-
-  getPosterWorld(ids: ReadonlySet<string>): PosterWorld[] {
-    const found = new Map<string, PosterWorld & { index: number }>()
-    this.instanceMatrices.forEach((matrix, index) => {
-      const item = this.items[index % Math.max(1, this.items.length)]
-      if (!item || !ids.has(item.id)) return
-      const previous = found.get(item.id)
-      // A film that appears more than once keeps its first place.
-      if (previous && previous.index <= index) return
-      found.set(item.id, {
-        id: item.id,
-        x: matrix[12],
-        y: matrix[13],
-        z: matrix[14],
-        index,
-      })
-    })
-    return [...found.values()].map(({ id, x, y, z }) => ({ id, x, y, z }))
-  }
-
-  getProjector(): PosterProjector {
-    const rect = this.canvas.getBoundingClientRect()
-    const mvp = multiplyMat4(
-      identityMat4(),
-      this.projectionMatrix,
-      this.viewMatrix,
-    )
-    return (x, y, z) => {
-      const clipX = mvp[0] * x + mvp[4] * y + mvp[8] * z + mvp[12]
-      const clipY = mvp[1] * x + mvp[5] * y + mvp[9] * z + mvp[13]
-      const clipW = mvp[3] * x + mvp[7] * y + mvp[11] * z + mvp[15]
-      if (clipW <= 0.0001) return null
-      return [
-        rect.left + ((clipX / clipW + 1) / 2) * rect.width,
-        rect.top + ((1 - clipY / clipW) / 2) * rect.height,
-      ]
-    }
   }
 
   // Resolves a click against a snapshot; same snapshot and point, same poster.
@@ -2733,7 +2718,19 @@ class InfiniteMovieEngine<T> {
         orientation[3] * last[3],
     )
     const skyUp = this.skyState !== null && this.skyState.intensity > 0.002
-    if (performance.now() < this.revealUntil) {
+    const now = performance.now()
+    if (this.constellationsShown()) {
+      // New links draw themselves in; the stars twinkle a little.
+      if (Date.now() < this.constellationDrawInUntil) this.renderDirty = true
+      if (
+        !this.reducedMotionQuery?.matches &&
+        now - this.lastTwinkleAt >= TWINKLE_FRAME_MS
+      ) {
+        this.lastTwinkleAt = now
+        this.renderDirty = true
+      }
+    }
+    if (now < this.revealUntil) {
       this.renderDirty = true
       this.revealPending = true
     } else if (this.revealPending) {
@@ -2881,7 +2878,7 @@ class InfiniteMovieEngine<T> {
     gl.uniform1f(this.locations.uRevealSoftness, POSTER_REVEAL_SOFTNESS)
     gl.uniform1f(
       this.locations.uReducedMotion,
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 1 : 0,
+      this.reducedMotionQuery?.matches ? 1 : 0,
     )
     gl.uniform1f(this.locations.uNow, this.revealNow())
     gl.activeTexture(gl.TEXTURE1)
@@ -2900,6 +2897,63 @@ class InfiniteMovieEngine<T> {
     if (sky && this.sky && sky.particles > 0.001 && sky.intensity > 0.002) {
       this.sky.drawParticles(sky, this.skyQuality, this.skyView())
     }
+
+    this.drawConstellations()
+  }
+
+  setConstellations(input: ConstellationInput) {
+    if (!this.constellationInput.set(input)) return
+    this.constellationsStale = true
+    this.renderDirty = true
+    // Draw-in runs off the clock, so keep drawing until the newest link is done.
+    let newest = 0
+    for (const entry of input.path) newest = Math.max(newest, entry.at)
+    this.constellationDrawInUntil = newest ? newest + DRAW_IN_MS + 60 : 0
+  }
+
+  private constellationsShown() {
+    const input = this.constellationInput.get()
+    return input.visible && (input.ids.length > 0 || input.path.length >= 2)
+  }
+
+  private readonly posterInstanceOf = (id: string) => {
+    this.posterIndex ??= buildPosterIndex(
+      this.items,
+      this.instancePositions.length,
+    )
+    return this.posterIndex.get(id) ?? null
+  }
+
+  private drawConstellations() {
+    if (!this.constellationsShown()) return
+    const input = this.constellationInput.get()
+    const gl = this.gl
+    this.constellations ??= new ConstellationPass(gl)
+    const pass = this.constellations
+    if (this.constellationsStale) {
+      this.constellationsStale = false
+      pass.setGeometry(
+        this.constellationCache.get(
+          input.ids,
+          input.path,
+          this.posterInstanceOf,
+          input.light,
+          this.constellationWorld,
+        ),
+      )
+    }
+    pass.setMatrices(this.instanceMatricesArray, this.instancePositions.length)
+    multiplyMat4(this.viewProjection, this.projectionMatrix, this.viewMatrix)
+    const view = this.constellationView
+    view.width = gl.drawingBufferWidth
+    view.height = gl.drawingBufferHeight
+    view.pxScale = this.pxScale
+    view.nowSeconds = (Date.now() - this.constellationEpochMs) / 1000
+    view.twinkleSeconds = this.reducedMotionQuery?.matches
+      ? 0
+      : performance.now() / 1000
+    view.light = input.light
+    pass.draw(view)
   }
 
   private onControlUpdate(deltaTime: number) {
@@ -3124,7 +3178,7 @@ export const InfiniteMovieMenu = <T,>({
 }: InfiniteMovieMenuProps<T>) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const engineRef = useRef<InfiniteMovieEngine<T> | null>(null)
-  const frameListenerRef = useRef<(() => void) | null>(null)
+  const constellationsRef = useRef<ConstellationInput | null>(null)
   const flickListenerRef = useRef<
     ((speed: number, direction: number) => void) | null
   >(null)
@@ -3243,7 +3297,9 @@ export const InfiniteMovieMenu = <T,>({
       engine.onSpinActive = (active) => onSpinActiveChangeRef.current?.(active)
       engine.onFlick = (speed, direction) =>
         flickListenerRef.current?.(speed, direction)
-      engine.onFrame = () => frameListenerRef.current?.()
+      if (constellationsRef.current) {
+        engine.setConstellations(constellationsRef.current)
+      }
       engine.setGestureSettledHandler((total) =>
         onGestureSettledRef.current?.(total),
       )
@@ -3530,10 +3586,9 @@ export const InfiniteMovieMenu = <T,>({
       getPosterRect: (itemId) =>
         engineRef.current?.getPosterRect(itemId) ?? null,
       getPosterPoints: (ids) => engineRef.current?.getPosterPoints(ids) ?? [],
-      getPosterWorld: (ids) => engineRef.current?.getPosterWorld(ids) ?? [],
-      getProjector: () => engineRef.current?.getProjector() ?? (() => null),
-      setOnFrame: (listener) => {
-        frameListenerRef.current = listener
+      setConstellations: (input) => {
+        constellationsRef.current = input
+        engineRef.current?.setConstellations(input)
       },
       setOnFlick: (listener) => {
         flickListenerRef.current = listener

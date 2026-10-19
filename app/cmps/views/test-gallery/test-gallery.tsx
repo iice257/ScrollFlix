@@ -75,7 +75,6 @@ import {
   TooltipTrigger,
 } from '../../ui/tooltip'
 import { constellationSetting } from './constellation'
-import { ConstellationLayer } from './constellation-layer'
 import { formatGenreCount } from './genre-count'
 import {
   InfiniteMovieMenu,
@@ -2774,6 +2773,26 @@ export const TestGalleryApp = () => {
     }
   }, [shuffleProController])
 
+  // The globe draws the saved-film constellations and the session path itself.
+  const constellationIds = useMemo(
+    () => savedEntries.map((entry) => entry.id),
+    [savedEntries],
+  )
+  const constellationsVisible =
+    constellationsOn &&
+    mode === 'wall' &&
+    initialGalleryReady &&
+    !detailsMovieId &&
+    !moodsOpen
+  useEffect(() => {
+    menuControlRef.current?.setConstellations({
+      ids: perfFlag('constellations') === false ? [] : constellationIds,
+      path: perfFlag('path') === false ? [] : sessionPath,
+      light: theme === 'light',
+      visible: constellationsVisible,
+    })
+  }, [constellationIds, sessionPath, theme, constellationsVisible])
+
   return (
     <main
       ref={shellRef}
@@ -2835,23 +2854,6 @@ export const TestGalleryApp = () => {
         onSpinActiveChange={setShuffleSpinning}
         onGestureSettled={handleGestureSettled}
         onGlobePress={promptFullscreenHint}
-      />
-      <ConstellationLayer
-        controlRef={menuControlRef}
-        ids={
-          perfFlag('constellations') === false
-            ? []
-            : savedEntries.map((entry) => entry.id)
-        }
-        path={perfFlag('path') === false ? [] : sessionPath}
-        active={
-          constellationsOn &&
-          mode === 'wall' &&
-          initialGalleryReady &&
-          !detailsMovieId &&
-          !moodsOpen
-        }
-        light={theme === 'light'}
       />
 
       {mode === 'list' ? (

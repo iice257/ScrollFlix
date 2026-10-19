@@ -127,18 +127,18 @@
   - Uniforms: `uTime` (twinkle and glint), `uDrawIn` (0..1 since the last change, over 900 ms), `uLight`.
   - Back-face dimming uses the existing `facing` rule: alpha × clamp((z/r - 0.05)/0.95).
 
-- [ ] **Step 1: Write the failing unit test** `infinite-movie-menu.test.ts › setConstellations marks render dirty once`, using the existing test harness or mocks in that file. Calling `setConstellations` twice with equal input dirties once.
-- [ ] **Step 2: Run** `npx vitest run app/cmps/views/test-gallery/infinite-movie-menu.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement** the overlay program, the buffers, `setConstellations` and the render calls.
+- [x] **Step 1: Write the failing unit test** `infinite-movie-menu.test.ts › setConstellations marks render dirty once`, using the existing test harness or mocks in that file. Calling `setConstellations` twice with equal input dirties once.
+- [x] **Step 2: Run** `npx vitest run app/cmps/views/test-gallery/infinite-movie-menu.test.ts`. Expected: FAIL.
+- [x] **Step 3: Implement** the overlay program, the buffers, `setConstellations` and the render calls.
   - Only request frames while `uDrawIn < 1`, or while twinkling (Task 4 owns the clock).
-- [ ] **Step 4: Wire `test-gallery.tsx`.** The same `active` condition as today drives `visible`. Delete `constellation-layer.tsx` and its import.
-- [ ] **Step 5: Add e2e** `user-flows.spec.ts › constellations follow the globe and theme`.
+- [x] **Step 4: Wire `test-gallery.tsx`.** The same `active` condition as today drives `visible`. Delete `constellation-layer.tsx` and its import.
+- [x] **Step 5: Add e2e** `user-flows.spec.ts › constellations follow the globe and theme`.
   - Seed 3 saved films.
   - Check the WebGL canvas pixels near the first saved poster are brighter than a blank-sky sample, in both themes.
   - Toggle the theme and check the sample colour changes.
-- [ ] **Step 6: Run** `npm run test:unit && npx playwright test playwright-tests/user-flows.spec.ts`. Expected: PASS.
-- [ ] **Step 7: Screenshot** before (main) and after with 12 saved films plus a 10-stop path. Save both to `test-results/` for the PR.
-- [ ] **Step 8: Commit** with "Draw constellations and the session path in the globe's own WebGL pass".
+- [x] **Step 6: Run** `npm run test:unit && npx playwright test playwright-tests/user-flows.spec.ts`. Expected: PASS.
+- [x] **Step 7: Screenshot** before (main) and after with 12 saved films plus a 10-stop path. Save both to `test-results/` for the PR.
+- [x] **Step 8: Commit** with "Draw constellations and the session path in the globe's own WebGL pass".
 
 ### Task 4: Twinkle clock, rect cache, lookups without allocation
 

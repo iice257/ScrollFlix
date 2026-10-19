@@ -214,10 +214,10 @@ export const buildConstellationGeometry = (
   }
 }
 
-const sameIds = (a: readonly string[], b: readonly string[]) =>
+export const sameIds = (a: readonly string[], b: readonly string[]) =>
   a === b || (a.length === b.length && a.every((id, at) => id === b[at]))
 
-const samePath = (a: readonly PathPoint[], b: readonly PathPoint[]) =>
+export const samePath = (a: readonly PathPoint[], b: readonly PathPoint[]) =>
   a === b ||
   (a.length === b.length &&
     a.every(
@@ -267,6 +267,45 @@ export const createGeometryCache = () => {
         world,
       )
       return geometry
+    },
+  }
+}
+
+export type ConstellationInput = {
+  // The saved films' ids, newest first.
+  ids: readonly string[]
+  // The session path, in order.
+  path: readonly PathPoint[]
+  light: boolean
+  // Whether the globe should draw them at all.
+  visible: boolean
+}
+
+const NO_CONSTELLATIONS: ConstellationInput = {
+  ids: [],
+  path: [],
+  light: false,
+  visible: false,
+}
+
+// Holds what the globe should draw and says whether a new value is different,
+// so setting the same thing again (a new array with the same films) costs
+// nothing and does not redraw.
+export const createConstellationInput = () => {
+  let current = NO_CONSTELLATIONS
+  return {
+    get: () => current,
+    set: (next: ConstellationInput) => {
+      if (
+        current.light === next.light &&
+        current.visible === next.visible &&
+        sameIds(current.ids, next.ids) &&
+        samePath(current.path, next.path)
+      ) {
+        return false
+      }
+      current = next
+      return true
     },
   }
 }
