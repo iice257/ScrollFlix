@@ -104,6 +104,12 @@ import {
   tasteWeight,
   topGenres,
 } from './moods/taste'
+import {
+  buildNowPlayingMeta,
+  shouldShowNowPlaying,
+  usesNowPlayingBar,
+} from './now-playing'
+import { NowPlayingBar, type NowPlayingFilm } from './now-playing-bar'
 import { PARTY_OFF, partyReducer, weirdnessScore } from './party/party-logic'
 import { PartyFinal, PartyHud, PartySetup } from './party/party-ui'
 import { PosterFlight, type ViewRect } from './poster-flight'
@@ -272,6 +278,8 @@ const MOBILE_GLOBE_ZOOM = 1.085
 const MOOD_RUN_WAIT_MS = 4000
 
 type Theme = 'dark' | 'light'
+// `quiet` lands the globe on the film without a card following it.
+type SpinRequest = { itemId: string; nonce: number; quiet?: boolean }
 
 const readTheme = (): Theme => {
   try {
@@ -1703,10 +1711,12 @@ export const TestGalleryApp = () => {
       // Storage can be unavailable (private mode, blocked site data).
     }
   }, [])
-  const [spinRequest, setSpinRequest] = useState<{
-    itemId: string
-    nonce: number
-  } | null>(null)
+  const [spinRequest, setSpinRequest] = useState<SpinRequest | null>(null)
+  // On phones a shuffle's film waits in the now-playing bar instead of its
+  // card opening. `expandDetailsFor` makes that film's card open fully, not
+  // as the summary step.
+  const [nowPlayingId, setNowPlayingId] = useState<string | null>(null)
+  const [expandDetailsFor, setExpandDetailsFor] = useState<string | null>(null)
   const [spinHintSeen, setSpinHintSeen] = useState(readSpinHintSeen)
 
   const markSpinHintSeen = useCallback(() => {
@@ -2062,6 +2072,62 @@ export const TestGalleryApp = () => {
   const watchPresence = useExitPresence(Boolean(watchMovie), watchMovie)
   const detailsPresence = useExitPresence(Boolean(detailsMovie), detailsMovie)
 
+  // The now-playing bar's film, while nothing else has taken over the screen.
+  // When it no longer applies the film is dropped, not parked for later.
+  const nowPlayingMovie = useMemo(
+    () =>
+      nowPlayingId
+        ? (visibleMovies.find((movie) => movie.id === nowPlayingId) ?? null)
+        : null,
+    [nowPlayingId, visibleMovies],
+  )
+  const nowPlayingVisible = shouldShowNowPlaying({
+    isMobile: isMobileViewport,
+    immersive,
+    partyActive: party.phase !== 'off',
+    mode,
+    hasFilm: Boolean(nowPlayingMovie),
+    galleryReady: initialGalleryReady,
+    detailsOpen: Boolean(detailsMovieId),
+    // 'armed' is only a press on the globe that might become a hold.
+    runActive:
+      shuffleProSnapshot.phase !== 'idle' &&
+      shuffleProSnapshot.phase !== 'armed',
+    overlayOpen:
+      filterOpen ||
+      aboutOpen ||
+      savedOpen ||
+      pathOpen ||
+      moodsOpen ||
+      sortOpen ||
+      recapOpen ||
+      pathShareOpen ||
+      Boolean(watchMovieId),
+  })
+  useEffect(() => {
+    if (!nowPlayingVisible) setNowPlayingId(null)
+  }, [nowPlayingVisible])
+  const nowPlayingFilm = useMemo<NowPlayingFilm | null>(
+    () =>
+      nowPlayingMovie && nowPlayingVisible
+        ? {
+            id: nowPlayingMovie.id,
+            title: nowPlayingMovie.title,
+            meta: buildNowPlayingMeta({
+              year: nowPlayingMovie.year,
+              rating:
+                nowPlayingMovie.ratingValue === null
+                  ? ''
+                  : nowPlayingMovie.rating,
+              runtime: formatRuntimeLabel(nowPlayingMovie),
+            }),
+            posterUrl: nowPlayingMovie.posterUrl,
+            placeholderColor: nowPlayingMovie.placeholderColor,
+          }
+        : null,
+    [nowPlayingMovie, nowPlayingVisible],
+  )
+
   useAudioUnlockOnGesture()
   useInterfaceSounds()
   useSoundEffects({
@@ -2300,11 +2366,20 @@ export const TestGalleryApp = () => {
 
   // A stale flight must never replay when the same film opens another way.
   useEffect(() => {
-    if (!detailsMovieId) setPosterFlight(null)
+    if (!detailsMovieId) {
+      setPosterFlight(null)
+      setExpandDetailsFor(null)
+    }
   }, [detailsMovieId])
 
   const handleOpenFromGlobe = useCallback(
-    (movie: TestMovie, source: 'tap' | 'shuffle') => {
+    (movie: TestMovie, source: 'tap' | 'shuffle' | 'land') => {
+      // A quiet landing hands its film to the now-playing bar; no card.
+      if (source === 'land') {
+        sessionPathStore.add(movie.id)
+        setNowPlayingId(movie.id)
+        return
+      }
       startPosterFlight(movie)
       sessionPathStore.add(movie.id)
       if (source === 'shuffle') {
@@ -2418,12 +2493,23 @@ export const TestGalleryApp = () => {
       }
     }
     playCue('shuffleStart')
-    setSpinRequest({ itemId: movieId, nonce: performance.now() })
+    setSpinRequest({
+      itemId: movieId,
+      nonce: performance.now(),
+      quiet: usesNowPlayingBar({
+        isMobile: isMobileViewport,
+        immersive,
+        partyActive: party.phase !== 'off',
+        mode,
+      }),
+    })
   }, [
     activeMovieId,
     detailsMovieId,
     immersive,
+    isMobileViewport,
     mode,
+    party.phase,
     shuffleProController,
     visibleMovies,
     weightOf,
@@ -2546,6 +2632,8 @@ export const TestGalleryApp = () => {
       return
     }
     shuffleProController.noteAction({ type: 'break' })
+    // Filters, sort, search and view changes retire the bar's film too.
+    setNowPlayingId(null)
   }, [streakBreakSignature])
 
   // The premium card closing (or being replaced) fades the sky out.
@@ -2796,6 +2884,13 @@ export const TestGalleryApp = () => {
   // plain tap that shuffles. Losing focus mid-hold just lets the hold go.
   const handleShuffleRef = useRef(handleShuffle)
   handleShuffleRef.current = handleShuffle
+  const shuffleFromBar = useCallback(() => handleShuffleRef.current(), [])
+  // The bar opens its film's card straight into the full state.
+  const openNowPlaying = useCallback(() => {
+    if (!nowPlayingMovie) return
+    setExpandDetailsFor(nowPlayingMovie.id)
+    handleOpenMovie(nowPlayingMovie)
+  }, [handleOpenMovie, nowPlayingMovie])
 
   // A bonus run from the mood page: a Shuffle Pro run in the picked worlds'
   // colours. False when it could not start, so the landing falls back to an
@@ -2877,6 +2972,7 @@ export const TestGalleryApp = () => {
       data-details-open={detailsPresence.isPresent ? 'true' : 'false'}
       data-filter-open={filterPresence.isPresent ? 'true' : 'false'}
       data-gallery-ready={initialGalleryReady ? 'true' : 'false'}
+      data-now-playing={nowPlayingFilm ? 'true' : undefined}
       data-mode={mode}
       data-theme={theme}
       data-immersive={immersive ? 'true' : 'false'}
@@ -3026,7 +3122,15 @@ export const TestGalleryApp = () => {
         dockTop={
           mode === 'wall' ? (
             <>
-              {initialGalleryReady && !spinHintSeen && !detailsMovieId ? (
+              <NowPlayingBar
+                film={nowPlayingFilm}
+                onOpen={openNowPlaying}
+                onShuffle={shuffleFromBar}
+              />
+              {initialGalleryReady &&
+              !spinHintSeen &&
+              !detailsMovieId &&
+              !nowPlayingFilm ? (
                 <div
                   className='warp-spin-hint'
                   role='note'
@@ -3505,6 +3609,7 @@ export const TestGalleryApp = () => {
           movies={movies}
           motionPhase={detailsPresence.motionPhase}
           movie={detailsPresence.value}
+          startExpanded={expandDetailsFor === detailsPresence.value.id}
           premiumTier={
             premiumFrame?.movieId === detailsPresence.value.id
               ? premiumFrame.tier
@@ -3538,12 +3643,12 @@ type WarpWallProps = {
   movies: TestMovie[]
   onLoadProgress: (percent: number) => void
   onMovingChange: (moving: boolean) => void
-  onOpenMovie: (movie: TestMovie, source: 'tap' | 'shuffle') => void
+  onOpenMovie: (movie: TestMovie, source: 'tap' | 'shuffle' | 'land') => void
   onReady: () => void
   onEngineAttached: (items: readonly { id: string }[]) => void
   onSelectMovie: (movie: TestMovie) => void
   onUserSpin: () => void
-  spinRequest: { itemId: string; nonce: number } | null
+  spinRequest: SpinRequest | null
   zoom: number
   initialFaceId: string | null
   shufflePro: ShuffleProController
@@ -3596,7 +3701,7 @@ const WarpWall = ({
   )
 
   const handleOpenItem = useCallback(
-    (item: (typeof menuItems)[number], source: 'tap' | 'shuffle') =>
+    (item: (typeof menuItems)[number], source: 'tap' | 'shuffle' | 'land') =>
       onOpenMovie(item.payload, source),
     [onOpenMovie],
   )
@@ -5720,6 +5825,8 @@ type MovieDetailsCardProps = {
   movies: TestMovie[]
   motionPhase: MotionPhase
   movie: TestMovie
+  // Opens straight into the full card, skipping the summary step.
+  startExpanded: boolean
   premiumTier: Tier | null
   // Set when the premium card came from a mood-page bonus run.
   premiumMood: MoodPresentation | null
@@ -5736,6 +5843,7 @@ const MovieDetailsCard = ({
   movies,
   motionPhase,
   movie,
+  startExpanded,
   premiumTier,
   premiumMood,
   saved,
@@ -5766,14 +5874,16 @@ const MovieDetailsCard = ({
   // Wide screens get a centred panel with everything visible; small screens
   // keep the draggable bottom sheet with a More/Less toggle.
   const isWide = useMediaQuery('(min-width: 901px)')
-  const [isExpanded, setIsExpanded] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(startExpanded)
+  const startExpandedRef = useRef(startExpanded)
+  startExpandedRef.current = startExpanded
   const [dragOffset, setDragOffset] = useState(0)
   const dragStartYRef = useRef<number | null>(null)
   const dragPointerIdRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (movie.id) {
-      setIsExpanded(false)
+      setIsExpanded(startExpandedRef.current)
       setDragOffset(0)
     }
   }, [movie.id])
