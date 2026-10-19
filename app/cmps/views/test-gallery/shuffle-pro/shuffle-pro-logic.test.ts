@@ -13,6 +13,7 @@ import {
   cameraPullback,
   isBigSpin,
   isKeyHold,
+  isMoodPathBlocked,
   isNearTrigger,
   isPathBlocked,
   landingOmega,
@@ -22,6 +23,7 @@ import {
   reduceStreak,
   resolveTier,
   revealAt,
+  scaleProfile,
   screenSpinDirection,
   shouldTriggerHold,
 } from './shuffle-pro-logic'
@@ -497,5 +499,33 @@ describe('isNearTrigger', () => {
 
   it('warms up well before a still hold could trigger', () => {
     expect(HOLD_PREWARM_MS).toBeLessThan(3000)
+  })
+})
+
+describe('scaleProfile', () => {
+  it('stretches every step in time and pushes the top speed', () => {
+    const scaled = scaleProfile(STANDARD_PROFILE, { length: 0.5, energy: 1.25 })
+    expect(scaled.windupMs).toBe(2000)
+    expect(scaled.peakMs).toBe(2500)
+    expect(scaled.skyStartMs).toBe(400)
+    expect(scaled.particlesDurationMs).toBe(750)
+    expect(scaled.autoPeakHoldMs).toBe(800)
+    expect(scaled.omegaMax).toBeCloseTo(STANDARD_PROFILE.omegaMax * 1.25)
+    expect(scaled.omegaMin).toBe(STANDARD_PROFILE.omegaMin)
+  })
+
+  it('leaves the profile as it was at 1 and 1', () => {
+    expect(scaleProfile(JADE_PROFILE, { length: 1, energy: 1 })).toEqual(
+      JADE_PROFILE,
+    )
+  })
+})
+
+describe('isMoodPathBlocked', () => {
+  it('blocks a found path unless repeating is on', () => {
+    expect(isMoodPathBlocked('resonance', {}, false)).toBe(false)
+    expect(isMoodPathBlocked('resonance', { resonance: {} }, false)).toBe(true)
+    expect(isMoodPathBlocked('resonance', { resonance: {} }, true)).toBe(false)
+    expect(isMoodPathBlocked('eclipse', { resonance: {} }, false)).toBe(false)
   })
 })

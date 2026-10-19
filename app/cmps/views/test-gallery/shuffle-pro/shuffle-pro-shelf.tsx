@@ -1,8 +1,16 @@
 import { Lock, Share2 } from 'lucide-react'
 import { useId, useSyncExternalStore } from 'react'
-import { TIER_LABELS, type Tier, hasUnlockedGold } from './shuffle-pro-logic'
-import { shuffleProStore } from './shuffle-pro-store'
-import { PALETTES } from './sky-pass'
+import { MOOD_PATH_SWATCHES, paletteFromAccents } from './mood-run'
+import {
+  MOOD_PATHS,
+  MOOD_PATH_LABELS,
+  type MoodPath,
+  TIER_LABELS,
+  type Tier,
+  hasUnlockedGold,
+} from './shuffle-pro-logic'
+import { type ShuffleProData, shuffleProStore } from './shuffle-pro-store'
+import { PALETTES, type Palette } from './sky-pass'
 import { GEM_BODY, GEM_FACETS, GEM_SHINE, GEM_TOP } from './tier-art'
 
 const SHELF_ORDER: Tier[] = ['frost', 'amethyst', 'jade', 'gold']
@@ -12,9 +20,18 @@ const css = ([r, g, b]: [number, number, number]) =>
 
 // A cut gem, filled with the path's colours once found and drawn as a dim
 // outline until then.
-export const Gem = ({ tier, found }: { tier: Tier; found: boolean }) => {
+export const Gem = ({
+  tier,
+  found,
+  palette: custom,
+}: {
+  tier: Tier
+  found: boolean
+  // A mood run's own colours, in place of the path's.
+  palette?: Palette
+}) => {
   const id = useId()
-  const palette = PALETTES[tier]
+  const palette = custom ?? PALETTES[tier]
   return (
     <svg className='sp-gem' viewBox='0 0 48 48' aria-hidden='true'>
       <defs>
@@ -101,6 +118,9 @@ export const ShuffleProShelf = ({ title = true, onShare }: ShelfProps) => {
           )
         })}
       </ul>
+      {MOOD_PATHS.some((path) => data.moodPaths[path]) ? (
+        <MoodPathsRow moodPaths={data.moodPaths} />
+      ) : null}
       {onShare && data.totalRuns > 0 ? (
         <button type='button' className='sp-shelf-share' onClick={onShare}>
           <Share2 aria-hidden='true' />
@@ -110,3 +130,56 @@ export const ShuffleProShelf = ({ title = true, onShare }: ShelfProps) => {
     </section>
   )
 }
+
+const MOOD_SHELF_LOOK: Record<MoodPath, Tier> = {
+  resonance: 'amethyst',
+  eclipse: 'jade',
+  wanderer: 'frost',
+}
+
+// The bonus paths only the mood page starts. The row appears once one has been
+// found; the rest stay as question marks, and nothing says how to find them.
+const MoodPathsRow = ({
+  moodPaths,
+}: {
+  moodPaths: ShuffleProData['moodPaths']
+}) => (
+  <ul className='sp-shelf-slots sp-shelf-mood' aria-label='Mood paths'>
+    {MOOD_PATHS.map((path) => {
+      const entry = moodPaths[path]
+      return (
+        <li
+          key={path}
+          className='sp-shelf-slot'
+          data-tier={MOOD_SHELF_LOOK[path]}
+          data-mood-path={path}
+          data-found={entry ? 'true' : 'false'}
+        >
+          <span className='sp-shelf-gem'>
+            <Gem
+              tier={MOOD_SHELF_LOOK[path]}
+              palette={paletteFromAccents(MOOD_PATH_SWATCHES[path])}
+              found={Boolean(entry)}
+            />
+            {entry ? null : (
+              <span className='sp-shelf-mark' aria-hidden='true'>
+                ?
+              </span>
+            )}
+          </span>
+          {entry ? (
+            <span className='sp-shelf-name'>
+              {MOOD_PATH_LABELS[path]}
+              <small>×{entry.count}</small>
+            </span>
+          ) : (
+            <span className='sp-shelf-name is-hidden'>
+              <span className='sr-only'>Not found yet</span>
+              <span aria-hidden='true'>?</span>
+            </span>
+          )}
+        </li>
+      )
+    })}
+  </ul>
+)

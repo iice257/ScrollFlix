@@ -5,6 +5,7 @@
 //   idle -> armed (hold timer running) -> windup -> peak -> landing
 //        -> presented -> idle        (plus aborting, on Esc)
 
+import type { MoodPresentation, MoodRunStart } from './mood-run'
 import type { Whoosh } from './shuffle-pro-audio'
 import {
   type BaseTier,
@@ -12,6 +13,7 @@ import {
   HOLD_PREWARM_MS,
   KEY_ROLL_OMEGA,
   LANDING_TAU_MS,
+  type MoodPath,
   type PressSource,
   type RunProfile,
   type StreakEvent,
@@ -30,6 +32,7 @@ import {
   reduceStreak,
   resolveTier,
   revealAt,
+  scaleProfile,
   screenSpinDirection,
   shouldTriggerHold,
   smoothstep,
@@ -92,6 +95,8 @@ export type ControllerDeps = {
   // True while the golden hour is on and Gold is easier to find.
   isGoldenHour?: () => boolean
   recordRun: (tier: Tier, movieId?: string) => void
+  // A mood run landed: its own record, apart from the tiers.
+  recordMoodRun?: (path: MoodPath, movieId?: string) => void
   createWhoosh: (tier: Tier) => Whoosh | null
   // A random visible movie that is not the one the globe is already on.
   pickTarget: () => string | null
@@ -114,7 +119,11 @@ export type ControllerSnapshot = {
   // Any run is active, including the held press that arms one.
   isRunning: boolean
   // Whether the held press owns the globe right now.
-  presented: { movieId: string; tier: Tier } | null
+  presented: {
+    movieId: string
+    tier: Tier
+    mood: MoodPresentation | null
+  } | null
   // Live-region text for assistive tech.
   announcement: string
 }
@@ -133,6 +142,8 @@ type PressInfo = {
 
 type Run = {
   tier: Tier
+  // Set for a run that came from the mood page.
+  mood: MoodRunStart | null
   profile: RunProfile
   automatic: boolean
   startedAt: number
@@ -198,7 +209,11 @@ export class ShuffleProController {
   private frameId = 0
   private lastFrameAt = 0
   private streak: StreakState = EMPTY_STREAK
-  private presented: { movieId: string; tier: Tier } | null = null
+  private presented: {
+    movieId: string
+    tier: Tier
+    mood: MoodPresentation | null
+  } | null = null
   private snapshot: ControllerSnapshot
   private readonly listeners = new Set<() => void>()
   private lastOmega = 0
@@ -232,7 +247,8 @@ export class ShuffleProController {
       next.isRunning === prev.isRunning &&
       next.announcement === prev.announcement &&
       next.presented?.movieId === prev.presented?.movieId &&
-      next.presented?.tier === prev.presented?.tier
+      next.presented?.tier === prev.presented?.tier &&
+      next.presented?.mood?.path === prev.presented?.mood?.path
     ) {
       return
     }
@@ -456,6 +472,28 @@ export class ShuffleProController {
     })
   }
 
+  // A run the mood page earned: the look of an existing path in the picked
+  // worlds' colours, with its own length, energy and particle density.
+  startMoodRun(start: MoodRunStart, targetId: string | null) {
+    if (this.isBusy() || this.phase === 'armed') return false
+    this.beginRun(start.look, {
+      automatic: true,
+      targetId,
+      dx: 0,
+      dy: 0,
+      nx: 0.5,
+      ny: 0.5,
+      mood: start,
+    })
+    return true
+  }
+
+  // Warms the sky up ahead of a run that is about to start (the mood page
+  // does this as a mix is confirmed).
+  prewarm() {
+    if (this.phase === 'idle') this.port?.prewarm()
+  }
+
   // Debug: start a run of an exact tier, as if held.
   startExact(tier: Tier) {
     if (this.isBusy()) return
@@ -478,6 +516,7 @@ export class ShuffleProController {
       dy: number
       nx: number
       ny: number
+      mood?: MoodRunStart
     },
   ) {
     const port = this.port
@@ -491,9 +530,17 @@ export class ShuffleProController {
 
     const now = this.deps.now()
     const reduced = this.deps.isReducedMotion()
-    const profile = profileFor(tier)
+    const mood = options.mood ?? null
+    const profile = mood
+      ? scaleProfile(profileFor(tier), {
+          length: mood.length,
+          energy: mood.energy,
+        })
+      : profileFor(tier)
     const sky = createSkyState()
     sky.tier = tier
+    sky.palette = mood?.palette ?? null
+    sky.density = mood?.density ?? 1
     sky.theme = this.deps.getTheme()
     sky.reduced = reduced
     sky.ringPos = [options.nx, 1 - options.ny]
@@ -503,6 +550,7 @@ export class ShuffleProController {
     const baseAxis = axisForDragDirection(options.dx, -options.dy)
     this.run = {
       tier,
+      mood,
       profile,
       automatic: options.automatic,
       startedAt: now,
@@ -665,9 +713,20 @@ export class ShuffleProController {
     run.arrivedAt = this.deps.now()
     run.landingDone = true
     if (run.premium && run.targetId) {
-      this.presented = { movieId: run.targetId, tier: run.tier }
+      this.presented = {
+        movieId: run.targetId,
+        tier: run.tier,
+        mood: run.mood
+          ? {
+              path: run.mood.path,
+              look: run.mood.look,
+              palette: run.mood.palette,
+            }
+          : null,
+      }
       this.phase = 'presented'
-      this.deps.recordRun(run.tier, run.targetId)
+      if (run.mood) this.deps.recordMoodRun?.(run.mood.path, run.targetId)
+      else this.deps.recordRun(run.tier, run.targetId)
       this.deps.onCue?.('land', run.tier)
       // Everything that built up now settles behind the card.
       this.beginFade(run, SKY_HOLD_LEVEL, 900)

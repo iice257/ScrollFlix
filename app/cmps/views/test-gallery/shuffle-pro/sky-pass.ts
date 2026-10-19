@@ -9,6 +9,10 @@ export type SkyTheme = 'dark' | 'light'
 
 export type SkyState = {
   tier: Tier
+  // Colours that replace the tier's own (mood runs blend the picked worlds).
+  palette: Palette | null
+  // How many of the particles are drawn, 0..1 (a mood run's film count).
+  density: number
   theme: SkyTheme
   // Overall presence of the sky (reveal, hold at 60%, fade out).
   intensity: number
@@ -63,6 +67,8 @@ export const QUALITY_LITE: SkyQuality = {
 
 export const createSkyState = (): SkyState => ({
   tier: 'frost',
+  palette: null,
+  density: 1,
   theme: 'dark',
   intensity: 0,
   color: 0,
@@ -89,7 +95,7 @@ const hex = (value: string): Rgb => {
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]
 }
 
-type Palette = {
+export type Palette = {
   c0: Rgb
   c1: Rgb
   c2: Rgb
@@ -972,7 +978,7 @@ export class SkyPass {
     const height = Math.max(2, Math.round(canvasHeight * quality.scale))
     this.ensureBuffer(width, height)
 
-    const palette = PALETTES[state.tier]
+    const palette = state.palette ?? PALETTES[state.tier]
     const u = this.skyUniforms
 
     gl.disable(gl.DEPTH_TEST)
@@ -1031,13 +1037,13 @@ export class SkyPass {
   drawParticles(state: SkyState, quality: SkyQuality, view: SkyView) {
     if (state.particles <= 0.001 || !this.particleProgram) return
     const gl = this.gl
-    const palette = PALETTES[state.tier]
+    const palette = state.palette ?? PALETTES[state.tier]
     const u = this.particleUniforms
     const reduced = state.reduced
     // Reduced motion keeps only a handful of static glints.
     const count = reduced
       ? Math.round(PARTICLE_COUNT * 0.08)
-      : Math.round(PARTICLE_COUNT * quality.particleScale)
+      : Math.round(PARTICLE_COUNT * quality.particleScale * state.density)
 
     gl.useProgram(this.particleProgram)
     gl.bindVertexArray(this.particleVao)

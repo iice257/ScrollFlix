@@ -90,6 +90,8 @@ import {
   visibleGenreTags,
 } from './list-scroll'
 import { MoodFunnel, MoodLine, MoodNudge } from './moods/mood-entry'
+import { landMoodRun } from './moods/mood-run-plan'
+import type { MoodPick } from './moods/mood-runs'
 import {
   MOOD_GENRES,
   type MoodFilter,
@@ -125,6 +127,11 @@ import {
   ImmersiveEnterButton,
   ImmersiveExitPill,
 } from './shuffle-pro/immersive-controls'
+import {
+  type MoodPresentation,
+  type MoodRunStart,
+  moodCardVars,
+} from './shuffle-pro/mood-run'
 import {
   PosterStage,
   PremiumFrame,
@@ -1599,6 +1606,8 @@ export const TestGalleryApp = () => {
   const [pathShareOpen, setPathShareOpen] = useState(false)
   const [moodNudge, setMoodNudge] = useState(false)
   const [moodShuffleNonce, setMoodShuffleNonce] = useState(0)
+  // The bonus run a mood landing earned, waiting for the wall to be rebuilt.
+  const pendingMoodRunRef = useRef<MoodRunStart | null>(null)
   const recentShufflesRef = useRef<number[]>([])
   const moodNudgeSpentRef = useRef(readSessionFlag(MOOD_NUDGE_STORAGE_KEY))
   const [aboutMaximized, setAboutMaximized] = useState(false)
@@ -2016,6 +2025,7 @@ export const TestGalleryApp = () => {
   const [premiumFrame, setPremiumFrame] = useState<{
     movieId: string
     tier: Tier
+    mood: MoodPresentation | null
   } | null>(null)
 
   const watchMovie = useMemo(
@@ -2341,7 +2351,16 @@ export const TestGalleryApp = () => {
   // A mood is a fresh start: it replaces the other filters, goes to the globe
   // and shuffles once the wall has been rebuilt for it.
   const handleMoodConfirm = useCallback(
-    (moods: MoodFilter[], time: MoodTimeId) => {
+    (moods: MoodFilter[], time: MoodTimeId, picks: readonly MoodPick[]) => {
+      // The landing may earn a bonus run (Resonance, Eclipse or Wanderer);
+      // it starts once the wall has been rebuilt for the mix.
+      pendingMoodRunRef.current = landMoodRun({
+        selected: moods,
+        time,
+        filmCount: countForMoods(moods, time),
+        picks,
+      })
+      if (pendingMoodRunRef.current) shuffleProController.prewarm()
       clearAllFilters()
       setSelectedMoodFilters(moods)
       setSelectedRuntimeFilter(time === 'any' ? null : time)
@@ -2349,7 +2368,7 @@ export const TestGalleryApp = () => {
       setMode('wall')
       setMoodShuffleNonce((nonce) => nonce + 1)
     },
-    [clearAllFilters],
+    [clearAllFilters, countForMoods, shuffleProController],
   )
 
   const handleShuffle = useCallback(() => {
@@ -2739,6 +2758,9 @@ export const TestGalleryApp = () => {
     if (!moodShuffleNonce || handledMoodShuffle.current === moodShuffleNonce)
       return
     handledMoodShuffle.current = moodShuffleNonce
+    const moodRun = pendingMoodRunRef.current
+    pendingMoodRunRef.current = null
+    if (moodRun && handleMoodRunRef.current(moodRun)) return
     handleShuffleRef.current()
   }, [moodShuffleNonce])
 
@@ -2753,6 +2775,31 @@ export const TestGalleryApp = () => {
   // plain tap that shuffles. Losing focus mid-hold just lets the hold go.
   const handleShuffleRef = useRef(handleShuffle)
   handleShuffleRef.current = handleShuffle
+
+  // A bonus run from the mood page: a Shuffle Pro run in the picked worlds'
+  // colours. False when it could not start, so the landing falls back to an
+  // ordinary shuffle.
+  const handleMoodRun = useCallback(
+    (run: MoodRunStart) => {
+      const movieId = pickOtherMovie(
+        visibleMovies,
+        activeMovieId,
+        Math.random,
+        weightOf,
+      )
+      if (!movieId) return false
+      unlockAudio()
+      if (!shuffleProController.startMoodRun(run, movieId)) return false
+      shuffleProController.noteAction({ type: 'break' })
+      setDetailsMovieId(null)
+      setFilterOpen(false)
+      setAboutOpen(false)
+      return true
+    },
+    [activeMovieId, shuffleProController, visibleMovies, weightOf],
+  )
+  const handleMoodRunRef = useRef(handleMoodRun)
+  handleMoodRunRef.current = handleMoodRun
   useEffect(() => {
     const releaseKey = (shuffleOnTap: boolean) => {
       if (!keyHoldRef.current) return
@@ -3412,6 +3459,11 @@ export const TestGalleryApp = () => {
           premiumTier={
             premiumFrame?.movieId === detailsPresence.value.id
               ? premiumFrame.tier
+              : null
+          }
+          premiumMood={
+            premiumFrame?.movieId === detailsPresence.value.id
+              ? premiumFrame.mood
               : null
           }
           saved={savedEntries.some(
@@ -5617,6 +5669,8 @@ type MovieDetailsCardProps = {
   motionPhase: MotionPhase
   movie: TestMovie
   premiumTier: Tier | null
+  // Set when the premium card came from a mood-page bonus run.
+  premiumMood: MoodPresentation | null
   saved: boolean
   onToggleSaved: (movie: TestMovie) => void
   onClose: () => void
@@ -5631,6 +5685,7 @@ const MovieDetailsCard = ({
   motionPhase,
   movie,
   premiumTier,
+  premiumMood,
   saved,
   onToggleSaved,
   onClose,
@@ -5792,7 +5847,11 @@ const MovieDetailsCard = ({
   )
   // A premium pick shows its poster as a collectible; the rest stay plain.
   const poster = premiumTier ? (
-    <PosterStage tier={premiumTier} reducedMotion={reducedMotion}>
+    <PosterStage
+      tier={premiumTier}
+      mood={premiumMood}
+      reducedMotion={reducedMotion}
+    >
       {posterImage}
     </PosterStage>
   ) : (
@@ -5800,6 +5859,8 @@ const MovieDetailsCard = ({
   )
   const detailsStyle = {
     '--details-drag-y': `${dragOffset}px`,
+    // A mood run dresses the card in the colours of the worlds it was made from.
+    ...(premiumMood ? moodCardVars(premiumMood.palette) : null),
     // CSS images are fetched without CORS, so catalogue films use a size the
     // globe never requests (it is blurred anyway); see MoviePoster.
     '--details-backdrop': `url(${JSON.stringify(
@@ -5826,11 +5887,20 @@ const MovieDetailsCard = ({
       ]
         .filter(Boolean)
         .join('  ·  '),
-      tier: premiumTier,
+      // The share card is drawn per path; a mood run has none of its own.
+      tier: premiumMood ? null : premiumTier,
       posterUrl: movie.posterDetailUrl ?? movie.posterUrl,
       foundTiers: (Object.keys(shareFound.found) as Tier[]).filter(Boolean),
     }),
-    [movie, hasYear, ratingValue, runtimeLabel, premiumTier, shareFound.found],
+    [
+      movie,
+      hasYear,
+      ratingValue,
+      runtimeLabel,
+      premiumTier,
+      premiumMood,
+      shareFound.found,
+    ],
   )
   const similarMovies = useMemo(
     () => getSimilarMovies(movie, movies),
@@ -5861,10 +5931,15 @@ const MovieDetailsCard = ({
           aria-modal='true'
           data-snap={isExpanded ? 'expanded' : 'compact'}
           data-premium={premiumTier ?? undefined}
+          data-mood-path={premiumMood?.path}
         >
           <span className='warp-details-ambient' aria-hidden='true' />
           {premiumTier ? (
-            <PremiumFrame tier={premiumTier} reducedMotion={reducedMotion} />
+            <PremiumFrame
+              tier={premiumTier}
+              palette={premiumMood?.palette}
+              reducedMotion={reducedMotion}
+            />
           ) : null}
           <button
             type='button'
@@ -5896,7 +5971,9 @@ const MovieDetailsCard = ({
           )}
           <div className='warp-details-copy'>
             <div className='warp-details-copy-scroll'>
-              {premiumTier ? <PremiumPlate tier={premiumTier} /> : null}
+              {premiumTier ? (
+                <PremiumPlate tier={premiumTier} mood={premiumMood} />
+              ) : null}
               {stats.length ? (
                 <div className='warp-details-stats'>
                   {stats.map((stat, index) => (

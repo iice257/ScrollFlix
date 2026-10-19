@@ -6,10 +6,16 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
-import { TIER_LABELS, type Tier } from './shuffle-pro-logic'
+import type { MoodPresentation } from './mood-run'
+import {
+  MOOD_PATHS,
+  MOOD_PATH_LABELS,
+  TIER_LABELS,
+  type Tier,
+} from './shuffle-pro-logic'
 import { Gem } from './shuffle-pro-shelf'
 import { shuffleProStore } from './shuffle-pro-store'
-import { PALETTES } from './sky-pass'
+import { PALETTES, type Palette } from './sky-pass'
 import { CORNER_ART } from './tier-art'
 
 const rgb = ([r, g, b]: [number, number, number], alpha = 1) =>
@@ -23,12 +29,56 @@ const TIER_ORDER: Tier[] = ['frost', 'amethyst', 'jade', 'gold']
 
 // The rarity plate at the top of the card: the path's gem, its name in foil
 // type, and four pips showing how much of the collection is found.
-export const PremiumPlate = ({ tier }: { tier: Tier }) => {
+export const PremiumPlate = ({
+  tier,
+  mood = null,
+}: {
+  tier: Tier
+  mood?: MoodPresentation | null
+}) => {
   const data = useSyncExternalStore(
     shuffleProStore.subscribe,
     shuffleProStore.get,
     shuffleProStore.get,
   )
+  if (mood) {
+    // A bonus path from the mood page: its own name, three pips, its colours.
+    const moodFound = MOOD_PATHS.filter((p) => data.moodPaths[p]).length
+    return (
+      <div
+        className='sp-plate'
+        data-tier={tier}
+        data-mood-path={mood.path}
+        role='note'
+        aria-label={`Shuffle Pro · ${MOOD_PATH_LABELS[mood.path]}. ${moodFound} of ${MOOD_PATHS.length} mood paths found.`}
+      >
+        <span className='sp-plate-gem' aria-hidden='true'>
+          <Gem tier={tier} palette={mood.palette} found />
+        </span>
+        <span className='sp-plate-text' aria-hidden='true'>
+          <span className='sp-plate-kicker'>Shuffle Pro</span>
+          <strong className='sp-plate-name'>
+            {MOOD_PATH_LABELS[mood.path]}
+          </strong>
+        </span>
+        <span className='sp-plate-pips' aria-hidden='true'>
+          {MOOD_PATHS.map((p) => (
+            <i
+              key={p}
+              data-tier={tier}
+              className={
+                p === mood.path
+                  ? 'sp-pip is-lit is-current'
+                  : data.moodPaths[p]
+                    ? 'sp-pip is-lit'
+                    : 'sp-pip'
+              }
+            />
+          ))}
+        </span>
+      </div>
+    )
+  }
   const foundCount = TIER_ORDER.filter((t) => data.found[t]).length
   return (
     <div
@@ -143,7 +193,13 @@ const drawParticle = (
 
 // Up to 60 path particles drift along the card's edges for 2.5s, then the
 // canvas stops and unmounts itself.
-const EdgeParticles = ({ tier }: { tier: Tier }) => {
+const EdgeParticles = ({
+  tier,
+  palette: custom,
+}: {
+  tier: Tier
+  palette?: Palette
+}) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [done, setDone] = useState(false)
 
@@ -151,7 +207,7 @@ const EdgeParticles = ({ tier }: { tier: Tier }) => {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
-    const palette = PALETTES[tier]
+    const palette = custom ?? PALETTES[tier]
     const colors = [palette.c0, palette.c1, palette.c2, palette.accent].map(
       (c) => rgb(c),
     )
@@ -222,7 +278,7 @@ const EdgeParticles = ({ tier }: { tier: Tier }) => {
     }
     frame = window.requestAnimationFrame(tick)
     return () => window.cancelAnimationFrame(frame)
-  }, [tier])
+  }, [tier, custom])
 
   if (done) return null
   return (
@@ -268,6 +324,8 @@ const Corner = ({ tier, corner }: { tier: Tier; corner: CornerName }) => (
 
 type PremiumFrameProps = {
   tier: Tier
+  // A mood run's own colours for the drifting particles.
+  palette?: Palette
   reducedMotion: boolean
 }
 
@@ -275,7 +333,11 @@ type PremiumFrameProps = {
 // the path's colours, a border that draws itself once, a foil sweep, the
 // corner ornaments and a few drifting particles. The steady rotating border
 // and glow come from CSS on the card itself.
-export const PremiumFrame = ({ tier, reducedMotion }: PremiumFrameProps) => (
+export const PremiumFrame = ({
+  tier,
+  palette,
+  reducedMotion,
+}: PremiumFrameProps) => (
   <>
     <span className='sp-aurora' aria-hidden='true' />
     {reducedMotion ? null : (
@@ -287,7 +349,7 @@ export const PremiumFrame = ({ tier, reducedMotion }: PremiumFrameProps) => (
     {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
       <Corner key={corner} tier={tier} corner={corner} />
     ))}
-    {reducedMotion ? null : <EdgeParticles tier={tier} />}
+    {reducedMotion ? null : <EdgeParticles tier={tier} palette={palette} />}
   </>
 )
 
@@ -361,10 +423,12 @@ const usePosterTilt = (
 // holographic foil and a glare that follow the pointer, with the path's badge.
 export const PosterStage = ({
   tier,
+  mood = null,
   reducedMotion,
   children,
 }: {
   tier: Tier
+  mood?: MoodPresentation | null
   reducedMotion: boolean
   children: ReactNode
 }) => {
@@ -377,12 +441,12 @@ export const PosterStage = ({
         <span className='sp-foil' aria-hidden='true' />
         <span className='sp-glare' aria-hidden='true' />
         <span className='sp-badge' aria-hidden='true'>
-          <Gem tier={tier} found />
-          {TIER_LABELS[tier]}
+          <Gem tier={tier} palette={mood?.palette} found />
+          {mood ? MOOD_PATH_LABELS[mood.path] : TIER_LABELS[tier]}
         </span>
         {reducedMotion ? null : (
           <span className='sp-back' aria-hidden='true'>
-            <Gem tier={tier} found />
+            <Gem tier={tier} palette={mood?.palette} found />
           </span>
         )}
       </div>
