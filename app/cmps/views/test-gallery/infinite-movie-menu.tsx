@@ -3358,6 +3358,9 @@ export const InfiniteMovieMenu = <T,>({
         engineItems,
         scale,
         (item) => {
+          // The engine reports the poster in front every frame; only a change
+          // is news (and a re-render of the whole page).
+          if (activeItemRef.current === item) return
           activeItemRef.current = item
           setActiveItem(item)
           onActiveItemChange(item)

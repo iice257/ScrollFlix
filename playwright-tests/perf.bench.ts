@@ -12,6 +12,8 @@ const SPIN_MS = 6_000
 const SPIN_SPEED_PX_PER_S = 600
 const SPIN_RADIUS_PX = 220
 const IDLE_MS = 3_000
+const SHUFFLE_MS = 4_500
+const POP_MS = 2_000
 // Ten of the first 216 films (all on the globe, all with a local poster).
 const SAVED_INDICES = [3, 20, 41, 58, 77, 95, 112, 130, 149, 168, 187, 205]
 const PATH_INDICES = [8, 33, 64, 12, 101, 140, 175, 90, 52, 27]
@@ -35,6 +37,9 @@ type Scenario = {
   weather: boolean
   pro: boolean
   idle?: boolean
+  // Shuffle (spin to a random pick) and the card opening on a film.
+  shuffle?: boolean
+  pop?: boolean
   // The row this one is compared with.
   versus: string | null
 }
@@ -95,6 +100,33 @@ const SCENARIOS: Scenario[] = [
     weather: true,
     pro: true,
     versus: 'pro',
+  },
+  {
+    name: 'shuffle',
+    constellations: false,
+    path: false,
+    weather: false,
+    pro: false,
+    shuffle: true,
+    versus: null,
+  },
+  {
+    name: 'shuffle-all-on',
+    constellations: true,
+    path: true,
+    weather: true,
+    pro: false,
+    shuffle: true,
+    versus: 'shuffle',
+  },
+  {
+    name: 'card-pop',
+    constellations: true,
+    path: true,
+    weather: false,
+    pro: false,
+    pop: true,
+    versus: null,
   },
   {
     name: 'idle-all-on',
@@ -242,6 +274,16 @@ const runScenario = async (page: Page, scenario: Scenario): Promise<Row> => {
       () => (window as unknown as { __rafCalls: number }).__rafCalls,
     )
     rafPerSecond = calls / (IDLE_MS / 1000)
+  } else if (scenario.shuffle) {
+    await page.evaluate(() => window.__scrollflixPerf?.reset())
+    await page
+      .getByRole('button', { name: 'Shuffle to a random movie' })
+      .click()
+    await page.waitForTimeout(SHUFFLE_MS)
+  } else if (scenario.pop) {
+    await page.evaluate(() => window.__scrollflixPerf?.reset())
+    await page.getByRole('button', { name: /^Open details for/ }).click()
+    await page.waitForTimeout(POP_MS)
   } else if (scenario.pro) {
     await startProRun(page)
     await page.waitForTimeout(500)
