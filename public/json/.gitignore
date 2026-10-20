@@ -5,3 +5,6 @@
 !.gitignore
 !*.json
 !*/
+
+# The pulled catalogue (npm run catalog:pull) is never committed
+catalog/

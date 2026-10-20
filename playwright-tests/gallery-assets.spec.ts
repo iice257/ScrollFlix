@@ -1,12 +1,17 @@
 import { expect, test } from '@playwright/test'
 
-test('reveals the full local poster gallery', async ({ page }) => {
+// A tiny grey JPEG, so the test never depends on the TMDB image CDN.
+const PIXEL_JPEG = Buffer.from(
+  '/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAGAAQDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAT/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AKwAf//Z',
+  'base64',
+)
+
+test('reveals the full poster gallery from the TMDB CDN', async ({ page }) => {
   test.setTimeout(240_000)
-  const remoteArtworkRequests: string[] = []
-  page.on('request', (request) => {
-    if (/image\.tmdb\.org|images\.metahub\.space/.test(request.url())) {
-      remoteArtworkRequests.push(request.url())
-    }
+  const posterRequests: string[] = []
+  await page.route(/image\.tmdb\.org/, (route) => {
+    posterRequests.push(route.request().url())
+    return route.fulfill({ contentType: 'image/jpeg', body: PIXEL_JPEG })
   })
 
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 60_000 })
@@ -30,5 +35,6 @@ test('reveals the full local poster gallery', async ({ page }) => {
     'data-state',
     'ready',
   )
-  expect(remoteArtworkRequests).toEqual([])
+  expect(posterRequests.length).toBeGreaterThan(0)
+  expect(posterRequests.every((url) => url.includes('/t/p/w154/'))).toBe(true)
 })

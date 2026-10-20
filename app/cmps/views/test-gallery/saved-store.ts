@@ -2,6 +2,8 @@
 // reads this too. Ids that no longer exist in the catalogue are skipped by the
 // reader, never rejected here.
 
+import { migrateLegacyId } from './catalog-loader'
+
 export const SAVED_STORAGE_KEY = 'wtw:saved:v1'
 
 export type SavedEntry = { id: string; savedAt: number }
@@ -20,14 +22,13 @@ export const parseSaved = (raw: string | null): readonly SavedEntry[] => {
         item &&
         typeof item === 'object' &&
         typeof (item as SavedEntry).id === 'string' &&
-        Number.isFinite((item as SavedEntry).savedAt) &&
-        !seen.has((item as SavedEntry).id)
+        Number.isFinite((item as SavedEntry).savedAt)
       ) {
-        seen.add((item as SavedEntry).id)
-        entries.push({
-          id: (item as SavedEntry).id,
-          savedAt: (item as SavedEntry).savedAt,
-        })
+        // Ids saved before catalogue v2 (`${index}-${tmdbId}`) become `c${tmdbId}`.
+        const id = migrateLegacyId((item as SavedEntry).id)
+        if (seen.has(id)) continue
+        seen.add(id)
+        entries.push({ id, savedAt: (item as SavedEntry).savedAt })
       }
     }
     return entries.sort((a, b) => b.savedAt - a.savedAt)

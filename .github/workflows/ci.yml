@@ -31,9 +31,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          # The gallery E2E test loads the local poster library stored in Git LFS.
-          lfs: true
 
       - uses: actions/setup-node@v4
         with:
@@ -41,6 +38,9 @@ jobs:
           cache: npm
 
       - run: npm ci
+      # The app loads the film catalogue from public/json/catalog, which is
+      # published as a release asset rather than kept in the repository.
+      - run: npm run catalog:pull
       # Chrome projects use the runner's installed Google Chrome; Firefox and WebKit come from Playwright.
       - run: npx playwright install --with-deps firefox webkit
       - run: npm run test:e2e

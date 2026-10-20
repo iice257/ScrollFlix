@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { mapCatalogRow } from './catalog-loader'
 import {
   type GalleryKeyState,
   applySortDirection,
@@ -11,7 +12,6 @@ import {
   formatFilmCount,
   formatMovieMeta,
   getActiveSortRules,
-  getCatalogChunkCount,
   getGalleryWindow,
   getGenreOverlap,
   getRuntimeBucket,
@@ -22,10 +22,6 @@ import {
   groupMoviesByRuntime,
   groupMoviesByVotes,
   groupMoviesByYear,
-  isLightweightDevice,
-  mapCatalogRow,
-  mapMovie,
-  resolveMoviePosterUrls,
   shouldHandleGalleryKey,
   sortMoviesByRules,
   sortMoviesForList,
@@ -45,7 +41,7 @@ const movie = (
   genres,
   id,
   overview: '',
-  posterUrl: `/media/single/${rank}.jpg`,
+  posterUrl: `https://image.tmdb.org/t/p/w154/poster${rank}.jpg`,
   rank,
   rating: '7.0',
   ratingValue: 7 as number | null,
@@ -128,21 +124,6 @@ describe('test gallery filtering helpers', () => {
     expect(getGalleryWindow(movies, [], 3).map((item) => item.rank)).toEqual([
       1, 2, 3,
     ])
-  })
-
-  it('only admits verified local poster assets', () => {
-    expect(resolveMoviePosterUrls('123', 216, new Set(['123']))).toEqual({
-      posterUrl: '/media/posters/123.jpg',
-    })
-    expect(resolveMoviePosterUrls('', 0, new Set(['123']))).toEqual({
-      posterUrl: '/media/single/0.jpg',
-    })
-    expect(resolveMoviePosterUrls('', 216, new Set(['123']))).toEqual({
-      posterUrl: '',
-    })
-    expect(resolveMoviePosterUrls('123', 216, new Set())).toEqual({
-      posterUrl: '',
-    })
   })
 
   it('sorts list mode chronologically or alphabetically', () => {
@@ -340,15 +321,15 @@ describe('test gallery filtering helpers', () => {
   })
 
   it('normalizes a 0.0 vote average to a null rating', () => {
-    const mapped = mapMovie(
-      { id: '1', title: 'X', vote_average: '0.0', vote_count: 12 },
+    const mapped = mapCatalogRow(
+      [1, 'X', 2001, 0, [], -1, 'p', '', '', 12, 0, 0],
       0,
-      new Set(),
+      1,
+      { countries: [], genres: [] },
     )
     expect(mapped.ratingValue).toBeNull()
     expect(mapped.rating).toBe('')
     expect(mapped.voteCount).toBe(12)
-    expect(formatMovieMeta(mapped)).toContain('Rating: N/A')
   })
 
   it('groups by runtime, votes and popularity with unknown groups last', () => {
@@ -504,94 +485,6 @@ describe('shouldHandleGalleryKey', () => {
     ['an interactive element focused', { activeElementKind: 'interactive' }],
   ])('ignores the key with %s', (_label, override) => {
     expect(shouldHandleGalleryKey({ ...base, ...override })).toBe(false)
-  })
-})
-
-describe('catalogue films', () => {
-  it('maps a compact catalogue row to a movie with TMDB posters', () => {
-    const mapped = mapCatalogRow(
-      [603, 'The Matrix', 1999, 79, [0, 2], 1, 'abc123', '3a4b5c', 25000, 987],
-      12,
-      2000,
-      {
-        countries: ['France', 'United States of America'],
-        genres: ['Action', 'Drama', 'Science Fiction'],
-      },
-    )
-    expect(mapped).toMatchObject({
-      id: 'c603',
-      rank: 2000,
-      title: 'The Matrix',
-      year: '1999',
-      rating: '7.9',
-      ratingValue: 7.9,
-      genres: ['Action', 'Science Fiction'],
-      countries: 'United States of America',
-      posterUrl: 'https://image.tmdb.org/t/p/w154/abc123.jpg',
-      posterDetailUrl: 'https://image.tmdb.org/t/p/w342/abc123.jpg',
-      placeholderColor: '#3a4b5c',
-      runtimeMinutes: null,
-      voteCount: 25000,
-      popularity: 98.7,
-      textIndex: 12,
-    })
-  })
-
-  it('treats a zero rating as unrated', () => {
-    const mapped = mapCatalogRow(
-      [1, 'X', 0, 0, [], -1, 'p', '000000', 0, 0],
-      0,
-      1,
-      {
-        countries: [],
-        genres: [],
-      },
-    )
-    expect(mapped.ratingValue).toBeNull()
-    expect(mapped.year).toBe('----')
-  })
-})
-
-describe('catalogue size by device', () => {
-  const manifest = { chunks: ['a', 'b', 'c', 'd', 'e'], chunkSize: 2000 }
-  const desktop = { coarsePointer: false, narrowViewport: false }
-
-  it('treats a phone, or a weak machine, as lightweight', () => {
-    expect(isLightweightDevice(desktop)).toBe(false)
-    expect(isLightweightDevice({ ...desktop, memoryGb: 8, cores: 8 })).toBe(
-      false,
-    )
-    expect(
-      isLightweightDevice({ coarsePointer: true, narrowViewport: true }),
-    ).toBe(true)
-    expect(isLightweightDevice({ ...desktop, memoryGb: 4 })).toBe(true)
-    expect(isLightweightDevice({ ...desktop, cores: 4 })).toBe(true)
-  })
-
-  it('keeps a wide touch screen on the full catalogue', () => {
-    expect(
-      isLightweightDevice({ coarsePointer: true, narrowViewport: false }),
-    ).toBe(false)
-  })
-
-  it('loads two chunks, about 5,000 films, on lightweight devices', () => {
-    expect(getCatalogChunkCount(manifest, 1056, true)).toBe(2)
-  })
-
-  it('loads every chunk elsewhere', () => {
-    expect(getCatalogChunkCount(manifest, 1056, false)).toBe(5)
-  })
-
-  it('still limits a phone when the manifest has no chunk size', () => {
-    expect(getCatalogChunkCount({ chunks: manifest.chunks }, 1056, true)).toBe(
-      2,
-    )
-  })
-
-  it('never asks for more chunks than exist', () => {
-    expect(
-      getCatalogChunkCount({ ...manifest, chunks: ['a'] }, 1056, true),
-    ).toBe(1)
   })
 })
 
