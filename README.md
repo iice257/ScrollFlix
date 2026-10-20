@@ -1,6 +1,6 @@
 # ScrollFlix — for when you can't pick a movie
 
-Stop scrolling lists. Spin a wall of 750 films and stop on whatever catches your eye.
+Stop scrolling lists. Spin a wall of posters from 100k+ films and stop on whatever catches your eye.
 
 ![ScrollFlix](docs/media/wall.png)
 
@@ -72,7 +72,7 @@ ScrollFlix is for people who:
 
 This is an active personal project. The core app experience is present, with a React interface and a custom WebGL globe.
 
-The public landing page is not live yet.
+The app is live at https://scroll-flix.vercel.app/ and browses 100k+ films, refreshed nightly from TMDB.
 
 
 ## Tech Stack
