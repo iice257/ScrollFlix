@@ -828,3 +828,72 @@
     transition-duration: 1ms;
   }
 }
+
+/* ------------------------------------------------------ quiet bonus signs */
+
+/* Two worlds that pull against each other hum together: a soft ring on both
+   panels, rising and fading in step. Opacity only, so it stays on the
+   compositor. Nothing says why. */
+.mood-panel[data-hum="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  background: radial-gradient(
+    120% 90% at 50% 100%,
+    color-mix(in srgb, var(--panel-accent) 34%, transparent),
+    transparent 70%
+  );
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--panel-accent) 70%, #fff);
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+/* When a landing will earn a bonus run the button glows faintly. */
+.mood-cta[data-armed="true"]:not(:disabled) {
+  position: relative;
+  box-shadow:
+    0 10px 36px -8px var(--mood-accent),
+    0 0 0 4px color-mix(in srgb, var(--mood-accent) 22%, transparent);
+}
+
+.mood-cta[data-armed="true"]:not(:disabled)::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
+  box-shadow: 0 0 26px 2px var(--mood-accent);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mood-panel[data-hum="true"]::after {
+    animation: mood-hum 2.4s ease-in-out infinite;
+  }
+
+  .mood-cta[data-armed="true"]:not(:disabled)::after {
+    animation: mood-armed 2.8s ease-in-out infinite;
+  }
+}
+
+@keyframes mood-hum {
+  0%,
+  100% {
+    opacity: 0.12;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+
+@keyframes mood-armed {
+  0%,
+  100% {
+    opacity: 0.18;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}

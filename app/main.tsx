@@ -21,6 +21,18 @@ window.addEventListener('DOMContentLoaded', () => {
   const rootElement = document.getElementById('root')
   if (!rootElement) return
 
+  // The sound audition page. The constant condition lets the build drop this
+  // branch, and with it the whole lab and its audio candidates.
+  if (
+    import.meta.env.DEV &&
+    window.location.pathname.startsWith('/sound-lab')
+  ) {
+    void import('./sound-lab/mount').then((lab) =>
+      lab.mountSoundLab(rootElement),
+    )
+    return
+  }
+
   createRoot(rootElement).render(
     <StrictMode>
       <ErrorBoundary>

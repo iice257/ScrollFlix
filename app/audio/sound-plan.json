@@ -1,0 +1,99 @@
+{
+  "comment": "The loudness plan. Read by scripts/sound/*.py (build + analysis) and by sound-plan.test.ts. LUFS are BS.1770 K-weighted, gated, measured per clip at gain 1 and rate 1, before the master volume. 'maxMs' is the longest a clip may be for its role.",
+  "toleranceLu": 1.0,
+  "truePeakCeilingDb": -1.0,
+  "roles": {
+    "hover": {
+      "lufs": -34,
+      "maxMs": 130,
+      "minCentroidHz": 1000,
+      "maxAttackMs": 8,
+      "gate": true
+    },
+    "spin": {
+      "lufs": -38,
+      "maxMs": 70,
+      "minCentroidHz": 500,
+      "maxAttackMs": 8,
+      "gate": true
+    },
+    "tap": {
+      "lufs": -28,
+      "maxMs": 130,
+      "minCentroidHz": 1000,
+      "maxAttackMs": 8,
+      "gate": true
+    },
+    "grab": {
+      "lufs": -28,
+      "maxMs": 320
+    },
+    "open": {
+      "lufs": -24,
+      "maxMs": 560,
+      "maxAttackMs": 80
+    },
+    "close": {
+      "lufs": -24,
+      "maxMs": 560,
+      "maxAttackMs": 80
+    },
+    "settle": {
+      "lufs": -26,
+      "maxMs": 320
+    },
+    "confirm": {
+      "lufs": -24,
+      "maxMs": 420
+    },
+    "heart": {
+      "lufs": -20,
+      "maxMs": 600,
+      "maxAttackMs": 60
+    },
+    "star": {
+      "lufs": -24,
+      "maxMs": 420,
+      "maxAttackMs": 60
+    },
+    "sparkle": {
+      "lufs": -32,
+      "maxMs": 420,
+      "maxAttackMs": 20
+    },
+    "frost": {
+      "lufs": -23,
+      "maxMs": 1400
+    },
+    "amethyst": {
+      "lufs": -22,
+      "maxMs": 2200
+    },
+    "jade": {
+      "lufs": -21,
+      "maxMs": 1500
+    },
+    "gold": {
+      "lufs": -18,
+      "maxMs": 3400
+    }
+  },
+  "groups": {
+    "hover": "hover",
+    "spin": "spin",
+    "tap": "tap",
+    "grab": "grab",
+    "open": "open",
+    "close": "close",
+    "settle": "settle",
+    "confirm": "confirm",
+    "heart": "heart",
+    "trail": "star",
+    "sparkle": "sparkle",
+    "frost": "frost",
+    "amethyst": "amethyst",
+    "jade": "jade",
+    "gold": "gold",
+    "note": "star"
+  }
+}

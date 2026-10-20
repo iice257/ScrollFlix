@@ -1,23 +1,42 @@
-// The sound engine: one AudioContext, one master bus, procedural voices.
+// The sound engine: one AudioContext, one master bus. Cues are single clicks
+// (sound-cues.ts) drawn from the sprite (sound-bank.ts), with every play varied
+// a little (sound-variety.ts); small synthesised voices stand in until the
+// clips have loaded.
 //
 // Nothing here makes a sound or touches Web Audio until a user gesture calls
-// unlockAudio(), and nothing is fetched or decoded: every voice is built from
-// oscillators and noise. While sound is off the hot paths cost one boolean
-// read.
+// unlockAudio(); the clips are fetched then. While sound is off the hot paths
+// cost one boolean read.
 //
 // Cue map (category -> cues). There are only a few on purpose: the site is
 // quiet apart from the Easter egg.
 //   shuffle  shuffleStart, landing, settle, trailPoint
-//   ui       heart, moodPick, moodGo, confirm, hover, tap, grab, open, close
+//   ui       heart, moodPick, moodGo, confirm, hover, tap, grab, open, close,
+//            spinTick (unused)
+//   shuffleStart and landing are the two cues that stay synthesised: a soft
+//   whoosh and a low thump, with no clips.
 // The Shuffle Pro Easter egg voices live in shuffle-pro-audio.ts and are
 // gated by `eggs`, not by the master switch.
 
-import { type SoundCategory, isCategoryOn, soundStore } from './sound-settings'
+import {
+  bankReady,
+  getBank,
+  loadBank,
+  pickVariant,
+  playClip,
+} from './sound-bank'
+import { CUE_SPECS, type Cue, type Layer, type LayerRole } from './sound-cues'
+import { pointerPan } from './sound-pointer'
+import { isCategoryOn, soundStore } from './sound-settings'
+import { dbToGain, humanize, semisToRate } from './sound-variety'
+
+export type { Cue } from './sound-cues'
 
 // -------------------------------------------------------------- rate limits
 
 export type CueLimiter = {
-  tryAcquire: (name: string, now: number) => boolean
+  // `counted` false skips the shared voice cap, for cues that fire too often
+  // to be worth counting (the spin ticks); their own interval still applies.
+  tryAcquire: (name: string, now: number, counted?: boolean) => boolean
   release: () => void
 }
 
@@ -30,14 +49,14 @@ export const createCueLimiter = (
   const lastAt = new Map<string, number>()
   let voices = 0
   return {
-    tryAcquire: (name, now) => {
+    tryAcquire: (name, now, counted = true) => {
       const last = lastAt.get(name)
       if (last !== undefined && now - last < (minIntervalMs[name] ?? 40)) {
         return false
       }
-      if (voices >= maxVoices) return false
+      if (counted && voices >= maxVoices) return false
       lastAt.set(name, now)
-      voices += 1
+      if (counted) voices += 1
       return true
     },
     release: () => {
@@ -50,10 +69,47 @@ export const createCueLimiter = (
 
 let context: AudioContext | null = null
 let master: GainNode | null = null
-let compressor: DynamicsCompressorNode | null = null
+let limiterInput: AudioNode | null = null
 let unsubscribeVolume: (() => void) | null = null
 
-const volumeToGain = (volume: number) => 0.9 * volume ** 1.6
+export const volumeToGain = (volume: number) => 0.9 * volume ** 1.6
+
+// The curve of the safety limiter: untouched up to -6 dBFS, then a smooth
+// roll-off that can never pass full scale. It is a shaper and not a compressor
+// on purpose. Measured in a browser, a DynamicsCompressorNode took about 4 LU
+// off a 100 ms burst at any level (even -40 dBFS, far below its threshold), and
+// 7 LU off a crisp tap, so it undid the loudness plan for every short cue.
+// This one has no memory: a clip that peaks under -6 dBFS passes unchanged.
+export const LIMITER_KNEE = 0.5
+
+export const softLimit = (x: number, knee = LIMITER_KNEE) => {
+  const magnitude = Math.abs(x)
+  if (magnitude <= knee) return x
+  const over = knee + (1 - knee) * Math.tanh((magnitude - knee) / (1 - knee))
+  return x < 0 ? -over : over
+}
+
+export const softLimitCurve = (size = 4097, knee = LIMITER_KNEE) => {
+  const curve = new Float32Array(size)
+  for (let i = 0; i < size; i += 1) {
+    curve[i] = softLimit((i / (size - 1)) * 2 - 1, knee)
+  }
+  return curve
+}
+
+// The output chain: a safety limiter, then the master volume. Not a tone
+// control: the clips are levelled to the plan (sound-plan.json), so this only
+// rounds off pile-ups of layers. Shared with the offline renderer so a
+// rendered file is the same chain as the live site.
+export const createMasterChain = (ctx: BaseAudioContext, volume: number) => {
+  const limiter = ctx.createWaveShaper()
+  limiter.curve = softLimitCurve()
+  limiter.oversample = '4x'
+  const master = ctx.createGain()
+  master.gain.value = volumeToGain(volume)
+  limiter.connect(master).connect(ctx.destination)
+  return { input: limiter as AudioNode, master }
+}
 
 // Call from inside a user gesture. Safe to call repeatedly.
 export const unlockAudio = () => {
@@ -66,15 +122,9 @@ export const unlockAudio = () => {
           .webkitAudioContext
       if (!Ctor) return
       context = new Ctor()
-      compressor = context.createDynamicsCompressor()
-      compressor.threshold.value = -16
-      compressor.knee.value = 18
-      compressor.ratio.value = 5
-      compressor.attack.value = 0.004
-      compressor.release.value = 0.2
-      master = context.createGain()
-      master.gain.value = volumeToGain(soundStore.get().volume)
-      compressor.connect(master).connect(context.destination)
+      const chain = createMasterChain(context, soundStore.get().volume)
+      limiterInput = chain.input
+      master = chain.master
       unsubscribeVolume = soundStore.subscribe(() => {
         if (master && context) {
           master.gain.setTargetAtTime(
@@ -85,27 +135,28 @@ export const unlockAudio = () => {
         }
       })
     }
+    void loadBank(context)
     if (context.state === 'suspended') void context.resume()
   } catch {
     context = null
     master = null
-    compressor = null
+    limiterInput = null
     unsubscribeVolume?.()
     unsubscribeVolume = null
   }
 }
 
-export type AudioOut = { ctx: AudioContext; out: AudioNode }
+export type AudioOut = { ctx: BaseAudioContext; out: AudioNode }
 
 // The running context and its output bus, or null if audio isn't unlocked.
 export const getAudio = (): AudioOut | null => {
-  if (!context || !compressor || context.state !== 'running') return null
-  return { ctx: context, out: compressor }
+  if (!context || !limiterInput || context.state !== 'running') return null
+  return { ctx: context, out: limiterInput }
 }
 
 let noiseBuffer: AudioBuffer | null = null
 
-export const getNoiseBuffer = (ctx: AudioContext) => {
+export const getNoiseBuffer = (ctx: BaseAudioContext) => {
   if (noiseBuffer && noiseBuffer.sampleRate === ctx.sampleRate) {
     return noiseBuffer
   }
@@ -194,55 +245,16 @@ export const burst = (
 
 // ------------------------------------------------------------------- cues
 
-export type Cue =
-  | 'shuffleStart'
-  | 'landing'
-  | 'heart'
-  | 'moodPick'
-  | 'moodGo'
-  | 'confirm'
-  | 'hover'
-  | 'tap'
-  | 'grab'
-  | 'open'
-  | 'close'
-  | 'settle'
-  | 'trailPoint'
-
-export const CUE_CATEGORY: Record<Cue, SoundCategory> = {
-  shuffleStart: 'shuffle',
-  landing: 'shuffle',
-  heart: 'ui',
-  moodPick: 'ui',
-  moodGo: 'ui',
-  confirm: 'ui',
-  hover: 'ui',
-  tap: 'ui',
-  grab: 'ui',
-  open: 'ui',
-  close: 'ui',
-  settle: 'shuffle',
-  trailPoint: 'shuffle',
-}
-
-const CUE_MIN_INTERVAL_MS: Record<Cue, number> = {
-  shuffleStart: 200,
-  landing: 200,
-  heart: 120,
-  moodPick: 70,
-  moodGo: 300,
-  confirm: 90,
-  hover: 55,
-  tap: 45,
-  grab: 120,
-  open: 160,
-  close: 160,
-  settle: 160,
-  trailPoint: 90,
-}
-
 const MAX_VOICES = 8
-const limiter = createCueLimiter(CUE_MIN_INTERVAL_MS, MAX_VOICES)
+const limiter = createCueLimiter(
+  Object.fromEntries(
+    (Object.keys(CUE_SPECS) as Cue[]).map((cue) => [
+      cue,
+      CUE_SPECS[cue].minIntervalMs,
+    ]),
+  ),
+  MAX_VOICES,
+)
 
 // One pentatonic note per mood world, low to high.
 const MOOD_NOTES = [523.25, 587.33, 659.25, 783.99, 880, 1046.5]
@@ -252,7 +264,18 @@ const TRAIL_NOTES = [
   659.25, 783.99, 880, 1046.5, 1174.66, 1318.51, 1567.98, 1760,
 ]
 
+// These two voices were tuned when the output went through a compressor with
+// makeup gain, which lifted quiet sounds by about 7 dB and held loud ones near
+// where they were. The output chain is now a plain soft limiter (above), so a
+// quiet voice needs the lift written in. The whoosh is quiet, so it takes the
+// full lift; the thump already peaks at about -10 dBFS, so it takes a little.
+// Both stay under the peak of the click cues (about -1 dBFS).
+const SYNTH_TRIM = 2.2
+const LOW_TRIM = 1.25
+
 const VOICES: Record<Cue, (audio: AudioOut, strength: number) => void> = {
+  // The globe's detent has no synthesised stand-in: silence beats a beep.
+  spinTick: () => {},
   // A soft whoosh as the globe sets off for a random movie.
   shuffleStart: (audio) => {
     burst(audio, {
@@ -261,7 +284,7 @@ const VOICES: Record<Cue, (audio: AudioOut, strength: number) => void> = {
       q: 0.9,
       attack: 0.12,
       decay: 0.4,
-      gain: 0.09,
+      gain: 0.09 * SYNTH_TRIM,
     })
   },
   // The globe settling on a movie: a soft low thump.
@@ -270,14 +293,14 @@ const VOICES: Record<Cue, (audio: AudioOut, strength: number) => void> = {
       freq: 150,
       toFreq: 52,
       decay: 0.22,
-      gain: 0.3 * strength,
+      gain: 0.3 * strength * LOW_TRIM,
     })
     burst(audio, {
       centerHz: 420,
       q: 0.7,
       type: 'lowpass',
       decay: 0.05,
-      gain: 0.1 * strength,
+      gain: 0.1 * strength * LOW_TRIM,
     })
   },
   heart: (audio) => {
@@ -404,18 +427,144 @@ const VOICES: Record<Cue, (audio: AudioOut, strength: number) => void> = {
   },
 }
 
+// ---------------------------------------------------------- recorded cues
+
+export type CueOptions = {
+  // 0..1: how hard, or how far along. What it means depends on the cue.
+  strength?: number
+  // Added to the cue's own level (dB) and pitch (a rate multiplier). The spin
+  // ticker uses these to scale a detent by the globe's speed.
+  gainDb?: number
+  rate?: number
+  // Overrides the pointer for the stereo position, -1..1.
+  pan?: number
+  // Seconds from now to start, for rendering a timed sequence.
+  atSec?: number
+}
+
+export type PlayedLayer = {
+  role: LayerRole
+  group: string
+  clip: string
+  rate: number
+  gainDb: number
+  pan: number
+}
+
+export type CuePlayback = {
+  cue: Cue
+  layers: PlayedLayer[]
+  // True when no recorded layer played and the synthesised voice should.
+  synth: boolean
+}
+
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
+const lerp = (from: number, to: number, t: number) => from + (to - from) * t
+const jitter = (amount: number) => (Math.random() * 2 - 1) * amount
+
+const lastPlayed = new Map<Cue, number>()
+
+// Tests (and the audition page) start from a clean slate.
+export const resetCueState = () => {
+  lastPlayed.clear()
+}
+
+// Plays a cue's recorded layers on any audio output, live or offline, and says
+// what it played. No gates and no rate limits: playCue does those. This is
+// also what the audition page calls, so it hears exactly what the site does.
+export const renderCue = (
+  audio: AudioOut,
+  cue: Cue,
+  options: CueOptions = {},
+  nowMs = performance.now(),
+): CuePlayback => {
+  const spec = CUE_SPECS[cue]
+  const bank = getBank(audio.ctx)
+  const layers: PlayedLayer[] = []
+  if (bank) {
+    const since = nowMs - (lastPlayed.get(cue) ?? Number.NEGATIVE_INFINITY)
+    const feel = humanize(spec.humanize, since)
+    const strength = clamp01(options.strength ?? 1)
+    const strengthDb = spec.strength
+      ? lerp(spec.strength.gainDb[0], spec.strength.gainDb[1], strength)
+      : 0
+    const strengthSemis = spec.strength?.semis
+      ? lerp(spec.strength.semis[0], spec.strength.semis[1], strength)
+      : 0
+    const basePan = options.pan ?? (spec.pan === 'pointer' ? pointerPan() : 0)
+    for (const layer of spec.layers) {
+      const played = playLayer(audio, layer, {
+        spec,
+        feel,
+        strengthDb,
+        strengthSemis,
+        basePan,
+        options,
+      })
+      if (played) layers.push(played)
+    }
+    lastPlayed.set(cue, nowMs)
+  }
+  return { cue, layers, synth: layers.length === 0 }
+}
+
+const playLayer = (
+  { ctx, out }: AudioOut,
+  layer: Layer,
+  c: {
+    spec: (typeof CUE_SPECS)[Cue]
+    feel: ReturnType<typeof humanize>
+    strengthDb: number
+    strengthSemis: number
+    basePan: number
+    options: CueOptions
+  },
+): PlayedLayer | null => {
+  const bank = getBank(ctx)
+  if (!bank) return null
+  const clip = pickVariant(bank.manifest, layer.group)
+  if (!clip) return null
+  const rate =
+    semisToRate(
+      c.feel.semis + c.strengthSemis + (layer.semis ?? 0) + jitter(0.1),
+    ) * (c.options.rate ?? 1)
+  const gainDb =
+    (layer.gainDb ?? 0) + c.feel.gainDb + c.strengthDb + (c.options.gainDb ?? 0)
+  const pan = Math.max(-1, Math.min(1, c.basePan + jitter(0.06)))
+  const result = playClip(ctx, out, clip, {
+    gain: dbToGain(gainDb),
+    rate,
+    pan,
+    when: c.options.atSec ?? 0,
+  })
+  if (!result) return null
+  return {
+    role: layer.role,
+    group: layer.group,
+    clip,
+    rate,
+    gainDb,
+    pan,
+  }
+}
+
 // Plays one interface cue if sound is on for its category. Never throws.
-export const playCue = (cue: Cue, strength = 1) => {
-  const settings = soundStore.get()
-  if (!isCategoryOn(settings, CUE_CATEGORY[cue])) return
+export const playCue = (cue: Cue, strength = 1, options: CueOptions = {}) => {
+  const spec = CUE_SPECS[cue]
+  if (!isCategoryOn(soundStore.get(), spec.category)) return
   const audio = getAudio()
   if (!audio) return
-  if (!limiter.tryAcquire(cue, performance.now())) return
+  const counted = !spec.uncounted
+  if (!limiter.tryAcquire(cue, performance.now(), counted)) return
   try {
-    VOICES[cue](audio, Math.min(1, Math.max(0, strength)))
+    const level = clamp01(strength)
+    const played = bankReady(audio.ctx)
+      ? renderCue(audio, cue, { ...options, strength: level })
+      : null
+    if (!played || played.synth) VOICES[cue](audio, level)
   } catch {
     // Sound must never break the interface.
   } finally {
-    window.setTimeout(limiter.release, 400)
+    if (counted) window.setTimeout(limiter.release, 400)
   }
 }

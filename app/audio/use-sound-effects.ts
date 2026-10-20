@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { type Cue, playCue, unlockAudio } from './sound-engine'
+import { trackPointer } from './sound-pointer'
 import { soundStore } from './sound-settings'
 
 // Plays a cue whenever `value` changes, never on the first render. Picking the
@@ -32,14 +33,13 @@ export const useSoundEffects = (state: SoundEffectsState) => {
   useChangeCue(state.savedCount, (next, previous): Cue | null =>
     next > previous ? 'heart' : null,
   )
-  useChangeCue(state.detailsOpen, (next): Cue | null =>
-    next ? 'open' : 'close',
-  )
+  useChangeCue(state.detailsOpen, (next): Cue => (next ? 'open' : 'close'))
   const trailLength = useRef(state.trailLength)
   useEffect(() => {
     const previous = trailLength.current
     trailLength.current = state.trailLength
     if (state.trailLength > previous) {
+      // The path's length sets how far the click has stepped up.
       playCue('trailPoint', ((state.trailLength - 1) % 8) / 7)
     }
   }, [state.trailLength])
@@ -53,6 +53,7 @@ const INTERACTIVE = 'button, a[href], [role="button"], [role="tab"], summary'
 export const useInterfaceSounds = () => {
   useEffect(() => {
     if (typeof document === 'undefined') return
+    const stopTracking = trackPointer()
     let hovered: Element | null = null
     const onDown = (event: PointerEvent) => {
       const target = event.target
@@ -75,6 +76,7 @@ export const useInterfaceSounds = () => {
     document.addEventListener('pointerdown', onDown, true)
     document.addEventListener('pointerover', onOver, true)
     return () => {
+      stopTracking()
       document.removeEventListener('pointerdown', onDown, true)
       document.removeEventListener('pointerover', onOver, true)
     }

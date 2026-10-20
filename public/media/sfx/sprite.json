@@ -1,0 +1,112 @@
+{
+ "hover1": [
+  0.1,
+  0.0544,
+  "rollover2.ogg"
+ ],
+ "hover5": [
+  0.3044,
+  0.045,
+  "tick_001.ogg"
+ ],
+ "tap1": [
+  0.4994,
+  0.0909,
+  "click1.ogg"
+ ],
+ "tap3": [
+  0.7403,
+  0.0832,
+  "click3.ogg"
+ ],
+ "tap5": [
+  0.9735,
+  0.0404,
+  "select_001.ogg"
+ ],
+ "tap6": [
+  1.1639,
+  0.0595,
+  "select_007.ogg"
+ ],
+ "spin1": [
+  1.3734,
+  0.034,
+  "synth: detent tick"
+ ],
+ "spin2": [
+  1.5574,
+  0.03,
+  "synth: detent tick"
+ ],
+ "spin3": [
+  1.7374,
+  0.038,
+  "synth: detent tick"
+ ],
+ "spin4": [
+  1.9254,
+  0.032,
+  "synth: detent tick"
+ ],
+ "hover7": [
+  2.1074,
+  0.09,
+  "synth: glass tick E6"
+ ],
+ "hover8": [
+  2.3474,
+  0.09,
+  "synth: glass tick G6"
+ ],
+ "hover9": [
+  2.5874,
+  0.09,
+  "synth: glass tick A6"
+ ],
+ "hover10": [
+  2.8274,
+  0.05,
+  "synth: felt tick, air 1800-4800 Hz over a 1250 Hz tok"
+ ],
+ "hover11": [
+  3.0274,
+  0.05,
+  "synth: felt tick, air 2200-5600 Hz over a 1500 Hz tok"
+ ],
+ "tap7": [
+  3.2274,
+  0.11,
+  "synth: knock 780 Hz under a 2600-7000 Hz edge"
+ ],
+ "tap8": [
+  3.4874,
+  0.11,
+  "synth: knock 900 Hz under a 3200-8000 Hz edge"
+ ],
+ "tap9": [
+  3.7474,
+  0.11,
+  "synth: knock 680 Hz under a 2200-6000 Hz edge"
+ ],
+ "frost4": [
+  4.0074,
+  0.86,
+  "synth: fast ripple D6 E6 G6 A6 C7 up a pentatonic run, top note lingers"
+ ],
+ "amethyst4": [
+  5.0174,
+  1.27,
+  "synth: wobbly arpeggio up and back C5 E5 A5 E5 C5 A4"
+ ],
+ "jade4": [
+  6.4374,
+  0.64,
+  "synth: marimba run D5 E5 G5 A5 D6"
+ ],
+ "gold5": [
+  7.2274,
+  2.62,
+  "synth: brass pickup G3 C4 E4 into a held C-major chord, bell cascade on top, sub boom"
+ ]
+}

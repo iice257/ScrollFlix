@@ -2,16 +2,16 @@
 //
 //   whoosh   band-passed noise that sweeps up with the spin, a low rumble, and
 //            a quiet tonal drone (tuned per path) that swells with the sky
-//   chime    one voice per path at the peak: glassy Frost, bell Amethyst,
-//            breathy Jade, a rich chord for Gold
 //   thud     the landing, as the card opens
+//
+// The reveal jingle (shuffle-pro-music.ts) is the only music, so there is no
+// chime at the peak.
 //
 // They follow the "Easter egg sounds" switch, not the master sound switch, so
 // they stay audible by default. The AudioContext itself lives in the shared
 // engine and is only created inside a real user gesture.
 
 import {
-  type AudioOut,
   burst,
   getAudio,
   getNoiseBuffer,
@@ -29,6 +29,12 @@ export const WHOOSH_RUMBLE_MAX_HZ = 60
 export const WHOOSH_NOISE_GAIN = 0.2
 export const WHOOSH_RUMBLE_GAIN = 0.1
 export const DRONE_GAIN = 0.07
+
+// The whoosh was tuned when the output went through a compressor with makeup
+// gain (about +7 dB on quiet sounds, about +1 dB at its loudest). The output is
+// now a plain soft limiter, so the lift is written in here. At full spin the
+// whoosh peaks near -7 dBFS, under the click cues.
+export const WHOOSH_TRIM = 1.5
 
 // How loud and how bright the whoosh is for a spin speed.
 export const whooshParams = (omega: number, omegaMax: number) => {
@@ -69,7 +75,7 @@ export const createWhoosh = (tier: Tier = 'frost'): Whoosh | null => {
 
   try {
     const master = ctx.createGain()
-    master.gain.value = 1
+    master.gain.value = WHOOSH_TRIM
     master.connect(out)
 
     const noise = ctx.createBufferSource()
@@ -149,126 +155,6 @@ export const createWhoosh = (tier: Tier = 'frost'): Whoosh | null => {
     }
   } catch {
     return null
-  }
-}
-
-// ------------------------------------------------------------------ chime
-
-// A partial of a struck or bowed tone: its ratio to the base, level, decay.
-type Tone = readonly [ratio: number, gain: number, decay: number]
-
-const strike = (
-  audio: AudioOut,
-  baseHz: number,
-  partials: readonly Tone[],
-  options: { start?: number; type?: OscillatorType; level: number },
-) => {
-  for (const [ratio, gain, decay] of partials) {
-    pluck(audio, {
-      freq: baseHz * ratio,
-      decay,
-      gain: gain * options.level,
-      start: options.start,
-      type: options.type,
-      attack: 0.003,
-    })
-  }
-}
-
-const CHIME_LEVEL = 0.16
-
-const CHIMES: Record<Tier, (audio: AudioOut) => void> = {
-  // Glass: inharmonic partials, a bright "ting" and a long cold shimmer.
-  frost: (audio) => {
-    strike(
-      audio,
-      1318.5,
-      [
-        [1, 1, 2.2],
-        [2.76, 0.55, 1.4],
-        [5.4, 0.28, 0.8],
-        [8.93, 0.14, 0.45],
-      ],
-      { level: CHIME_LEVEL },
-    )
-    burst(audio, {
-      centerHz: 7000,
-      q: 1.2,
-      type: 'highpass',
-      decay: 0.04,
-      gain: 0.05,
-    })
-  },
-  // Bell: hum, prime, tierce, quint and nominal, as a struck bell rings.
-  amethyst: (audio) => {
-    strike(
-      audio,
-      523.25,
-      [
-        [0.5, 0.55, 3.4],
-        [1, 1, 3.0],
-        [1.19, 0.6, 2.3],
-        [1.5, 0.4, 1.8],
-        [2, 0.5, 1.6],
-        [2.67, 0.2, 1.0],
-      ],
-      { level: CHIME_LEVEL },
-    )
-  },
-  // Breath: a swell of filtered air over a soft fifth.
-  jade: (audio) => {
-    burst(audio, {
-      centerHz: 600,
-      toHz: 1100,
-      q: 1.6,
-      attack: 0.5,
-      decay: 1.5,
-      gain: 0.1,
-    })
-    for (const [hz, gain] of [
-      [392, 0.1],
-      [587.3, 0.06],
-    ] as const) {
-      pluck(audio, {
-        freq: hz,
-        attack: 0.4,
-        decay: 1.9,
-        gain,
-        type: 'sine',
-      })
-    }
-  },
-  // Gold: a warm major-seventh chord with a sparkle on top.
-  gold: (audio) => {
-    for (const hz of [261.63, 329.63, 392, 493.88, 523.25]) {
-      pluck(audio, {
-        freq: hz,
-        attack: 0.07,
-        decay: 3.2,
-        gain: 0.06,
-        type: 'triangle',
-      })
-      pluck(audio, {
-        freq: hz * 2,
-        attack: 0.07,
-        decay: 2.4,
-        gain: 0.018,
-      })
-    }
-    strike(audio, 2093, [[1, 1, 1.6]], { start: 0.12, level: 0.05 })
-    strike(audio, 2637, [[1, 1, 1.4]], { start: 0.26, level: 0.04 })
-  },
-}
-
-// The peak: the sky has just reached full strength.
-export const playPeakChime = (tier: Tier) => {
-  if (!eggsOn()) return
-  const audio = getAudio()
-  if (!audio) return
-  try {
-    CHIMES[tier](audio)
-  } catch {
-    // Sound must never break the run.
   }
 }
 

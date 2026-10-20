@@ -13,8 +13,16 @@ import { playCue } from '../../../../audio/sound-engine'
 import { cn } from '../../../../utils/tw'
 import './mood-page.css'
 import { MoodScene } from './mood-art'
-import { hasSeenBlendHint, markBlendHintSeen } from './mood-hint'
+import {
+  hasSeenBlendHint,
+  hasSeenEclipseHint,
+  markBlendHintSeen,
+  markEclipseHintSeen,
+} from './mood-hint'
 import { LEAN_LAYERS, leanTranslate, stagePosition } from './mood-lean'
+import { readLandings } from './mood-memory'
+import { eclipseNudge, previewMoodRun, resonanceOpen } from './mood-run-plan'
+import { type MoodPick, notePick } from './mood-runs'
 import {
   type BlendHint,
   MOOD_TIMES,
@@ -37,7 +45,12 @@ type MoodPageProps = {
   // How many films a mix would show. Only used to say when nothing fits.
   countFor: (moods: MoodFilter[], time: MoodTimeId) => number
   onClose: () => void
-  onConfirm: (moods: MoodFilter[], time: MoodTimeId) => void
+  // `picks` is every world chosen this visit and when, for the bonus runs.
+  onConfirm: (
+    moods: MoodFilter[],
+    time: MoodTimeId,
+    picks: readonly MoodPick[],
+  ) => void
 }
 
 const DEFAULT_OPEN: MoodFilter = 'dark'
@@ -63,6 +76,10 @@ const MoodPage = ({
   const [hint, setHint] = useState<BlendHint>(() =>
     hasSeenBlendHint() ? 'done' : 'pending',
   )
+  // Worlds chosen this visit, with times, for the bonus runs.
+  const [picks, setPicks] = useState<MoodPick[]>([])
+  const [landings] = useState(readLandings)
+  const [eclipseHintSeen] = useState(hasSeenEclipseHint)
   const stageRef = useRef<HTMLDivElement | null>(null)
   const frameRef = useRef(0)
   const rectRef = useRef<DOMRect | null>(null)
@@ -168,6 +185,27 @@ const MoodPage = ({
   const nothingFits = matches === 0
   const canGo = selected.length > 0 && !nothingFits
 
+  // Quiet signs that a landing will earn a bonus run: no words, just light.
+  const humming = resonanceOpen(selected)
+  const armed = useMemo(
+    () =>
+      canGo &&
+      previewMoodRun(
+        {
+          selected,
+          time,
+          filmCount: matches ?? 0,
+          picks,
+        },
+        landings,
+      ) !== null,
+    [canGo, selected, time, matches, landings, picks],
+  )
+  const nudge = eclipseHintSeen ? null : eclipseNudge(selected, landings)
+  useEffect(() => {
+    if (nudge) markEclipseHintSeen()
+  }, [nudge])
+
   return (
     <section
       className='mood-page'
@@ -212,6 +250,7 @@ const MoodPage = ({
                 openId === world.id && 'is-open',
                 isSelected && 'is-selected',
               )}
+              data-hum={humming && isSelected ? 'true' : undefined}
               style={
                 {
                   '--panel-accent': world.accent,
@@ -227,6 +266,10 @@ const MoodPage = ({
                 setOpenId(world.id)
                 if (!isSelected) {
                   playCue('moodPick', index / (MOOD_WORLDS.length - 1))
+                }
+                if (!isSelected) {
+                  const at = performance.now()
+                  setPicks((current) => notePick(current, world.id, at))
                 }
                 setSelected((current) => toggleMood(current, world.id))
               }}
@@ -294,15 +337,21 @@ const MoodPage = ({
               <span className='mood-hint'>
                 Tip: pick a second world to blend the two.
               </span>
+            ) : nudge ? (
+              <span className='mood-hint'>
+                You keep coming back to{' '}
+                {MOOD_WORLDS.find((world) => world.id === nudge)?.name}.
+              </span>
             ) : null}
           </output>
           <button
             type='button'
             className='mood-cta'
+            data-armed={armed ? 'true' : undefined}
             disabled={!canGo}
             onClick={() => {
               playCue('moodGo')
-              onConfirm(selected, time)
+              onConfirm(selected, time, picks)
             }}
           >
             <span>Land on a film</span>
