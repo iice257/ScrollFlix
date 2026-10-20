@@ -55,7 +55,12 @@ test.describe('Now-playing bar (phone width)', () => {
     const y = box.y + box.height * 0.4
     await page.mouse.move(box.x + box.width * 0.75, y)
     await page.mouse.down()
-    await page.mouse.move(box.x + box.width * 0.2, y, { steps: 12 })
+    // Paced like a finger: WebKit's software-rendered globe ignores a drag
+    // that is over before it has drawn a frame.
+    for (let step = 1; step <= 16; step++) {
+      await page.mouse.move(box.x + box.width * (0.75 - 0.035 * step), y + step)
+      await page.waitForTimeout(24)
+    }
     await page.mouse.up()
 
     await expect(pill).not.toHaveAttribute('aria-label', before ?? '')
