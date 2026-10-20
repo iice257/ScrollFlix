@@ -23,6 +23,13 @@ const openGallery = async (
     ] as const,
   )
   await page.goto('/')
+
+  // Without WebGL2 (e.g. headless Firefox on Linux CI) the app renders its
+  // non-WebGL fallback menu: there is no globe to hold and no gallery wall.
+  const hasWebgl2 = await page.evaluate(
+    () => !!document.createElement('canvas').getContext('webgl2'),
+  )
+  test.skip(!hasWebgl2, 'WebGL2 is unavailable in this browser')
   await expect(
     page.getByRole('region', { name: 'Warp Wall movie gallery' }),
   ).toBeVisible()
