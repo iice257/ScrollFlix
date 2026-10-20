@@ -13,6 +13,11 @@ test('renders the canonical gallery route', async ({ page }) => {
 test('loads the gallery without application console errors', async ({
   page,
 }) => {
+  // Poster URLs in a nightly catalogue can age out of the TMDB CDN; keep the
+  // test independent of the network.
+  await page.route(/image\.tmdb\.org/, (route) =>
+    route.fulfill({ status: 200, contentType: 'image/jpeg', body: '' }),
+  )
   const consoleErrors: string[] = []
   page.on('console', (msg) => {
     if (msg.type() === 'error') {

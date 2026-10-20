@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite --port 3000 --host 0.0.0.0",
-		"build": "tsc -b && vite build",
+		"build": "npm run catalog:pull && tsc -b && vite build",
 		"analyze": "vite build --mode analyze",
 		"preview": "vite preview --port 3000 --host 0.0.0.0",
 		"lint": "biome lint .",
@@ -25,10 +25,10 @@
 		"sound:analyze": "python -I scripts/sound/analyze.py",
 		"sound:build": "python -I scripts/sound/build_sprite.py",
 		"sound:verdicts": "python -I scripts/sound/apply_verdicts.py",
-		"media:posters": "node scripts/generate-poster-thumbnails.mjs",
 		"media:sprite": "node scripts/generate-poster-sprite.mjs",
 		"theme:light": "node scripts/generate-light-theme.mjs",
-		"catalog:build": "node scripts/build-catalog.mjs",
+		"catalog:build": "node scripts/catalog/build.mjs",
+		"catalog:pull": "node scripts/catalog/pull.mjs",
 		"seo:sitemap": "node scripts/generate-sitemap.js",
 		"seo:validate": "node -e \"const fs=require('fs');console.log('robots.txt:');console.log(fs.readFileSync('public/robots.txt','utf8'));console.log('sitemap.xml:',fs.statSync('public/sitemap.xml').size,'bytes')\""
 	},

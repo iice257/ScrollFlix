@@ -184,7 +184,12 @@ test.describe('Gallery user flows', () => {
     )
     expect(genre).toBeTruthy()
 
-    await tag.click()
+    // The rest of the catalogue streams in and reorders the list, so click the
+    // genre by name rather than whichever row happens to be first now.
+    await list
+      .getByRole('button', { name: `Filter by ${genre}`, exact: true })
+      .first()
+      .click()
     const on = list.getByRole('button', { name: `Remove ${genre}` }).first()
     await expect(on).toHaveAttribute('aria-pressed', 'true')
 

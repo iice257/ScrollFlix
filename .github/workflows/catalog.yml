@@ -1,0 +1,134 @@
+name: Catalogue
+
+# Rebuilds the film catalogue from TMDB and publishes it as the release asset
+# `catalog-latest` / `catalog.tar.gz`, which `npm run build` pulls. Nightly it
+# refetches only what changed; it re-seeds from scratch on the 1st of each
+# month, on a manual "seed" run, and whenever there is no usable state yet
+# (no release, an empty release, or the bootstrap catalogue).
+#
+# Needs the repository secret TMDB_API_READ_TOKEN. VERCEL_DEPLOY_HOOK_URL is
+# optional: when set, a successful run triggers a production deploy.
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'nightly updates what changed; seed rebuilds everything'
+        type: choice
+        options:
+          - nightly
+          - seed
+        default: nightly
+
+permissions:
+  contents: write
+
+concurrency:
+  group: catalog
+  cancel-in-progress: false
+
+jobs:
+  catalog:
+    name: Build and publish the catalogue
+    runs-on: ubuntu-latest
+    # A full seed is about 100,000 detail requests at 40 per second (around
+    # 45 minutes) plus the poster colours, so this leaves a wide margin.
+    timeout-minutes: 300
+    env:
+      TMDB_API_READ_TOKEN: ${{ secrets.TMDB_API_READ_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check the TMDB token
+        id: token
+        run: |
+          if [ -n "$TMDB_API_READ_TOKEN" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "::warning::TMDB_API_READ_TOKEN is not set, so the nightly catalogue refresh was skipped."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Add the repository secret TMDB_API_READ_TOKEN (a TMDB API Read Access Token) first."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.token.outputs.ready == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.token.outputs.ready == 'true'
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+        if: steps.token.outputs.ready == 'true'
+
+      # Fetch the previous catalogue and its state. On the very first run
+      # there is no release (404), or an empty one; this step then fails and
+      # the mode below falls back to a seed.
+      - name: Pull the previous catalogue
+        if: steps.token.outputs.ready == 'true'
+        continue-on-error: true
+        run: npm run catalog:pull -- --with-state .catalog/state --dest .catalog/out
+
+      - name: Choose the mode
+        id: mode
+        if: steps.token.outputs.ready == 'true'
+        env:
+          REQUESTED: ${{ inputs.mode }}
+        run: |
+          mode="${REQUESTED:-nightly}"
+          if [ "$mode" = "nightly" ]; then
+            if [ ! -f .catalog/state/meta.json ] || [ ! -f .catalog/state/films.ndjson.gz ]; then
+              echo "No previous state, so this run is a seed."
+              mode=seed
+            elif [ "$(date -u +%d)" = "01" ]; then
+              echo "First of the month, so this run is a seed."
+              mode=seed
+            elif node -e "process.exit(JSON.parse(require('fs').readFileSync('.catalog/state/meta.json','utf8')).bootstrap ? 0 : 1)"; then
+              echo "The previous catalogue is the bootstrap one, so this run is a seed."
+              mode=seed
+            fi
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "Mode: $mode"
+
+      - name: Build the catalogue
+        if: steps.token.outputs.ready == 'true'
+        run: |
+          set -o pipefail
+          mkdir -p .catalog
+          npm run --silent catalog:build -- --mode "${{ steps.mode.outputs.mode }}" --state .catalog/state --out .catalog/out --target 100000 | tee .catalog/summary.json
+          {
+            echo "### Catalogue (${{ steps.mode.outputs.mode }})"
+            echo '```json'
+            cat .catalog/summary.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Package
+        if: steps.token.outputs.ready == 'true'
+        run: node scripts/catalog/package.mjs --state .catalog/state --out .catalog/out --file .catalog/catalog.tar.gz
+
+      - name: Publish the release asset
+        if: steps.token.outputs.ready == 'true'
+        run: |
+          # The release does not exist on the first run.
+          gh release view catalog-latest >/dev/null 2>&1 || gh release create catalog-latest \
+            --title "Catalogue" \
+            --notes "The film catalogue pulled by npm run build. Rebuilt nightly by the Catalogue workflow." \
+            --latest=false
+          gh release upload catalog-latest .catalog/catalog.tar.gz --clobber
+
+      - name: Redeploy
+        if: steps.token.outputs.ready == 'true'
+        env:
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -n "$HOOK" ]; then
+            curl -fsS -X POST "$HOOK"
+          else
+            echo "VERCEL_DEPLOY_HOOK_URL is not set, so no deploy was triggered."
+          fi

@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   EMPTY_STREAK,
   HOLD_PREWARM_MS,
+  HOLD_RULES,
+  HOLD_STILL_MOVE_PX,
+  HOLD_STILL_MOVE_PX_TOUCH,
   JADE_PROFILE,
   KEY_ROLL_OMEGA,
   KEY_TAP_MAX_MS,
@@ -11,6 +14,8 @@ import {
   angularSpeedAt,
   axisForDragDirection,
   cameraPullback,
+  holdProgress,
+  holdRingSpanMs,
   isBigSpin,
   isKeyHold,
   isMoodPathBlocked,
@@ -26,28 +31,68 @@ import {
   scaleProfile,
   screenSpinDirection,
   shouldTriggerHold,
+  stillMovePxFor,
 } from './shuffle-pro-logic'
 
 describe('shouldTriggerHold', () => {
-  it('fires after 5s held still', () => {
+  it('fires after 3s held still', () => {
     const args = { maxMovedPx: 3, immersive: false }
-    expect(shouldTriggerHold({ ...args, elapsedMs: 4999 })).toBe(false)
-    expect(shouldTriggerHold({ ...args, elapsedMs: 5000 })).toBe(true)
+    expect(shouldTriggerHold({ ...args, elapsedMs: 2999 })).toBe(false)
+    expect(shouldTriggerHold({ ...args, elapsedMs: 3000 })).toBe(true)
   })
 
-  it('fires after 10s when the pointer moved', () => {
+  it('fires after 6s when the pointer moved', () => {
     const args = { maxMovedPx: 120, immersive: false }
-    expect(shouldTriggerHold({ ...args, elapsedMs: 9999 })).toBe(false)
-    expect(shouldTriggerHold({ ...args, elapsedMs: 10000 })).toBe(true)
+    expect(shouldTriggerHold({ ...args, elapsedMs: 5999 })).toBe(false)
+    expect(shouldTriggerHold({ ...args, elapsedMs: 6000 })).toBe(true)
   })
 
-  it('treats up to 8px as still', () => {
+  it('treats up to 8px as still for a mouse', () => {
+    expect(HOLD_STILL_MOVE_PX).toBe(8)
     expect(
-      shouldTriggerHold({ elapsedMs: 5000, maxMovedPx: 8, immersive: false }),
+      shouldTriggerHold({ elapsedMs: 3000, maxMovedPx: 8, immersive: false }),
     ).toBe(true)
     expect(
-      shouldTriggerHold({ elapsedMs: 5000, maxMovedPx: 8.5, immersive: false }),
+      shouldTriggerHold({ elapsedMs: 3000, maxMovedPx: 8.5, immersive: false }),
     ).toBe(false)
+    expect(
+      shouldTriggerHold({
+        elapsedMs: 3000,
+        maxMovedPx: 8.5,
+        immersive: false,
+        pointerType: 'mouse',
+      }),
+    ).toBe(false)
+  })
+
+  it('lets a finger or pen jitter up to 24px and still count as held still', () => {
+    expect(HOLD_STILL_MOVE_PX_TOUCH).toBe(24)
+    for (const pointerType of ['touch', 'pen']) {
+      expect(stillMovePxFor(pointerType)).toBe(24)
+      expect(
+        shouldTriggerHold({
+          elapsedMs: 3000,
+          maxMovedPx: 24,
+          immersive: false,
+          pointerType,
+        }),
+      ).toBe(true)
+      expect(
+        shouldTriggerHold({
+          elapsedMs: 3000,
+          maxMovedPx: 24.5,
+          immersive: false,
+          pointerType,
+        }),
+      ).toBe(false)
+    }
+    expect(stillMovePxFor('mouse')).toBe(8)
+    expect(stillMovePxFor(undefined)).toBe(8)
+  })
+
+  it('keeps the immersive limits and the Space limits as they were', () => {
+    expect(HOLD_RULES.immersive).toEqual({ stillMs: 3000, movingMs: 6000 })
+    expect(HOLD_RULES.key).toEqual({ normal: 10000, immersive: 6000 })
   })
 
   it('is faster when immersive: 3s still, 6s moving', () => {
@@ -63,6 +108,56 @@ describe('shouldTriggerHold', () => {
     expect(
       shouldTriggerHold({ elapsedMs: 5999, maxMovedPx: 50, immersive: true }),
     ).toBe(false)
+  })
+})
+
+describe('holdProgress', () => {
+  const still = { maxMovedPx: 0, immersive: false }
+
+  it('stays hidden for the first 1.5s', () => {
+    expect(holdProgress({ ...still, elapsedMs: 0 })).toBeNull()
+    expect(
+      holdProgress({ ...still, elapsedMs: HOLD_PREWARM_MS - 1 }),
+    ).toBeNull()
+  })
+
+  it('starts at 0 at 1.5s and reaches 1 at the trigger moment', () => {
+    expect(holdProgress({ ...still, elapsedMs: HOLD_PREWARM_MS })).toBe(0)
+    expect(holdProgress({ ...still, elapsedMs: 2250 })).toBeCloseTo(0.5, 6)
+    expect(
+      holdProgress({ ...still, elapsedMs: HOLD_RULES.normal.stillMs }),
+    ).toBe(1)
+    // Past the trigger it never overshoots.
+    expect(holdProgress({ ...still, elapsedMs: 9000 })).toBe(1)
+  })
+
+  it('completes exactly when shouldTriggerHold fires', () => {
+    for (const immersive of [false, true]) {
+      const ms = (immersive ? HOLD_RULES.immersive : HOLD_RULES.normal).stillMs
+      const args = { maxMovedPx: 0, immersive }
+      expect(holdProgress({ ...args, elapsedMs: ms })).toBe(1)
+      expect(holdProgress({ ...args, elapsedMs: ms - 1 })).toBeLessThan(1)
+      expect(shouldTriggerHold({ ...args, elapsedMs: ms })).toBe(true)
+      expect(shouldTriggerHold({ ...args, elapsedMs: ms - 1 })).toBe(false)
+      expect(holdRingSpanMs(immersive)).toBe(ms - HOLD_PREWARM_MS)
+    }
+  })
+
+  it('hides once the pointer wandered past the still allowance', () => {
+    const args = { elapsedMs: 2000, immersive: false }
+    expect(holdProgress({ ...args, maxMovedPx: 9 })).toBeNull()
+    expect(
+      holdProgress({ ...args, maxMovedPx: 9, pointerType: 'touch' }),
+    ).not.toBeNull()
+    expect(
+      holdProgress({ ...args, maxMovedPx: 25, pointerType: 'touch' }),
+    ).toBeNull()
+  })
+
+  it('never shows for a held key', () => {
+    expect(
+      holdProgress({ ...still, elapsedMs: 5000, source: 'key' }),
+    ).toBeNull()
   })
 })
 
@@ -134,7 +229,11 @@ type Run = { state: StreakState; trigger: string | null }
 
 const play = (
   events: StreakEvent[],
-  options: { immersive?: boolean; random?: () => number } = {},
+  options: {
+    immersive?: boolean
+    random?: () => number
+    demo?: boolean
+  } = {},
 ) => {
   let state: StreakState = EMPTY_STREAK
   const results: Run[] = []
@@ -142,6 +241,7 @@ const play = (
     const result = reduceStreak(state, event, {
       immersive: options.immersive ?? false,
       random: options.random ?? (() => 0.99),
+      demo: options.demo,
     })
     state = result.state
     results.push({ state, trigger: result.trigger })
@@ -232,6 +332,44 @@ describe('reduceStreak', () => {
     expect(results[10].trigger).toBeNull()
     expect(results[11].trigger).toBe('amethyst')
     expect(index).toBe(3)
+  })
+
+  it('rolls the Amethyst chance once at the 10th action in normal mode', () => {
+    let calls = 0
+    play(repeat(shuffle, 10), {
+      random: () => {
+        calls += 1
+        return 0.99
+      },
+    })
+    expect(calls).toBe(1)
+  })
+
+  it('makes the 10th shuffle Amethyst for certain in demo mode', () => {
+    let calls = 0
+    const results = play(repeat(shuffle, 10), {
+      demo: true,
+      random: () => {
+        calls += 1
+        return 0.99
+      },
+    })
+    expect(results.slice(0, 9).every((r) => r.trigger === null)).toBe(true)
+    expect(results[9].trigger).toBe('amethyst')
+    expect(results[9].state).toEqual(EMPTY_STREAK)
+    expect(calls).toBe(0)
+  })
+
+  it('leaves the other demo-mode streaks as they are', () => {
+    const results = play(repeat(bigSpin, 5), { demo: true })
+    expect(results[3].trigger).toBeNull()
+    expect(results[4].trigger).toBe('frost')
+    const jade = play(repeat(bigSpin, 3), { demo: true, immersive: true })
+    expect(jade[2].trigger).toBe('jade')
+    // Nine shuffles are still not enough.
+    expect(
+      play(repeat(shuffle, 9), { demo: true }).every((r) => r.trigger === null),
+    ).toBe(true)
   })
 
   it('does not fire on a 5% roll that misses', () => {
@@ -356,6 +494,23 @@ describe('resolveTier', () => {
     expect(
       resolveTier('jade', { found, random: () => 0.5, goldenHour: true }),
     ).toBe('jade')
+  })
+
+  it('returns the base tier, whatever was found, in demo mode', () => {
+    const all = { frost: 1, amethyst: 1, jade: 1, gold: 1 }
+    for (const base of ['frost', 'amethyst', 'jade'] as const) {
+      expect(
+        resolveTier(base, { found: all, random: () => 0, demo: true }),
+      ).toBe(base)
+      expect(
+        resolveTier(base, {
+          found: { frost: 1, amethyst: 1, jade: 1 },
+          random: () => 0,
+          goldenHour: true,
+          demo: true,
+        }),
+      ).toBe(base)
+    }
   })
 
   it('upgrades with a 10% chance after Gold has been found', () => {

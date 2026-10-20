@@ -17,6 +17,9 @@ export type ShuffleProData = {
   bestStreak: number
   // Off by default: a path stops starting runs once it has been found.
   repeatFound: boolean
+  // Off by default: for showing the effects off. Found paths never block,
+  // the odds are taken out and a streak counter shows.
+  demoMode: boolean
 }
 
 const EMPTY: ShuffleProData = {
@@ -25,6 +28,7 @@ const EMPTY: ShuffleProData = {
   totalRuns: 0,
   bestStreak: 0,
   repeatFound: false,
+  demoMode: false,
 }
 const TIERS: readonly Tier[] = ['frost', 'amethyst', 'jade', 'gold']
 
@@ -42,6 +46,7 @@ export const parseShuffleProData = (raw: string | null): ShuffleProData => {
       totalRuns?: unknown
       bestStreak?: unknown
       repeatFound?: unknown
+      demoMode?: unknown
     }
     if (parsed?.v !== 1 || typeof parsed.found !== 'object' || !parsed.found) {
       return EMPTY
@@ -83,6 +88,7 @@ export const parseShuffleProData = (raw: string | null): ShuffleProData => {
         ? Math.max(0, Math.floor(parsed.bestStreak))
         : 0,
       repeatFound: parsed.repeatFound === true,
+      demoMode: parsed.demoMode === true,
     }
   } catch {
     return EMPTY
@@ -179,8 +185,12 @@ export const shuffleProStore = {
   setRepeatFound(repeatFound: boolean) {
     save({ ...load(), repeatFound })
   },
-  // Clears what was found; the repeat setting is a preference and stays.
+  setDemoMode(demoMode: boolean) {
+    save({ ...load(), demoMode })
+  },
+  // Clears what was found; the settings are preferences and stay.
   reset() {
-    save({ ...EMPTY, repeatFound: load().repeatFound })
+    const { repeatFound, demoMode } = load()
+    save({ ...EMPTY, repeatFound, demoMode })
   },
 }

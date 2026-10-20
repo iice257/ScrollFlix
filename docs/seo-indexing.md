@@ -37,7 +37,7 @@ npm run seo:validate
 ### Optimization Strategy
 1. **Meta Tags**: Proper title, description, and Open Graph tags in `index.html`
 2. **Structured Data**: Consider adding JSON-LD for movie/application schema
-3. **Social Sharing**: Individual film posters available at `/media/single/` for sharing
+3. **Social Sharing**: Film posters come from the TMDB image CDN
 4. **Performance**: Fast loading for better Core Web Vitals
 
 ### Search Engine Guidance

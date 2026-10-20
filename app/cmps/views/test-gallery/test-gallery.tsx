@@ -75,6 +75,20 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '../../ui/tooltip'
+import {
+  type MovieText,
+  type TestMovie,
+  detectLightweightDevice,
+  getCachedAllMovies,
+  getCachedFirstChunk,
+  getCachedMovieText,
+  loadAllMovies,
+  loadFirstChunk,
+  loadMovieText,
+  prefersSavedData,
+  toTitleKey,
+  withWeightedRatings,
+} from './catalog-loader'
 import { constellationSetting } from './constellation'
 import { formatGenreCount } from './genre-count'
 import { sessionPathSetting } from './globe-lines'
@@ -107,6 +121,12 @@ import {
   tasteWeight,
   topGenres,
 } from './moods/taste'
+import {
+  buildNowPlayingMeta,
+  shouldShowNowPlaying,
+  usesNowPlayingBar,
+} from './now-playing'
+import { NowPlayingBar, type NowPlayingFilm } from './now-playing-bar'
 import { PARTY_OFF, partyReducer, weirdnessScore } from './party/party-logic'
 import { PartyFinal, PartyHud, PartySetup } from './party/party-ui'
 import { PosterFlight, type ViewRect } from './poster-flight'
@@ -119,6 +139,7 @@ import {
 } from './search-facets'
 import { type PathPoint, sessionPathStore } from './session-path'
 import { shareLink } from './share/share-link'
+import { DemoStreakChip } from './shuffle-pro/demo-streak-chip'
 import {
   GoldenHourNote,
   GoldenHourWash,
@@ -163,47 +184,9 @@ import { stopsFromPath } from './share/path-art'
 import { useTitleTranslation } from './use-title-translation'
 import { WeatherLayer, type WeatherStorm } from './weather-layer'
 
-type RawMovie = Record<string, unknown>
-
-type PosterAvailability = {
-  ids?: unknown[]
-}
-
-type TestMovie = {
-  id: string
-  rank: number
-  title: string
-  tagline: string
-  overview: string
-  genres: string[]
-  year: string
-  runtime: string
-  runtimeMinutes: number | null
-  rating: string
-  ratingValue: number | null
-  voteCount: number | null
-  popularity: number | null
-  weightedRating: number | null
-  countries: string
-  posterUrl: string
-  // Catalogue films (beyond the local set) use TMDB-hosted posters: a larger
-  // one for the details card, and an average colour while they load.
-  posterDetailUrl?: string
-  // A 92px poster for the index, where it is drawn at about 42px.
-  posterListUrl?: string
-  placeholderColor?: string
-  // Position in the catalogue's lazily loaded overview/tagline chunks.
-  textIndex?: number
-  // Lower-case title without accents: what sorting and searching compare, so
-  // neither pays for locale-aware string work per comparison.
-  titleKey?: string
-}
-
-export const toTitleKey = (title: string) =>
-  title
-    .normalize('NFD')
-    .replace(/\p{M}+/gu, '')
-    .toLowerCase()
+// TestMovie, the catalogue loading and the legacy id migration live in
+// catalog-loader.ts.
+export { toTitleKey, withWeightedRatings }
 
 const getTitleKey = (movie: TestMovie) =>
   movie.titleKey ?? toTitleKey(movie.title)
@@ -248,11 +231,11 @@ type DecisionFilterResult = {
 type PosterLoadState = 'loading' | 'loaded' | 'error'
 type MotionPhase = 'enter' | 'exit'
 
-const DATASET_FILE_COUNT = 5
-const CATALOG_URL = '/json/catalog'
-const TMDB_IMAGE_URL = 'https://image.tmdb.org/t/p'
 const GALLERY_WINDOW_SIZE = 900
-const LEGACY_LOCAL_POSTER_COUNT = 216
+// Posters now come from the TMDB CDN, so the first-load screen can no longer
+// wait for all of them. Once chunk 0 is in and the placeholders are up, the
+// screen lets go after this long and the posters fill in behind it.
+const FIRST_LOAD_MAX_LOCK_MS = 3000
 const MIN_DECISION_FILTER_RESULTS = 24
 const DETAILS_EXPAND_DRAG_PX = 42
 const DETAILS_CLOSE_DRAG_PX = 68
@@ -279,6 +262,8 @@ const NO_PATH: readonly PathPoint[] = []
 const MOOD_RUN_WAIT_MS = 4000
 
 type Theme = 'dark' | 'light'
+// `quiet` lands the globe on the film without a card following it.
+type SpinRequest = { itemId: string; nonce: number; quiet?: boolean }
 
 const readTheme = (): Theme => {
   try {
@@ -538,31 +523,6 @@ const MOOD_FILTERS: Array<{
     test: (movie) => movie.ratingValue !== null && movie.ratingValue >= 7.5,
   },
 ]
-
-const getText = (raw: RawMovie, key: string) => {
-  const value = raw[key]
-  if (value === null || value === undefined) return ''
-  return String(value).trim()
-}
-
-const getPositiveNumber = (raw: RawMovie, key: string) => {
-  const value = Number(raw[key])
-  return Number.isFinite(value) && value > 0 ? value : null
-}
-
-const getNonNegativeNumber = (raw: RawMovie, key: string) => {
-  const value = raw[key]
-  if (value === null || value === undefined || value === '') return null
-  const number = Number(value)
-  return Number.isFinite(number) && number >= 0 ? number : null
-}
-
-const splitList = (value: string, maxItems = Number.POSITIVE_INFINITY) =>
-  value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, maxItems)
 
 const seededRandom = (seed: number) => {
   const value = Math.sin(seed * 9301 + 49297) * 233280
@@ -1178,355 +1138,6 @@ const getGenreSummaries = (movies: TestMovie[]): GenreSummary[] => {
     .sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre))
 }
 
-export const withWeightedRatings = (movies: TestMovie[]): TestMovie[] => {
-  const rated = movies.filter(
-    (movie) =>
-      movie.ratingValue !== null &&
-      movie.voteCount !== null &&
-      movie.voteCount > 0,
-  )
-  if (!rated.length)
-    return movies.map((movie) => ({ ...movie, weightedRating: null }))
-
-  const meanRating =
-    rated.reduce((sum, movie) => sum + (movie.ratingValue ?? 0), 0) /
-    rated.length
-  const votes = rated.map((movie) => movie.voteCount ?? 0).sort((a, b) => a - b)
-  const middle = Math.floor(votes.length / 2)
-  const medianVotes =
-    votes.length % 2 ? votes[middle] : (votes[middle - 1] + votes[middle]) / 2
-
-  return movies.map((movie) => {
-    const { ratingValue, voteCount } = movie
-    if (ratingValue === null || voteCount === null || voteCount <= 0)
-      return { ...movie, weightedRating: null }
-    const total = voteCount + medianVotes
-    return {
-      ...movie,
-      weightedRating:
-        (voteCount / total) * ratingValue + (medianVotes / total) * meanRating,
-    }
-  })
-}
-
-export const resolveMoviePosterUrls = (
-  movieId: string,
-  catalogIndex: number,
-  localPosterIds: ReadonlySet<string>,
-) => {
-  const posterUrl = localPosterIds.has(movieId)
-    ? `/media/posters/${encodeURIComponent(movieId)}.jpg`
-    : catalogIndex < LEGACY_LOCAL_POSTER_COUNT
-      ? `/media/single/${catalogIndex}.jpg`
-      : ''
-  return { posterUrl }
-}
-
-export const mapMovie = (
-  raw: RawMovie,
-  index: number,
-  localPosterIds: ReadonlySet<string>,
-): TestMovie => {
-  const rating = getPositiveNumber(raw, 'vote_average')
-  const voteCount = getNonNegativeNumber(raw, 'vote_count')
-  const popularity = getNonNegativeNumber(raw, 'popularity')
-  const runtimeMinutes = getPositiveNumber(raw, 'runtime_minutes')
-  const year = getText(raw, 'release_year') || '----'
-  const rawId = getText(raw, 'id')
-  const title = getText(raw, 'title') || `Untitled ${index + 1}`
-  const posterUrls = resolveMoviePosterUrls(rawId, index, localPosterIds)
-
-  return {
-    id: rawId ? `${index}-${rawId}` : String(index),
-    rank: index + 1,
-    title,
-    titleKey: toTitleKey(title),
-    tagline: getText(raw, 'tagline'),
-    overview: getText(raw, 'overview'),
-    genres: splitList(getText(raw, 'genres')),
-    year,
-    runtime: getText(raw, 'time_str') || '',
-    runtimeMinutes,
-    rating: rating ? rating.toFixed(1) : '',
-    ratingValue: rating,
-    voteCount,
-    popularity,
-    weightedRating: null,
-    countries: splitList(getText(raw, 'production_countries'), 1).join(', '),
-    ...posterUrls,
-  }
-}
-
-let cachedMovieDataset: TestMovie[] | null = null
-let movieDatasetPromise: Promise<TestMovie[]> | null = null
-
-const loadMovieDataset = () => {
-  if (cachedMovieDataset) return Promise.resolve(cachedMovieDataset)
-
-  const datasetRequest = Promise.all(
-    Array.from({ length: DATASET_FILE_COUNT }, (_, index) =>
-      fetch(`/json/${index}.json`).then((response) => {
-        if (!response.ok) {
-          throw new Error(`Could not load movie data (${response.status})`)
-        }
-        return response.json() as Promise<RawMovie[]>
-      }),
-    ),
-  )
-  const posterManifestRequest = fetch('/media/posters/availability.json')
-    .then(async (response) => {
-      if (!response.ok) return new Set<string>()
-      const availability = (await response.json()) as PosterAvailability
-      return new Set(
-        (availability.ids ?? [])
-          .map((id) => String(id ?? '').trim())
-          .filter(Boolean),
-      )
-    })
-    .catch(() => new Set<string>())
-
-  movieDatasetPromise ??= Promise.all([datasetRequest, posterManifestRequest])
-    .then(([datasets, localPosterIds]) => {
-      cachedMovieDataset = withWeightedRatings(
-        datasets
-          .flat()
-          .map((raw, index) => mapMovie(raw, index, localPosterIds)),
-      ).filter((movie) => Boolean(movie.posterUrl))
-      return cachedMovieDataset
-    })
-    .catch((error: unknown) => {
-      movieDatasetPromise = null
-      throw error
-    })
-
-  return movieDatasetPromise
-}
-
-// The wider catalogue (scripts/build-catalog.mjs): compact rows of
-// [tmdbId, title, year, rating x10, genre indices, country index, poster path,
-// colour, vote count, popularity x10], with the genre and country names in the
-// manifest.
-export type CatalogRow = [
-  number,
-  string,
-  number,
-  number,
-  number[],
-  number,
-  string,
-  string,
-  number,
-  number,
-]
-export type CatalogTables = { countries: string[]; genres: string[] }
-type CatalogManifest = CatalogTables & {
-  chunks: string[]
-  chunkSize: number
-  count: number
-  textChunkSize: number
-}
-
-// Phones and weaker machines load the most popular ~5,000 films; everything
-// else gets the whole catalogue. Decided once, so rotating a phone or
-// resizing a window never changes what is loaded.
-export const MOBILE_FILM_TARGET = 5000
-const DEFAULT_CATALOG_CHUNK_SIZE = 2000
-
-export type DeviceSignals = {
-  coarsePointer: boolean
-  narrowViewport: boolean
-  memoryGb?: number
-  cores?: number
-}
-
-export const isLightweightDevice = ({
-  coarsePointer,
-  narrowViewport,
-  memoryGb,
-  cores,
-}: DeviceSignals) =>
-  (coarsePointer && narrowViewport) ||
-  (memoryGb !== undefined && memoryGb <= 4) ||
-  (cores !== undefined && cores <= 4)
-
-let lightweightDevice: boolean | null = null
-const detectLightweightDevice = () => {
-  lightweightDevice ??= isLightweightDevice({
-    coarsePointer: window.matchMedia('(pointer: coarse)').matches,
-    narrowViewport: window.matchMedia('(max-width: 900px)').matches,
-    memoryGb: (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
-    cores: navigator.hardwareConcurrency,
-  })
-  return lightweightDevice
-}
-
-// How many catalogue chunks a device needs, given the films it already has.
-export const getCatalogChunkCount = (
-  manifest: Pick<CatalogManifest, 'chunks'> &
-    Partial<Pick<CatalogManifest, 'chunkSize'>>,
-  localCount: number,
-  lightweight: boolean,
-) => {
-  if (!lightweight) return manifest.chunks.length
-  const chunkSize = manifest.chunkSize || DEFAULT_CATALOG_CHUNK_SIZE
-  return Math.min(
-    manifest.chunks.length,
-    Math.max(1, Math.ceil((MOBILE_FILM_TARGET - localCount) / chunkSize)),
-  )
-}
-
-export const mapCatalogRow = (
-  [
-    tmdbId,
-    title,
-    year,
-    rating10,
-    genres,
-    country,
-    poster,
-    colour,
-    voteCount,
-    popularity10,
-  ]: CatalogRow,
-  textIndex: number,
-  rank: number,
-  tables: CatalogTables,
-): TestMovie => {
-  const rating = rating10 > 0 ? rating10 / 10 : null
-  return {
-    id: `c${tmdbId}`,
-    rank,
-    title,
-    titleKey: toTitleKey(title),
-    tagline: '',
-    overview: '',
-    genres: genres
-      .map((genre) => tables.genres[genre])
-      .filter((genre): genre is string => Boolean(genre)),
-    year: year ? String(year) : '----',
-    runtime: '',
-    runtimeMinutes: null,
-    rating: rating ? rating.toFixed(1) : '',
-    ratingValue: rating,
-    voteCount,
-    popularity: popularity10 / 10,
-    weightedRating: null,
-    countries: tables.countries[country] ?? '',
-    posterUrl: `${TMDB_IMAGE_URL}/w154/${poster}.jpg`,
-    posterDetailUrl: `${TMDB_IMAGE_URL}/w342/${poster}.jpg`,
-    posterListUrl: `${TMDB_IMAGE_URL}/w92/${poster}.jpg`,
-    placeholderColor: `#${colour}`,
-    textIndex,
-  }
-}
-
-const prefersSavedData = () =>
-  Boolean(
-    (navigator as Navigator & { connection?: { saveData?: boolean } })
-      .connection?.saveData,
-  )
-
-let catalogManifestPromise: Promise<CatalogManifest> | null = null
-const loadCatalogManifest = () => {
-  catalogManifestPromise ??= fetch(`${CATALOG_URL}/manifest.json`)
-    .then((response) => {
-      if (!response.ok) throw new Error(`Catalogue ${response.status}`)
-      return response.json() as Promise<CatalogManifest>
-    })
-    .catch((error: unknown) => {
-      catalogManifestPromise = null
-      throw error
-    })
-  return catalogManifestPromise
-}
-
-// The local films followed by everything loaded from the catalogue.
-let cachedAllMovies: TestMovie[] | null = null
-let allMoviesPromise: Promise<TestMovie[]> | null = null
-
-// Loaded after the globe is up; the local films keep their ranks and the
-// catalogue follows them, so the default globe window never changes.
-const loadAllMovies = (localMovies: TestMovie[]) => {
-  if (cachedAllMovies) return Promise.resolve(cachedAllMovies)
-  const rankOffset = localMovies.reduce(
-    (highest, movie) => Math.max(highest, movie.rank),
-    0,
-  )
-  allMoviesPromise ??= loadCatalogManifest()
-    .then(async (manifest) => {
-      const chunkCount = getCatalogChunkCount(
-        manifest,
-        localMovies.length,
-        detectLightweightDevice(),
-      )
-      const chunks = await Promise.all(
-        manifest.chunks.slice(0, chunkCount).map((chunk) =>
-          fetch(`${CATALOG_URL}/${chunk}`).then((response) => {
-            if (!response.ok) throw new Error(`Catalogue ${response.status}`)
-            return response.json() as Promise<CatalogRow[]>
-          }),
-        ),
-      )
-      // Weighted ratings are relative to the whole set, so they are worked
-      // out again over local and catalogue films together.
-      cachedAllMovies = withWeightedRatings([
-        ...localMovies,
-        ...chunks
-          .flat()
-          .map((row, index) =>
-            mapCatalogRow(row, index, rankOffset + index + 1, manifest),
-          ),
-      ])
-      return cachedAllMovies
-    })
-    .catch((error: unknown) => {
-      allMoviesPromise = null
-      throw error
-    })
-  return allMoviesPromise
-}
-
-type MovieText = { overview: string; tagline: string }
-const movieTextChunks = new Map<number, Promise<Array<[string, string]>>>()
-const loadedMovieTexts = new Map<number, Array<[string, string]>>()
-
-let knownTextChunkSize = 0
-
-const getCachedMovieText = (movie: TestMovie): MovieText | null => {
-  if (movie.textIndex === undefined) return movie
-  if (!knownTextChunkSize) return null
-  const chunk = Math.floor(movie.textIndex / knownTextChunkSize)
-  const rows = loadedMovieTexts.get(chunk)
-  if (!rows) return null
-  const [overview, tagline] = rows[
-    movie.textIndex - chunk * knownTextChunkSize
-  ] ?? ['', '']
-  return { overview, tagline }
-}
-
-const loadMovieText = async (movie: TestMovie): Promise<MovieText> => {
-  const cached = getCachedMovieText(movie)
-  if (cached || movie.textIndex === undefined) return cached ?? movie
-  const { textChunkSize } = await loadCatalogManifest()
-  knownTextChunkSize = textChunkSize
-  const chunk = Math.floor(movie.textIndex / textChunkSize)
-  let request = movieTextChunks.get(chunk)
-  if (!request) {
-    request = fetch(`${CATALOG_URL}/text-${chunk}.json`).then((response) => {
-      if (!response.ok) throw new Error(`Overview ${response.status}`)
-      return response.json() as Promise<Array<[string, string]>>
-    })
-    movieTextChunks.set(chunk, request)
-    request.then(
-      (rows) => loadedMovieTexts.set(chunk, rows),
-      () => movieTextChunks.delete(chunk),
-    )
-  }
-  const [overview, tagline] =
-    (await request)[movie.textIndex - chunk * textChunkSize] ?? []
-  return { overview: overview ?? '', tagline: tagline ?? '' }
-}
-
 // A catalogue film's overview and tagline, fetched when it is shown.
 const useMovieText = (movie: TestMovie) => {
   const [text, setText] = useState<MovieText | null>(() =>
@@ -1578,7 +1189,7 @@ export const TestGalleryApp = () => {
   const realFullscreenRef = useRef(false)
   const [showFullscreenHint, setShowFullscreenHint] = useState(false)
   const [movies, setMovies] = useState<TestMovie[]>(
-    cachedAllMovies ?? cachedMovieDataset ?? [],
+    getCachedAllMovies() ?? getCachedFirstChunk() ?? [],
   )
   const [mode, setMode] = useState<ViewMode>('wall')
   const [sortRules, setSortRules] = useState<SortRule[]>([
@@ -1588,7 +1199,7 @@ export const TestGalleryApp = () => {
   const [listRandomNonce, setListRandomNonce] = useState(0)
   const reopenDetailsAfterListShuffleRef = useRef(false)
   const [activeMovieId, setActiveMovieId] = useState<string | null>(
-    cachedMovieDataset?.[0]?.id ?? null,
+    getCachedFirstChunk()?.[0]?.id ?? null,
   )
   const [detailsMovieId, setDetailsMovieId] = useState<string | null>(null)
   const [watchMovieId, setWatchMovieId] = useState<string | null>(null)
@@ -1627,7 +1238,7 @@ export const TestGalleryApp = () => {
   const [initialGalleryReady, setInitialGalleryReady] = useState(false)
   const [galleryLoadPercent, setGalleryLoadPercent] = useState(0)
   const [loadState, setLoadState] = useState<LoadState>(
-    cachedMovieDataset ? 'ready' : 'loading',
+    getCachedFirstChunk() ? 'ready' : 'loading',
   )
   const [errorMessage, setErrorMessage] = useState('')
   const [timeLabel, setTimeLabel] = useState('')
@@ -1710,10 +1321,12 @@ export const TestGalleryApp = () => {
       // Storage can be unavailable (private mode, blocked site data).
     }
   }, [])
-  const [spinRequest, setSpinRequest] = useState<{
-    itemId: string
-    nonce: number
-  } | null>(null)
+  const [spinRequest, setSpinRequest] = useState<SpinRequest | null>(null)
+  // On phones a shuffle's film waits in the now-playing bar instead of its
+  // card opening. `expandDetailsFor` makes that film's card open fully, not
+  // as the summary step.
+  const [nowPlayingId, setNowPlayingId] = useState<string | null>(null)
+  const [expandDetailsFor, setExpandDetailsFor] = useState<string | null>(null)
   const [spinHintSeen, setSpinHintSeen] = useState(readSpinHintSeen)
 
   const markSpinHintSeen = useCallback(() => {
@@ -1736,7 +1349,7 @@ export const TestGalleryApp = () => {
   useEffect(() => {
     let cancelled = false
 
-    loadMovieDataset()
+    loadFirstChunk()
       .then((nextMovies) => {
         if (cancelled) return
         setMovies((currentMovies) =>
@@ -1778,33 +1391,44 @@ export const TestGalleryApp = () => {
     return () => window.clearInterval(timer)
   }, [])
 
-  // The wider catalogue streams in once the globe is showing, so it never
-  // competes with the first posters. With Save-Data on, it waits until the
-  // index, genres or filters are actually opened.
-  const catalogWanted = !prefersSavedData() || mode !== 'wall' || filterOpen
+  // The rest of the catalogue streams in once the globe is showing, so it
+  // never competes with the first posters. Phones and weaker machines stop at
+  // 20,000 films until the index, genres or filters open; with Save-Data on,
+  // nothing past the first chunk loads until then. A shared link to a film
+  // that is not loaded yet also asks for everything.
+  const [linkedNeedsCatalog, setLinkedNeedsCatalog] = useState(false)
+  const [catalogComplete, setCatalogComplete] = useState(false)
+  const browsingCatalog = mode !== 'wall' || filterOpen
+  const catalogWanted =
+    !prefersSavedData() || browsingCatalog || linkedNeedsCatalog
+  const fullCatalogWanted =
+    !detectLightweightDevice() || browsingCatalog || linkedNeedsCatalog
   useEffect(() => {
     if (!initialGalleryReady || loadState !== 'ready' || !catalogWanted) return
     let cancelled = false
-    const localMovies = cachedMovieDataset ?? []
     const timer = window.setTimeout(() => {
-      loadAllMovies(localMovies)
+      loadAllMovies({
+        lightweight: detectLightweightDevice(),
+        full: fullCatalogWanted,
+      })
         .then((allMovies) => {
           if (cancelled) return
           setMovies((currentMovies) =>
-            currentMovies.length > localMovies.length
+            currentMovies.length >= allMovies.length
               ? currentMovies
               : allMovies,
           )
+          if (fullCatalogWanted) setCatalogComplete(true)
         })
         .catch(() => {
-          // The local films still work on their own; the catalogue is extra.
+          // The first chunk still works on its own; the rest is extra.
         })
     }, 400)
     return () => {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [catalogWanted, initialGalleryReady, loadState])
+  }, [catalogWanted, fullCatalogWanted, initialGalleryReady, loadState])
 
   const genreSummaries = useMemo(() => getGenreSummaries(movies), [movies])
 
@@ -1943,6 +1567,16 @@ export const TestGalleryApp = () => {
     }
   }, [loadState, visibleMovies.length])
 
+  useEffect(() => {
+    if (initialGalleryReady || loadState !== 'ready') return
+    if (!visibleMovies.length) return
+    const timer = window.setTimeout(
+      () => setInitialGalleryReady(true),
+      FIRST_LOAD_MAX_LOCK_MS,
+    )
+    return () => window.clearTimeout(timer)
+  }, [initialGalleryReady, loadState, visibleMovies.length])
+
   const handleGalleryLoadProgress = useCallback((percent: number) => {
     setGalleryLoadPercent(Math.round(percent))
     if (percent >= 100) setInitialGalleryReady(true)
@@ -2012,6 +1646,11 @@ export const TestGalleryApp = () => {
   })
   const menuControlRef = useRef<InfiniteMovieMenuControl | null>(null)
   const goldenHour = useGoldenHour()
+  const demoMode = useSyncExternalStore(
+    shuffleProStore.subscribe,
+    () => shuffleProStore.get().demoMode,
+    () => shuffleProStore.get().demoMode,
+  )
   // Two independent switches, both off until turned on: the lines joining the
   // saved films, and the trail of films this visit has landed on.
   const linksOn = useSyncExternalStore(
@@ -2075,6 +1714,62 @@ export const TestGalleryApp = () => {
   const sortPresence = useExitPresence(sortOpen && mode === 'list')
   const watchPresence = useExitPresence(Boolean(watchMovie), watchMovie)
   const detailsPresence = useExitPresence(Boolean(detailsMovie), detailsMovie)
+
+  // The now-playing bar's film, while nothing else has taken over the screen.
+  // When it no longer applies the film is dropped, not parked for later.
+  const nowPlayingMovie = useMemo(
+    () =>
+      nowPlayingId
+        ? (visibleMovies.find((movie) => movie.id === nowPlayingId) ?? null)
+        : null,
+    [nowPlayingId, visibleMovies],
+  )
+  const nowPlayingVisible = shouldShowNowPlaying({
+    isMobile: isMobileViewport,
+    immersive,
+    partyActive: party.phase !== 'off',
+    mode,
+    hasFilm: Boolean(nowPlayingMovie),
+    galleryReady: initialGalleryReady,
+    detailsOpen: Boolean(detailsMovieId),
+    // 'armed' is only a press on the globe that might become a hold.
+    runActive:
+      shuffleProSnapshot.phase !== 'idle' &&
+      shuffleProSnapshot.phase !== 'armed',
+    overlayOpen:
+      filterOpen ||
+      aboutOpen ||
+      savedOpen ||
+      pathOpen ||
+      moodsOpen ||
+      sortOpen ||
+      recapOpen ||
+      pathShareOpen ||
+      Boolean(watchMovieId),
+  })
+  useEffect(() => {
+    if (!nowPlayingVisible) setNowPlayingId(null)
+  }, [nowPlayingVisible])
+  const nowPlayingFilm = useMemo<NowPlayingFilm | null>(
+    () =>
+      nowPlayingMovie && nowPlayingVisible
+        ? {
+            id: nowPlayingMovie.id,
+            title: nowPlayingMovie.title,
+            meta: buildNowPlayingMeta({
+              year: nowPlayingMovie.year,
+              rating:
+                nowPlayingMovie.ratingValue === null
+                  ? ''
+                  : nowPlayingMovie.rating,
+              runtime: formatRuntimeLabel(nowPlayingMovie),
+            }),
+            posterUrl: nowPlayingMovie.posterUrl,
+            placeholderColor: nowPlayingMovie.placeholderColor,
+          }
+        : null,
+    [nowPlayingMovie, nowPlayingVisible],
+  )
 
   useAudioUnlockOnGesture()
   useInterfaceSounds()
@@ -2254,17 +1949,25 @@ export const TestGalleryApp = () => {
   const linkedFilmHandled = useRef(false)
   useEffect(() => {
     if (linkedFilmHandled.current || !movies.length) return
-    linkedFilmHandled.current = true
     const linked = linkedFilmRef.current
+    const movie = linked
+      ? movies.find((candidate) => matchesFilmLink(candidate, linked))
+      : undefined
+    // Not among the films loaded so far: ask for the whole catalogue and look
+    // again when it arrives.
+    if (linked && !movie && !catalogComplete) {
+      setLinkedNeedsCatalog(true)
+      return
+    }
+    linkedFilmHandled.current = true
     if (!linked) return
-    const movie = movies.find((candidate) => matchesFilmLink(candidate, linked))
     if (movie) openMovie(movie)
     try {
       window.history.replaceState(null, '', window.location.pathname)
     } catch {
       // The address can't be changed here; leave it.
     }
-  }, [movies, openMovie])
+  }, [catalogComplete, movies, openMovie])
 
   // Opening a poster yourself breaks the Shuffle Pro streak.
   const handleOpenMovie = useCallback(
@@ -2314,11 +2017,20 @@ export const TestGalleryApp = () => {
 
   // A stale flight must never replay when the same film opens another way.
   useEffect(() => {
-    if (!detailsMovieId) setPosterFlight(null)
+    if (!detailsMovieId) {
+      setPosterFlight(null)
+      setExpandDetailsFor(null)
+    }
   }, [detailsMovieId])
 
   const handleOpenFromGlobe = useCallback(
-    (movie: TestMovie, source: 'tap' | 'shuffle') => {
+    (movie: TestMovie, source: 'tap' | 'shuffle' | 'land') => {
+      // A quiet landing hands its film to the now-playing bar; no card.
+      if (source === 'land') {
+        sessionPathStore.add(movie.id)
+        setNowPlayingId(movie.id)
+        return
+      }
       startPosterFlight(movie)
       sessionPathStore.add(movie.id)
       if (source === 'shuffle') {
@@ -2432,12 +2144,23 @@ export const TestGalleryApp = () => {
       }
     }
     playCue('shuffleStart')
-    setSpinRequest({ itemId: movieId, nonce: performance.now() })
+    setSpinRequest({
+      itemId: movieId,
+      nonce: performance.now(),
+      quiet: usesNowPlayingBar({
+        isMobile: isMobileViewport,
+        immersive,
+        partyActive: party.phase !== 'off',
+        mode,
+      }),
+    })
   }, [
     activeMovieId,
     detailsMovieId,
     immersive,
+    isMobileViewport,
     mode,
+    party.phase,
     shuffleProController,
     visibleMovies,
     weightOf,
@@ -2467,9 +2190,11 @@ export const TestGalleryApp = () => {
   const blockWhileLoading = useCallback(
     (event: SyntheticEvent) => {
       if (!loaderLocked) return
+      // The loader card and the Gallery/Index switch stay live: the index
+      // needs only the catalogue, never the globe's posters.
       if (
         event.target instanceof Element &&
-        event.target.closest('.warp-gallery-preloader')
+        event.target.closest('.warp-gallery-preloader, .warp-mode-toggle')
       ) {
         return
       }
@@ -2560,6 +2285,8 @@ export const TestGalleryApp = () => {
       return
     }
     shuffleProController.noteAction({ type: 'break' })
+    // Filters, sort, search and view changes retire the bar's film too.
+    setNowPlayingId(null)
   }, [streakBreakSignature])
 
   // The premium card closing (or being replaced) fades the sky out.
@@ -2810,6 +2537,13 @@ export const TestGalleryApp = () => {
   // plain tap that shuffles. Losing focus mid-hold just lets the hold go.
   const handleShuffleRef = useRef(handleShuffle)
   handleShuffleRef.current = handleShuffle
+  const shuffleFromBar = useCallback(() => handleShuffleRef.current(), [])
+  // The bar opens its film's card straight into the full state.
+  const openNowPlaying = useCallback(() => {
+    if (!nowPlayingMovie) return
+    setExpandDetailsFor(nowPlayingMovie.id)
+    handleOpenMovie(nowPlayingMovie)
+  }, [handleOpenMovie, nowPlayingMovie])
 
   // A bonus run from the mood page: a Shuffle Pro run in the picked worlds'
   // colours. False when it could not start, so the landing falls back to an
@@ -2921,6 +2655,7 @@ export const TestGalleryApp = () => {
       data-details-open={detailsPresence.isPresent ? 'true' : 'false'}
       data-filter-open={filterPresence.isPresent ? 'true' : 'false'}
       data-gallery-ready={initialGalleryReady ? 'true' : 'false'}
+      data-now-playing={nowPlayingFilm ? 'true' : undefined}
       data-mode={mode}
       data-theme={theme}
       data-immersive={immersive ? 'true' : 'false'}
@@ -2951,6 +2686,17 @@ export const TestGalleryApp = () => {
       ) : null}
       <WeatherLayer register={registerStorm} />
       <GoldenHourWash />
+      {demoMode &&
+      mode === 'wall' &&
+      !detailsMovieId &&
+      !loaderLocked &&
+      (shuffleProSnapshot.phase === 'idle' ||
+        shuffleProSnapshot.phase === 'armed') ? (
+        <DemoStreakChip
+          controller={shuffleProController}
+          immersive={immersive}
+        />
+      ) : null}
       <GoldenHourNote active={goldenHour} />
       {/* Stays mounted in other views so returning to the gallery is instant. */}
       <WarpWall
@@ -3057,7 +2803,15 @@ export const TestGalleryApp = () => {
         dockTop={
           mode === 'wall' ? (
             <>
-              {initialGalleryReady && !spinHintSeen && !detailsMovieId ? (
+              <NowPlayingBar
+                film={nowPlayingFilm}
+                onOpen={openNowPlaying}
+                onShuffle={shuffleFromBar}
+              />
+              {initialGalleryReady &&
+              !spinHintSeen &&
+              !detailsMovieId &&
+              !nowPlayingFilm ? (
                 <div
                   className='warp-spin-hint'
                   role='note'
@@ -3536,6 +3290,7 @@ export const TestGalleryApp = () => {
           movies={movies}
           motionPhase={detailsPresence.motionPhase}
           movie={detailsPresence.value}
+          startExpanded={expandDetailsFor === detailsPresence.value.id}
           premiumTier={
             premiumFrame?.movieId === detailsPresence.value.id
               ? premiumFrame.tier
@@ -3569,12 +3324,12 @@ type WarpWallProps = {
   movies: TestMovie[]
   onLoadProgress: (percent: number) => void
   onMovingChange: (moving: boolean) => void
-  onOpenMovie: (movie: TestMovie, source: 'tap' | 'shuffle') => void
+  onOpenMovie: (movie: TestMovie, source: 'tap' | 'shuffle' | 'land') => void
   onReady: () => void
   onEngineAttached: (items: readonly { id: string }[]) => void
   onSelectMovie: (movie: TestMovie) => void
   onUserSpin: () => void
-  spinRequest: { itemId: string; nonce: number } | null
+  spinRequest: SpinRequest | null
   zoom: number
   initialFaceId: string | null
   shufflePro: ShuffleProController
@@ -3627,7 +3382,7 @@ const WarpWall = ({
   )
 
   const handleOpenItem = useCallback(
-    (item: (typeof menuItems)[number], source: 'tap' | 'shuffle') =>
+    (item: (typeof menuItems)[number], source: 'tap' | 'shuffle' | 'land') =>
       onOpenMovie(item.payload, source),
     [onOpenMovie],
   )
@@ -5349,6 +5104,39 @@ const RepeatPathsSetting = () => {
   )
 }
 
+// Demo mode: for showing the effects off. Found paths never block, the odds
+// are taken out, and a small counter shows how close the streaks are.
+const DemoModeSetting = () => {
+  const on = useSyncExternalStore(
+    shuffleProStore.subscribe,
+    () => shuffleProStore.get().demoMode,
+    () => shuffleProStore.get().demoMode,
+  )
+  return (
+    <fieldset className='warp-about-setting'>
+      <legend>Demo mode</legend>
+      <div className='warp-theme-switch'>
+        {([true, false] as const).map((option) => (
+          <button
+            type='button'
+            key={String(option)}
+            aria-pressed={on === option}
+            className={cn(on === option && 'is-active')}
+            onClick={() => shuffleProStore.setDemoMode(option)}
+          >
+            {option ? (
+              <Sparkles aria-hidden='true' />
+            ) : (
+              <X aria-hidden='true' />
+            )}
+            {option ? 'On' : 'Off'}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
 const AboutDrawer = ({
   theme,
   movieCount,
@@ -5416,6 +5204,7 @@ const AboutDrawer = ({
             <SessionPathSetting nudges={nudges} light={theme === 'light'} />
             <FavoriteLinksSetting nudges={nudges} light={theme === 'light'} />
             <RepeatPathsSetting />
+            <DemoModeSetting />
             <SoundSettingsPanel />
           </div>
         </section>
@@ -5523,6 +5312,7 @@ const AboutDrawer = ({
       <SessionPathSetting nudges={nudges} light={theme === 'light'} />
       <FavoriteLinksSetting nudges={nudges} light={theme === 'light'} />
       <RepeatPathsSetting />
+      <DemoModeSetting />
       <SoundSettingsPanel categories={false} />
       <button type='button' className='warp-party-entry' onClick={onStartParty}>
         <Users aria-hidden='true' />
@@ -5828,6 +5618,8 @@ type MovieDetailsCardProps = {
   movies: TestMovie[]
   motionPhase: MotionPhase
   movie: TestMovie
+  // Opens straight into the full card, skipping the summary step.
+  startExpanded: boolean
   premiumTier: Tier | null
   // Set when the premium card came from a mood-page bonus run.
   premiumMood: MoodPresentation | null
@@ -5844,6 +5636,7 @@ const MovieDetailsCard = ({
   movies,
   motionPhase,
   movie,
+  startExpanded,
   premiumTier,
   premiumMood,
   saved,
@@ -5874,14 +5667,16 @@ const MovieDetailsCard = ({
   // Wide screens get a centred panel with everything visible; small screens
   // keep the draggable bottom sheet with a More/Less toggle.
   const isWide = useMediaQuery('(min-width: 901px)')
-  const [isExpanded, setIsExpanded] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(startExpanded)
+  const startExpandedRef = useRef(startExpanded)
+  startExpandedRef.current = startExpanded
   const [dragOffset, setDragOffset] = useState(0)
   const dragStartYRef = useRef<number | null>(null)
   const dragPointerIdRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (movie.id) {
-      setIsExpanded(false)
+      setIsExpanded(startExpandedRef.current)
       setDragOffset(0)
     }
   }, [movie.id])

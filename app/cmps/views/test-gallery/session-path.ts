@@ -4,6 +4,7 @@
 // back through, and can be shared. It lasts for the visit (this tab), not
 // longer, and nothing leaves the device.
 
+import { migrateLegacyId } from './catalog-loader'
 import type { Tier } from './shuffle-pro/shuffle-pro-logic'
 
 export type PathPoint = {
@@ -55,7 +56,8 @@ export const parsePath = (raw: string | null): PathPoint[] => {
       const entry = item as Partial<PathPoint> | null
       if (entry && typeof entry.id === 'string') {
         out.push({
-          id: entry.id,
+          // Ids from before catalogue v2 (`${index}-${tmdbId}`) become `c${tmdbId}`.
+          id: migrateLegacyId(entry.id),
           tier:
             typeof entry.tier === 'string' && TIERS.includes(entry.tier)
               ? (entry.tier as Tier)
