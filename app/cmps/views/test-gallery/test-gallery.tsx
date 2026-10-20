@@ -47,6 +47,7 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useReducer,
@@ -77,6 +78,9 @@ import {
 import { constellationSetting } from './constellation'
 import { ConstellationLayer } from './constellation-layer'
 import { formatGenreCount } from './genre-count'
+import { sessionPathSetting } from './globe-lines'
+import type { LineKind } from './globe-lines-nudge'
+import { LineNudge, type LineNudges, useLineNudges } from './globe-lines-tip'
 import {
   InfiniteMovieMenu,
   type InfiniteMovieMenuControl,
@@ -274,6 +278,9 @@ const FULLSCREEN_HINT_STORAGE_KEY = 'wtw:fullscreen-hint-seen'
 const THEME_STORAGE_KEY = 'wtw:theme'
 // Phones sit the globe a little closer; applied as a camera change.
 const MOBILE_GLOBE_ZOOM = 1.085
+// Nothing to draw: stable empties for the globe's line layer.
+const NO_IDS: readonly string[] = []
+const NO_PATH: readonly PathPoint[] = []
 // How long a mood run waits for the globe to be rebuilt for the new films.
 const MOOD_RUN_WAIT_MS = 4000
 
@@ -2015,10 +2022,17 @@ export const TestGalleryApp = () => {
   })
   const menuControlRef = useRef<InfiniteMovieMenuControl | null>(null)
   const goldenHour = useGoldenHour()
-  const constellationsOn = useSyncExternalStore(
+  // Two independent switches, both off until turned on: the lines joining the
+  // saved films, and the trail of films this visit has landed on.
+  const linksOn = useSyncExternalStore(
     constellationSetting.subscribe,
     constellationSetting.get,
     constellationSetting.get,
+  )
+  const pathLinesOn = useSyncExternalStore(
+    sessionPathSetting.subscribe,
+    sessionPathSetting.get,
+    sessionPathSetting.get,
   )
   // Very fast flicks of the globe kick up rain or snow.
   const stormRef = useRef<WeatherStorm | null>(null)
@@ -3029,10 +3043,10 @@ export const TestGalleryApp = () => {
       />
       <ConstellationLayer
         controlRef={menuControlRef}
-        ids={savedEntries.map((entry) => entry.id)}
-        path={sessionPath}
+        ids={linksOn ? savedEntries.map((entry) => entry.id) : NO_IDS}
+        path={pathLinesOn ? sessionPath : NO_PATH}
         active={
-          constellationsOn &&
+          (linksOn || pathLinesOn) &&
           mode === 'wall' &&
           initialGalleryReady &&
           !detailsMovieId &&
@@ -3297,7 +3311,7 @@ export const TestGalleryApp = () => {
         }
       />
 
-      {constellationsOn && sessionPath.length >= 2 ? (
+      {pathLinesOn && sessionPath.length >= 2 ? (
         <button
           type='button'
           className={cn(
@@ -5288,24 +5302,52 @@ const AppearanceSetting = ({
   </fieldset>
 )
 
-// Joins the saved films on the globe into a shape of light.
-const ConstellationSetting = () => {
-  const on = useSyncExternalStore(
-    constellationSetting.subscribe,
-    constellationSetting.get,
-    constellationSetting.get,
-  )
+type GlobeLineSettingProps = {
+  kind: LineKind
+  label: string
+  store: typeof constellationSetting
+  nudges: LineNudges
+  light: boolean
+}
+
+// One of the two switches for lines drawn over the globe (both start off). On
+// the first open of the menu it carries a small tip saying what it does.
+const GlobeLineSetting = ({
+  kind,
+  label,
+  store,
+  nudges,
+  light,
+}: GlobeLineSettingProps) => {
+  const on = useSyncExternalStore(store.subscribe, store.get, store.get)
+  const tipId = useId()
+  const tipOpen = nudges.visible.includes(kind)
+  const fieldsetRef = useRef<HTMLFieldSetElement | null>(null)
+  // A tall menu scrolls: bring the first tip's switch into the middle of view.
+  useEffect(() => {
+    if (!tipOpen || kind !== 'path') return
+    fieldsetRef.current?.scrollIntoView({ block: 'center' })
+  }, [kind, tipOpen])
+  const describedBy = tipOpen ? tipId : undefined
   return (
-    <fieldset className='warp-about-setting'>
-      <legend>Session path</legend>
+    <fieldset
+      ref={fieldsetRef}
+      className={cn('warp-about-setting', tipOpen && 'has-nudge')}
+      aria-describedby={describedBy}
+    >
+      <legend>{label}</legend>
       <div className='warp-theme-switch'>
         {([true, false] as const).map((option) => (
           <button
             type='button'
             key={String(option)}
             aria-pressed={on === option}
+            aria-describedby={describedBy}
             className={cn(on === option && 'is-active')}
-            onClick={() => constellationSetting.set(option)}
+            onClick={() => {
+              store.set(option)
+              nudges.dismiss(kind)
+            }}
           >
             {option ? (
               <Sparkles aria-hidden='true' />
@@ -5316,9 +5358,52 @@ const ConstellationSetting = () => {
           </button>
         ))}
       </div>
+      {tipOpen ? (
+        <LineNudge
+          id={tipId}
+          kind={kind}
+          light={light}
+          placement={kind === 'path' ? 'above' : 'below'}
+          onDismiss={() => nudges.dismiss(kind)}
+        />
+      ) : null}
     </fieldset>
   )
 }
+
+// The trail of films this visit landed on, drawn on the globe.
+const SessionPathSetting = ({
+  nudges,
+  light,
+}: {
+  nudges: LineNudges
+  light: boolean
+}) => (
+  <GlobeLineSetting
+    kind='path'
+    label='Session path'
+    store={sessionPathSetting}
+    nudges={nudges}
+    light={light}
+  />
+)
+
+// Joins the saved films on the globe into a shape of light.
+const FavoriteLinksSetting = ({
+  nudges,
+  light,
+}: {
+  nudges: LineNudges
+  light: boolean
+}) => (
+  <GlobeLineSetting
+    kind='links'
+    label='Favorite links'
+    store={constellationSetting}
+    nudges={nudges}
+    light={light}
+  />
+)
 
 // Found Shuffle Pro paths stop starting runs; this brings them all back.
 const RepeatPathsSetting = () => {
@@ -5364,8 +5449,11 @@ const AboutDrawer = ({
   onShareRecap,
   onStartParty,
   onToggleMaximized,
-}: AboutDrawerProps) =>
-  maximized ? (
+}: AboutDrawerProps) => {
+  // First-open tips for the two globe-line switches; they live across the
+  // compact and full versions of the menu.
+  const nudges = useLineNudges()
+  return maximized ? (
     <section
       className='warp-about-page'
       data-motion={motionPhase}
@@ -5413,7 +5501,8 @@ const AboutDrawer = ({
           <h3>Settings</h3>
           <div className='warp-about-settings'>
             <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
-            <ConstellationSetting />
+            <SessionPathSetting nudges={nudges} light={theme === 'light'} />
+            <FavoriteLinksSetting nudges={nudges} light={theme === 'light'} />
             <RepeatPathsSetting />
             <SoundSettingsPanel />
           </div>
@@ -5519,7 +5608,8 @@ const AboutDrawer = ({
       <AboutControls />
       <ShuffleProShelf onShare={onShareRecap} />
       <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
-      <ConstellationSetting />
+      <SessionPathSetting nudges={nudges} light={theme === 'light'} />
+      <FavoriteLinksSetting nudges={nudges} light={theme === 'light'} />
       <RepeatPathsSetting />
       <SoundSettingsPanel categories={false} />
       <button type='button' className='warp-party-entry' onClick={onStartParty}>
@@ -5536,6 +5626,7 @@ const AboutDrawer = ({
       </button>
     </aside>
   )
+}
 
 type SavedDrawerProps = {
   motionPhase: MotionPhase
@@ -5660,9 +5751,9 @@ const PathDrawer = ({
     return movie ? [{ point, movie, index }] : []
   })
   const showOnGlobe = useSyncExternalStore(
-    constellationSetting.subscribe,
-    constellationSetting.get,
-    constellationSetting.get,
+    sessionPathSetting.subscribe,
+    sessionPathSetting.get,
+    sessionPathSetting.get,
   )
   const listRef = useRef<HTMLOListElement | null>(null)
   // Open on the newest step.
@@ -5698,7 +5789,7 @@ const PathDrawer = ({
         role='switch'
         aria-checked={showOnGlobe}
         className='warp-path-toggle'
-        onClick={() => constellationSetting.set(!showOnGlobe)}
+        onClick={() => sessionPathSetting.set(!showOnGlobe)}
       >
         <span>Show on globe</span>
         <i className='warp-path-switch' />

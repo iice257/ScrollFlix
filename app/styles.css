@@ -4363,6 +4363,12 @@
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     transform-origin: bottom right;
+    /* Taller than the screen scrolls inside, so the heading and close button
+       stay reachable. */
+    max-height: calc(100dvh - (28px + var(--warp-control-height) + 12px) - 16px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
     animation: warp-about-pop-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
@@ -4611,6 +4617,166 @@
   .warp-about-setting.is-wrap {
     align-items: flex-start;
     flex-wrap: wrap;
+  }
+
+  /* First-open tip beside a globe-line switch: a cut-out of the feature and
+     one line. It sits above or below the switch, never over it. */
+  .warp-about-setting.has-nudge {
+    position: relative;
+  }
+
+  .warp-nudge {
+    position: absolute;
+    right: 0;
+    z-index: 6;
+    width: min(176px, 100%);
+    cursor: pointer;
+    animation: warp-nudge-fade 220ms ease 320ms both;
+  }
+
+  .warp-nudge.is-above {
+    bottom: calc(100% + 12px);
+  }
+
+  .warp-nudge.is-below {
+    top: calc(100% + 12px);
+  }
+
+  .warp-nudge-card {
+    position: relative;
+    border: 1px solid rgb(255 255 255 / 0.18);
+    border-radius: 14px;
+    background: rgb(28 29 36 / 0.98);
+    padding: 6px 6px 10px;
+    box-shadow: 0 16px 40px rgb(0 0 0 / 0.55);
+  }
+
+  /* The pointer toward the switch. */
+  .warp-nudge-card::after {
+    content: "";
+    position: absolute;
+    right: 56px;
+    width: 10px;
+    height: 10px;
+    background: rgb(28 29 36);
+    transform: rotate(45deg);
+  }
+
+  .warp-nudge.is-above .warp-nudge-card::after {
+    bottom: -6px;
+    border-right: 1px solid rgb(255 255 255 / 0.18);
+    border-bottom: 1px solid rgb(255 255 255 / 0.18);
+  }
+
+  .warp-nudge.is-below .warp-nudge-card::after {
+    top: -6px;
+    border-top: 1px solid rgb(255 255 255 / 0.18);
+    border-left: 1px solid rgb(255 255 255 / 0.18);
+  }
+
+  .warp-nudge-art {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .warp-nudge-card p {
+    margin: 9px 6px 0;
+    color: rgb(255 255 255 / 0.86);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .warp-nudge-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border: 0;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 0.55);
+    padding: 0;
+    color: rgb(255 255 255 / 0.9);
+    transition: background 160ms ease;
+  }
+
+  .warp-nudge-close svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .warp-nudge-close:hover {
+    background: rgb(0 0 0 / 0.78);
+  }
+
+  .warp-nudge-close:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+  }
+
+  @keyframes warp-nudge-fade {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes warp-nudge-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  @keyframes warp-nudge-sink {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+  }
+
+  @keyframes warp-nudge-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @keyframes warp-nudge-ping {
+    from {
+      opacity: 0.9;
+      transform: scale(0.7);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.6);
+    }
+  }
+
+  /* With motion allowed the tip travels a few pixels, the lines draw
+     themselves in and the newest point pulses; otherwise it only fades. */
+  @media (prefers-reduced-motion: no-preference) {
+    .warp-nudge.is-above {
+      animation-name: warp-nudge-rise;
+    }
+
+    .warp-nudge.is-below {
+      animation-name: warp-nudge-sink;
+    }
+
+    .warp-nudge-draw {
+      stroke-dasharray: 1;
+      stroke-dashoffset: 1;
+      animation: warp-nudge-draw 700ms ease-out both;
+    }
+
+    .warp-nudge-pulse {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: warp-nudge-ping 2.2s ease-out 1.6s infinite;
+    }
   }
 
   .warp-sound-chips {
@@ -5287,6 +5453,9 @@
       bottom: calc(18px + var(--warp-control-height) + 10px);
       width: auto;
       left: 12px;
+      max-height: calc(
+        100dvh - (18px + var(--warp-control-height) + 10px) - 12px
+      );
     }
 
     .warp-about-sections {
