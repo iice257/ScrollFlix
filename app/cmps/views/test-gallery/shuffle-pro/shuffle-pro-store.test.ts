@@ -9,6 +9,8 @@ import {
 describe('shuffle pro store', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    shuffleProStore.setRepeatFound(false)
+    shuffleProStore.setDemoMode(false)
     shuffleProStore.reset()
   })
 
@@ -19,6 +21,7 @@ describe('shuffle pro store', () => {
       totalRuns: 0,
       bestStreak: 0,
       repeatFound: false,
+      demoMode: false,
     }
     expect(parseShuffleProData(null)).toEqual(empty)
     expect(parseShuffleProData('{nope')).toEqual(empty)
@@ -33,6 +36,7 @@ describe('shuffle pro store', () => {
         totalRuns: 0,
         bestStreak: 0,
         repeatFound: false,
+        demoMode: false,
       },
       'frost',
       100,
@@ -75,6 +79,32 @@ describe('shuffle pro store', () => {
       window.localStorage.getItem(SHUFFLE_PRO_STORAGE_KEY),
     )
     expect(restored.repeatFound).toBe(true)
+  })
+
+  it('keeps demo mode off by default, through a reset and a reload', () => {
+    expect(shuffleProStore.get().demoMode).toBe(false)
+    shuffleProStore.setDemoMode(true)
+    shuffleProStore.recordRun('frost', 1)
+    shuffleProStore.reset()
+    expect(shuffleProStore.get().demoMode).toBe(true)
+    const restored = parseShuffleProData(
+      window.localStorage.getItem(SHUFFLE_PRO_STORAGE_KEY),
+    )
+    expect(restored.demoMode).toBe(true)
+  })
+
+  it('reads demo mode safely: only a real true turns it on', () => {
+    const read = (demoMode: unknown) =>
+      parseShuffleProData(JSON.stringify({ v: 1, found: {}, demoMode }))
+        .demoMode
+    expect(read(true)).toBe(true)
+    expect(read('true')).toBe(false)
+    expect(read(1)).toBe(false)
+    expect(read(null)).toBe(false)
+    // Data saved before the setting existed.
+    expect(
+      parseShuffleProData(JSON.stringify({ v: 1, found: {} })).demoMode,
+    ).toBe(false)
   })
 
   it('notifies subscribers and can be reset', () => {

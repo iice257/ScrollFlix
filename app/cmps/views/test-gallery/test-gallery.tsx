@@ -120,6 +120,7 @@ import {
 } from './search-facets'
 import { type PathPoint, sessionPathStore } from './session-path'
 import { shareLink } from './share/share-link'
+import { DemoStreakChip } from './shuffle-pro/demo-streak-chip'
 import {
   GoldenHourNote,
   GoldenHourWash,
@@ -2012,6 +2013,11 @@ export const TestGalleryApp = () => {
   })
   const menuControlRef = useRef<InfiniteMovieMenuControl | null>(null)
   const goldenHour = useGoldenHour()
+  const demoMode = useSyncExternalStore(
+    shuffleProStore.subscribe,
+    () => shuffleProStore.get().demoMode,
+    () => shuffleProStore.get().demoMode,
+  )
   // Two independent switches, both off until turned on: the lines joining the
   // saved films, and the trail of films this visit has landed on.
   const linksOn = useSyncExternalStore(
@@ -2921,6 +2927,17 @@ export const TestGalleryApp = () => {
       ) : null}
       <WeatherLayer register={registerStorm} />
       <GoldenHourWash />
+      {demoMode &&
+      mode === 'wall' &&
+      !detailsMovieId &&
+      !loaderLocked &&
+      (shuffleProSnapshot.phase === 'idle' ||
+        shuffleProSnapshot.phase === 'armed') ? (
+        <DemoStreakChip
+          controller={shuffleProController}
+          immersive={immersive}
+        />
+      ) : null}
       <GoldenHourNote active={goldenHour} />
       {/* Stays mounted in other views so returning to the gallery is instant. */}
       <WarpWall
@@ -5332,6 +5349,39 @@ const RepeatPathsSetting = () => {
   )
 }
 
+// Demo mode: for showing the effects off. Found paths never block, the odds
+// are taken out, and a small counter shows how close the streaks are.
+const DemoModeSetting = () => {
+  const on = useSyncExternalStore(
+    shuffleProStore.subscribe,
+    () => shuffleProStore.get().demoMode,
+    () => shuffleProStore.get().demoMode,
+  )
+  return (
+    <fieldset className='warp-about-setting'>
+      <legend>Demo mode</legend>
+      <div className='warp-theme-switch'>
+        {([true, false] as const).map((option) => (
+          <button
+            type='button'
+            key={String(option)}
+            aria-pressed={on === option}
+            className={cn(on === option && 'is-active')}
+            onClick={() => shuffleProStore.setDemoMode(option)}
+          >
+            {option ? (
+              <Sparkles aria-hidden='true' />
+            ) : (
+              <X aria-hidden='true' />
+            )}
+            {option ? 'On' : 'Off'}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
 const AboutDrawer = ({
   theme,
   movieCount,
@@ -5399,6 +5449,7 @@ const AboutDrawer = ({
             <SessionPathSetting nudges={nudges} light={theme === 'light'} />
             <FavoriteLinksSetting nudges={nudges} light={theme === 'light'} />
             <RepeatPathsSetting />
+            <DemoModeSetting />
             <SoundSettingsPanel />
           </div>
         </section>
@@ -5506,6 +5557,7 @@ const AboutDrawer = ({
       <SessionPathSetting nudges={nudges} light={theme === 'light'} />
       <FavoriteLinksSetting nudges={nudges} light={theme === 'light'} />
       <RepeatPathsSetting />
+      <DemoModeSetting />
       <SoundSettingsPanel categories={false} />
       <button type='button' className='warp-party-entry' onClick={onStartParty}>
         <Users aria-hidden='true' />
