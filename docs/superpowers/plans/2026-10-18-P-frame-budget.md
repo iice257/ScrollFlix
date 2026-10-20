@@ -159,20 +159,20 @@
 - Produces: `buildPosterIndex(items: readonly { id: string }[], instanceCount: number) => Map<string, number>`, mapping each id to its first instance index. The engine rebuilds it only when `items` change.
 - Engine: `private canvasRect: DOMRect`, updated from a `ResizeObserver` plus window `scroll` and `resize` listeners (passive). Every per-frame path reads the cached rect.
 
-- [ ] **Step 1: Write failing tests.**
+- [x] **Step 1: Write failing tests.**
   - `twinkle-clock.test.ts`, with fake timers and a mocked rAF:
     - `no rAF while engine draws`
     - `ticks ≤ 15/s when idle`
     - `reduced motion never schedules`
   - `poster-index.test.ts › first instance wins`: items `[a, b]` with 5 instances give `a → 0` and `b → 1`.
-- [ ] **Step 2: Run** them. Expected: FAIL.
-- [ ] **Step 3: Implement** both modules, then use them in the engine.
+- [x] **Step 2: Run** them. Expected: FAIL.
+- [x] **Step 3: Implement** both modules, then use them in the engine.
   - Remove `getBoundingClientRect` from the per-frame code.
   - Remove the `getPosterWorld` per-frame walk, or delete it if it has no callers.
   - Hoist per-frame temporary arrays and matrices to reused fields.
-- [ ] **Step 4: Run** `npm run test:unit`. Expected: PASS.
-- [ ] **Step 5: Add e2e** `user-flows.spec.ts › links stay on posters after resize`. Resize the viewport, then repeat the pixel-brightness probe from Task 3.
-- [ ] **Step 6: Commit** with "Idle twinkle clock, cached canvas rect, allocation-free poster lookup".
+- [x] **Step 4: Run** `npm run test:unit`. Expected: PASS.
+- [x] **Step 5: Add e2e** `user-flows.spec.ts › links stay on posters after resize`. Resize the viewport, then repeat the pixel-brightness probe from Task 3.
+- [x] **Step 6: Commit** with "Idle twinkle clock, cached canvas rect, allocation-free poster lookup".
 
 ### Task 5: Audit the rest and hit the budget
 

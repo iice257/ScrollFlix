@@ -41,6 +41,7 @@ import {
   type SkyState,
   type SkyView,
 } from './shuffle-pro/sky-pass'
+import { createTwinkleClock } from './twinkle-clock'
 
 export type InfiniteMovieMenuItem<T> = {
   id: string
@@ -96,14 +97,9 @@ export type PosterRect = {
   height: number
 }
 
-export type PosterPoint = PosterRect & { id: string; depth: number }
-
 export type InfiniteMovieMenuControl = {
   // Where a film's poster is on screen right now, or null if it isn't shown.
   getPosterRect: (itemId: string) => PosterRect | null
-  // Where each of these films' posters is on screen, for those facing the
-  // viewer. Cheap: one pass over the globe.
-  getPosterPoints: (ids: ReadonlySet<string>) => PosterPoint[]
   // The saved-film constellations and the session path, drawn by the globe
   // itself in its own pass (so they turn with it and cost no extra canvas).
   setConstellations: (input: ConstellationInput) => void
@@ -119,8 +115,10 @@ type Mat4 = Float32Array
 
 const SPHERE_RADIUS = 2.58
 const TARGET_FRAME_DURATION = 1000 / 60
-// How often the constellations twinkle while the globe is otherwise at rest.
-const TWINKLE_FRAME_MS = 1000 / 15
+// The loop goes to sleep after this many frames with nothing to draw.
+const SLEEP_AFTER_STILL_FRAMES = 3
+// While asleep, a slow timer double-checks that nothing was missed.
+const WATCHDOG_MS = 500
 const ICON_TEXTURE_CELL_SIZE = 128
 const ICON_TEXTURE_PADDING = 12
 // Globe density: up to ICON_INSTANCE_COUNT posters. Smaller sets shrink the
@@ -686,17 +684,15 @@ void main() {
 }
 `
 
+const ORIGIN: Vec3 = [0, 0, 0]
+const UP: Vec3 = [0, 1, 0]
+
 const identityMat4 = (): Mat4 => {
   const out = new Float32Array(16)
   out[0] = 1
   out[5] = 1
   out[10] = 1
   out[15] = 1
-  return out
-}
-
-const copyMat4 = (out: Mat4, matrix: Mat4) => {
-  out.set(matrix)
   return out
 }
 
@@ -753,22 +749,6 @@ const multiplyMat4 = (out: Mat4, a: Mat4, b: Mat4) => {
   out[13] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31
   out[14] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32
   out[15] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33
-  return out
-}
-
-const translationMat4 = ([x, y, z]: Vec3) => {
-  const out = identityMat4()
-  out[12] = x
-  out[13] = y
-  out[14] = z
-  return out
-}
-
-const scalingMat4 = ([x, y, z]: Vec3) => {
-  const out = identityMat4()
-  out[0] = x
-  out[5] = y
-  out[10] = z
   return out
 }
 
@@ -885,7 +865,6 @@ const subtract3 = (a: Vec3, b: Vec3): Vec3 => [
   a[1] - b[1],
   a[2] - b[2],
 ]
-const negate3 = ([x, y, z]: Vec3): Vec3 => [-x, -y, -z]
 const dot3 = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const cross3 = (a: Vec3, b: Vec3): Vec3 => [
   a[1] * b[2] - a[2] * b[1],
@@ -1421,7 +1400,20 @@ class InfiniteMovieEngine<T> {
   private paused = false
   // Idle frames are skipped: when nothing has moved or been uploaded since the
   // last draw, the previous frame is still correct.
-  private renderDirty = true
+  private dirty = true
+  private get renderDirty() {
+    return this.dirty
+  }
+
+  // Anything that needs a new frame also wakes a sleeping loop.
+  private set renderDirty(value: boolean) {
+    this.dirty = value
+    if (value) this.wake()
+  }
+
+  private sleeping = false
+  private stillFrames = 0
+  private watchdog: number | null = null
   private lastRenderedOrientation: Quat = [0, 0, 0, 0]
   private lastRenderedCameraZ = Number.NaN
   private contextLost = false
@@ -1434,6 +1426,11 @@ class InfiniteMovieEngine<T> {
   private detailEaseMs = DETAIL_SLOW_EASE_MS
   private readonly iconBuffers = createDiscGeometry()
   private readonly worldMatrix = identityMat4()
+  private readonly scratchMatrix = identityMat4()
+  private readonly scratchTranslate = identityMat4()
+  private readonly scratchFace = identityMat4()
+  private readonly scratchScale = identityMat4()
+  private readonly scratchBack = identityMat4()
   private readonly viewMatrix = identityMat4()
   private readonly cameraMatrix = identityMat4()
   private readonly projectionMatrix = identityMat4()
@@ -1484,7 +1481,16 @@ class InfiniteMovieEngine<T> {
   private posterIndex: Map<string, number> | null = null
   private readonly constellationEpochMs = Date.now()
   private constellationDrawInUntil = 0
-  private lastTwinkleAt = 0
+  private readonly twinkle = createTwinkleClock({
+    reducedMotion:
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    onTick: () => this.twinkleTick(),
+  })
+  // The canvas rectangle, read lazily and refreshed after a resize or scroll,
+  // so per-frame work never forces a layout.
+  private rectStale = true
+  private cachedRect: DOMRect | null = null
   private readonly viewProjection = identityMat4()
   private pxScale = 1
   private readonly reducedMotionQuery =
@@ -1540,6 +1546,7 @@ class InfiniteMovieEngine<T> {
       this.items.length,
     )
     this.sphereRadius = sphereRadius
+    this.scratchBack[14] = -sphereRadius
     this.cameraRatio = Math.sqrt(radiusRatio)
     this.cameraRestZ = (3.42 * scale * this.cameraRatio) / this.zoom
     this.cameraPosition = [0, 0, this.cameraRestZ]
@@ -1599,7 +1606,46 @@ class InfiniteMovieEngine<T> {
     canvas.dataset.itemCount = String(this.items.length)
     canvas.dataset.webglState = 'loading'
     canvas.addEventListener('webglcontextlost', this.handleContextLost)
+    this.watchCanvasRect()
+    this.watchReducedMotion()
     this.resize()
+  }
+
+  private watchCanvasRect() {
+    const stale = () => {
+      this.rectStale = true
+    }
+    const observer =
+      typeof ResizeObserver === 'function' ? new ResizeObserver(stale) : null
+    observer?.observe(this.canvas)
+    window.addEventListener('scroll', stale, { passive: true, capture: true })
+    window.addEventListener('resize', stale, { passive: true })
+    this.cleanupCallbacks.push(() => {
+      observer?.disconnect()
+      window.removeEventListener('scroll', stale, { capture: true })
+      window.removeEventListener('resize', stale)
+    })
+  }
+
+  private watchReducedMotion() {
+    const query = this.reducedMotionQuery
+    if (!query) return
+    const onChange = () => {
+      this.twinkle.setReducedMotion(query.matches)
+      this.renderDirty = true
+    }
+    query.addEventListener?.('change', onChange)
+    this.cleanupCallbacks.push(() =>
+      query.removeEventListener?.('change', onChange),
+    )
+  }
+
+  private canvasRect() {
+    if (this.rectStale || !this.cachedRect) {
+      this.cachedRect = this.canvas.getBoundingClientRect()
+      this.rectStale = false
+    }
+    return this.cachedRect
   }
 
   run(time = 0) {
@@ -1637,9 +1683,70 @@ class InfiniteMovieEngine<T> {
       this.lastFrameDrawn = drawn
     }
     this.checkFlick(time)
+    if (drawn) {
+      this.stillFrames = 0
+      this.twinkle.engineDrew()
+    } else {
+      this.stillFrames += 1
+    }
+    if (this.stillFrames >= SLEEP_AFTER_STILL_FRAMES && !this.needsFrame()) {
+      this.sleep()
+      return
+    }
     this.frameId = window.requestAnimationFrame((nextTime) =>
       this.run(nextTime),
     )
+  }
+
+  // Things that must keep the loop running even when the last frame was still.
+  private needsFrame() {
+    return (
+      this.control.isPointerDown ||
+      this.control.autoSpin !== null ||
+      this.hasSpinTarget() ||
+      this.nudgePos !== null ||
+      this.skyState !== null ||
+      this.dirty
+    )
+  }
+
+  // Nothing is moving: stop asking for frames until something changes. Every
+  // way of changing the globe calls wake(); the watchdog is only a net.
+  private sleep() {
+    this.sleeping = true
+    this.frameId = 0
+    this.armWatchdog()
+  }
+
+  private armWatchdog() {
+    if (this.watchdog !== null) window.clearTimeout(this.watchdog)
+    this.watchdog = window.setTimeout(() => {
+      this.watchdog = null
+      if (!this.sleeping) return
+      if (this.needsFrame()) this.wake()
+      else this.armWatchdog()
+    }, WATCHDOG_MS)
+  }
+
+  private wake() {
+    if (!this.sleeping) return
+    this.sleeping = false
+    this.stillFrames = 0
+    if (this.watchdog !== null) window.clearTimeout(this.watchdog)
+    this.watchdog = null
+    if (this.disposed || this.contextLost || this.paused) return
+    this.frameId = window.requestAnimationFrame((time) => {
+      this.time = time
+      this.run(time)
+    })
+  }
+
+  // The twinkle clock asks for one more draw while the globe is at rest. The
+  // matrices have not changed, so this skips animate().
+  private twinkleTick() {
+    if (this.disposed || this.contextLost || this.paused) return
+    if (this.sleeping) this.render()
+    else this.dirty = true
   }
 
   // A drag let go of at speed keeps turning; past a high speed that is a flick.
@@ -1658,12 +1765,17 @@ class InfiniteMovieEngine<T> {
   pause() {
     if (this.paused || this.disposed) return
     this.paused = true
+    this.sleeping = false
+    if (this.watchdog !== null) window.clearTimeout(this.watchdog)
+    this.watchdog = null
     window.cancelAnimationFrame(this.frameId)
   }
 
   resume() {
     if (!this.paused || this.disposed || this.contextLost) return
     this.paused = false
+    this.sleeping = false
+    this.stillFrames = 0
     this.resize()
     this.frameId = window.requestAnimationFrame((time) => {
       this.time = time
@@ -1698,6 +1810,8 @@ class InfiniteMovieEngine<T> {
     if (this.disposed) return
     this.disposed = true
     window.cancelAnimationFrame(this.frameId)
+    if (this.watchdog !== null) window.clearTimeout(this.watchdog)
+    this.twinkle.dispose()
     if (this.nudgeTimer) window.clearTimeout(this.nudgeTimer)
     this.cleanupCallbacks.forEach((cleanup) => cleanup())
     this.control.dispose()
@@ -1718,6 +1832,7 @@ class InfiniteMovieEngine<T> {
   }
 
   beginPointerDrag(clientX: number, clientY: number, pointerId?: number) {
+    this.wake()
     this.cancelSpin()
     this.control.beginTracking()
     if (this.nudgeTimer) window.clearTimeout(this.nudgeTimer)
@@ -1727,20 +1842,24 @@ class InfiniteMovieEngine<T> {
   }
 
   movePointerDrag(clientX: number, clientY: number) {
+    this.wake()
     this.control.moveDrag(clientX, clientY)
   }
 
   endPointerDrag(pointerId?: number) {
+    this.wake()
     this.control.endDrag(pointerId)
   }
 
   cancelPointerDrag(pointerId?: number) {
+    this.wake()
     this.control.cancelDrag(pointerId)
   }
 
   // Wheel and arrow keys drive a short virtual drag so they share the exact
   // feel (inertia and snapping) of a pointer drag.
   nudge(dx: number, dy: number) {
+    this.wake()
     this.cancelSpin()
     if (this.control.isPointerDown && !this.nudgePos) return
     const center: Vec2 = [
@@ -1815,6 +1934,7 @@ class InfiniteMovieEngine<T> {
   // onArrive. Manual input (drag, wheel, keys) cancels it.
   spinToItem(itemId: string, onArrive: (index: number) => void) {
     if (this.disposed) return
+    this.wake()
     this.spinTarget = {
       index: this.findBestInstanceIndexForItem(itemId),
       onArrive,
@@ -1851,6 +1971,7 @@ class InfiniteMovieEngine<T> {
       this.spinTarget?.index ?? this.findBestInstanceIndexForItem(itemId)
     const position = this.instancePositions[index]
     if (!position) return
+    this.wake()
     this.spinTarget = null
     this.control.snapStrength = null
     this.control.beginSettle(normalize3(position), duration, () => {
@@ -1889,6 +2010,7 @@ class InfiniteMovieEngine<T> {
 
   // Lets the spin decay on its own with the given time constant.
   stopAutoSpin(releaseTauMs: number) {
+    this.wake()
     this.control.autoSpin = null
     this.control.releaseTauMs = releaseTauMs
   }
@@ -1900,6 +2022,7 @@ class InfiniteMovieEngine<T> {
   // The camera's extra distance eases toward the target as a spring: critical
   // damping while a run builds, slightly underdamped for the landing glide.
   setCameraPull(target: number, freq: number, zeta: number) {
+    this.wake()
     this.pull.target = target
     this.pull.freq = freq
     this.pull.zeta = zeta
@@ -1907,6 +2030,7 @@ class InfiniteMovieEngine<T> {
 
   // A quick push on the camera (negative = toward the globe) that springs back.
   kickCamera(velocity: number) {
+    this.wake()
     this.kick.v += velocity
   }
 
@@ -2013,7 +2137,7 @@ class InfiniteMovieEngine<T> {
       ry: HIT_REGION_RY,
     },
   ): PickSnapshot {
-    const rect = this.canvas.getBoundingClientRect()
+    const rect = this.canvasRect()
     const ellipse: PickEllipse = {
       cx: rect.left + 0.5 * rect.width,
       cy: rect.top + region.centerY * rect.height,
@@ -2067,7 +2191,7 @@ class InfiniteMovieEngine<T> {
   // Where an item's poster is on screen right now (viewport pixels), for the
   // poster that is closest to the viewer if the item appears more than once.
   getPosterRect(itemId: string): PosterRect | null {
-    const rect = this.canvas.getBoundingClientRect()
+    const rect = this.canvasRect()
     if (!rect.width || !rect.height) return null
     const viewProjection = multiplyMat4(
       identityMat4(),
@@ -2110,52 +2234,6 @@ class InfiniteMovieEngine<T> {
       }
     })
     return (best as { rect: PosterRect } | null)?.rect ?? null
-  }
-
-  getPosterPoints(ids: ReadonlySet<string>): PosterPoint[] {
-    const rect = this.canvas.getBoundingClientRect()
-    if (!ids.size || !rect.width || !rect.height) return []
-    const viewProjection = multiplyMat4(
-      identityMat4(),
-      this.projectionMatrix,
-      this.viewMatrix,
-    )
-    const mvp = identityMat4()
-    const toScreen = (x: number, y: number): Vec2 | null => {
-      const clipX = mvp[0] * x + mvp[4] * y + mvp[12]
-      const clipY = mvp[1] * x + mvp[5] * y + mvp[13]
-      const clipW = mvp[3] * x + mvp[7] * y + mvp[15]
-      if (clipW <= 0.0001) return null
-      return [
-        rect.left + ((clipX / clipW + 1) / 2) * rect.width,
-        rect.top + ((1 - clipY / clipW) / 2) * rect.height,
-      ]
-    }
-    const found = new Map<string, PosterPoint>()
-    this.instanceMatrices.forEach((matrix, index) => {
-      const item = this.items[index % Math.max(1, this.items.length)]
-      if (!item || !ids.has(item.id)) return
-      const centerZ = matrix[14]
-      if (centerZ < this.sphereRadius * 0.15) return
-      const previous = found.get(item.id)
-      if (previous && previous.depth >= centerZ) return
-      multiplyMat4(mvp, viewProjection, matrix)
-      const center = toScreen(0, 0)
-      const right = toScreen(POSTER_HALF_WIDTH, 0)
-      const up = toScreen(0, POSTER_HALF_HEIGHT)
-      if (!center || !right || !up) return
-      const halfWidth = Math.hypot(right[0] - center[0], right[1] - center[1])
-      const halfHeight = Math.hypot(up[0] - center[0], up[1] - center[1])
-      found.set(item.id, {
-        id: item.id,
-        depth: centerZ,
-        left: center[0] - halfWidth,
-        top: center[1] - halfHeight,
-        width: halfWidth * 2,
-        height: halfHeight * 2,
-      })
-    })
-    return [...found.values()]
   }
 
   // Resolves a click against a snapshot; same snapshot and point, same poster.
@@ -2719,17 +2797,12 @@ class InfiniteMovieEngine<T> {
     )
     const skyUp = this.skyState !== null && this.skyState.intensity > 0.002
     const now = performance.now()
-    if (this.constellationsShown()) {
-      // New links draw themselves in; the stars twinkle a little.
-      if (Date.now() < this.constellationDrawInUntil) this.renderDirty = true
-      if (
-        !this.reducedMotionQuery?.matches &&
-        now - this.lastTwinkleAt >= TWINKLE_FRAME_MS
-      ) {
-        this.lastTwinkleAt = now
-        this.renderDirty = true
-      }
-    }
+    // New links draw themselves in. The twinkle is the clock's job.
+    if (
+      this.constellationsShown() &&
+      Date.now() < this.constellationDrawInUntil
+    )
+      this.renderDirty = true
     if (now < this.revealUntil) {
       this.renderDirty = true
       this.revealPending = true
@@ -2761,22 +2834,24 @@ class InfiniteMovieEngine<T> {
         : -this.detailProgress * 0.035
       const finalScale =
         depthScale * Math.max(0.21, ICON_REST_SCALE + detailLift)
-      const matrix = identityMat4()
-      const translateToSphere = translationMat4(negate3(transformed))
-      const faceCenter = targetToMat4(
-        identityMat4(),
-        [0, 0, 0],
-        transformed,
-        [0, 1, 0],
+      // translate-to-sphere * face-centre * scale * back-translate, built in
+      // reused matrices so a spinning frame allocates nothing per poster.
+      const translateToSphere = this.scratchTranslate
+      translateToSphere[12] = -transformed[0]
+      translateToSphere[13] = -transformed[1]
+      translateToSphere[14] = -transformed[2]
+      const scaleMatrix = this.scratchScale
+      scaleMatrix[0] = finalScale
+      scaleMatrix[5] = finalScale
+      scaleMatrix[10] = finalScale
+      const matrix = this.scratchMatrix
+      multiplyMat4(
+        matrix,
+        translateToSphere,
+        targetToMat4(this.scratchFace, ORIGIN, transformed, UP),
       )
-      const scaleMatrix = scalingMat4([finalScale, finalScale, finalScale])
-      const backTranslate = translationMat4([0, 0, -this.sphereRadius])
-
-      multiplyMat4(matrix, matrix, translateToSphere)
-      multiplyMat4(matrix, matrix, faceCenter)
       multiplyMat4(matrix, matrix, scaleMatrix)
-      multiplyMat4(matrix, matrix, backTranslate)
-      copyMat4(this.instanceMatrices[index], matrix)
+      multiplyMat4(this.instanceMatrices[index], matrix, this.scratchBack)
     })
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer)
@@ -2909,6 +2984,7 @@ class InfiniteMovieEngine<T> {
     let newest = 0
     for (const entry of input.path) newest = Math.max(newest, entry.at)
     this.constellationDrawInUntil = newest ? newest + DRAW_IN_MS + 60 : 0
+    this.twinkle.setWanted(this.constellationsShown())
   }
 
   private constellationsShown() {
@@ -2932,15 +3008,14 @@ class InfiniteMovieEngine<T> {
     const pass = this.constellations
     if (this.constellationsStale) {
       this.constellationsStale = false
-      pass.setGeometry(
-        this.constellationCache.get(
-          input.ids,
-          input.path,
-          this.posterInstanceOf,
-          input.light,
-          this.constellationWorld,
-        ),
+      const geo = this.constellationCache.get(
+        input.ids,
+        input.path,
+        this.posterInstanceOf,
+        input.light,
+        this.constellationWorld,
       )
+      pass.setGeometry(geo)
     }
     pass.setMatrices(this.instanceMatricesArray, this.instancePositions.length)
     multiplyMat4(this.viewProjection, this.projectionMatrix, this.viewMatrix)
@@ -3585,7 +3660,6 @@ export const InfiniteMovieMenu = <T,>({
     controlRef.current = {
       getPosterRect: (itemId) =>
         engineRef.current?.getPosterRect(itemId) ?? null,
-      getPosterPoints: (ids) => engineRef.current?.getPosterPoints(ids) ?? [],
       setConstellations: (input) => {
         constellationsRef.current = input
         engineRef.current?.setConstellations(input)

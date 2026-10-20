@@ -2,15 +2,14 @@ import { readFileSync } from 'node:fs'
 import { type Page, expect, test } from '@playwright/test'
 
 // Film ids are `${index}-${tmdbId}`; these are all in the first data file.
-const filmIds = (indices: number[]) =>
-  indices.map((index) => {
-    const films = JSON.parse(
-      readFileSync('public/json/0.json', 'utf8'),
-    ) as Array<{
-      id: number | string
-    }>
-    return `${index}-${films[index].id}`
-  })
+const filmIds = (indices: number[]) => {
+  const films = JSON.parse(
+    readFileSync('public/json/0.json', 'utf8'),
+  ) as Array<{
+    id: number | string
+  }>
+  return indices.map((index) => `${index}-${films[index].id}`)
+}
 
 // Mean brightness change and the number of pixels that differ between two
 // screenshots (PNG, base64), decoded in the page.
@@ -44,6 +43,88 @@ const compareShots = (page: Page, before: string, after: string) =>
     },
     [before, after],
   )
+
+// Opens the gallery with saved films and a session path, so links and stars
+// are drawn somewhere on the globe whichever way it faces, and turns the globe
+// a little so they are not where they started.
+const openWithConstellations = async (page: Page) => {
+  const saved = filmIds(Array.from({ length: 200 }, (_, at) => at)).map(
+    (id, at) => ({ id, savedAt: 1_700_000_000_000 - at * 1_000 }),
+  )
+  const path = filmIds([8, 33, 64, 12, 101, 140, 175, 90]).map((id, at) => ({
+    id,
+    tier: [null, 'frost', null, 'amethyst', 'jade', null, 'gold', 'frost'][at],
+  }))
+  await page.addInitScript(
+    ({ saved, path }) => {
+      try {
+        window.localStorage.setItem('wtw:saved:v1', JSON.stringify(saved))
+        window.sessionStorage.setItem(
+          'wtw:session-path:v1',
+          JSON.stringify(path),
+        )
+        window.localStorage.setItem('wtw:spin-hint-seen', '1')
+        window.localStorage.setItem('wtw:theme', 'dark')
+      } catch {}
+    },
+    { saved, path },
+  )
+  await page.reload()
+  await page
+    .getByRole('button', { name: 'Skip first time load' })
+    .click({ timeout: 3_000 })
+    .catch(() => {})
+  await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
+  const globe = page.getByLabel('Infinite movie poster menu')
+  const webgl = await expect(globe)
+    .toHaveAttribute('data-webgl-state', 'ready', { timeout: 60_000 })
+    .then(
+      () => true,
+      () => false,
+    )
+  test.skip(!webgl, 'needs WebGL')
+
+  await page.mouse.move(700, 450)
+  await page.mouse.down()
+  await page.mouse.move(520, 470, { steps: 12 })
+  await page.mouse.up()
+  await page.waitForTimeout(2_500)
+}
+
+// Compares the globe with the marks on and off. Marks sit on a few posters,
+// so if none are in view the globe is turned a little and it tries again.
+const marksDiffer = (page: Page) => {
+  const clip = { x: 0, y: 0, width: 900, height: 700 }
+  // The drawer blurs the globe, so change the setting, close it, then look.
+  const shot = async (on: boolean) => {
+    await page.locator('button.warp-info-button').click()
+    await page
+      .getByRole('group', { name: 'Session path' })
+      .getByRole('button', { name: on ? 'On' : 'Off', exact: true })
+      .click()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.warp-about-drawer')).toHaveCount(0)
+    await page.waitForTimeout(500)
+    return (await page.screenshot({ clip })).toString('base64')
+  }
+  return async () => {
+    let diff = { changed: 0, meanDelta: 0 }
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const on = await shot(true)
+      const off = await shot(false)
+      diff = await compareShots(page, off, on)
+      if (diff.changed > 30) break
+      await page.mouse.move(700, 450)
+      await page.mouse.down()
+      await page.mouse.move(560, 430, { steps: 10 })
+      await page.mouse.up()
+      await page.waitForTimeout(2_000)
+    }
+    // Leave the marks on for whatever comes next.
+    await shot(true)
+    return diff
+  }
+}
 
 test.describe('Gallery user flows', () => {
   test.beforeEach(async ({ page }) => {
@@ -337,75 +418,8 @@ test.describe('Gallery user flows', () => {
       (page.viewportSize()?.width ?? 0) <= 900,
       'the drawer fills a phone',
     )
-
-    // Saved films and a session path, so links and stars are drawn somewhere
-    // on the globe whichever way it faces.
-    const saved = filmIds(
-      Array.from({ length: 20 }, (_, at) => 3 + at * 9),
-    ).map((id, at) => ({ id, savedAt: 1_700_000_000_000 - at * 1_000 }))
-    const path = filmIds([8, 33, 64, 12, 101, 140, 175, 90]).map((id, at) => ({
-      id,
-      tier: [null, 'frost', null, 'amethyst', 'jade', null, 'gold', 'frost'][
-        at
-      ],
-    }))
-    await page.addInitScript(
-      ({ saved, path }) => {
-        try {
-          window.localStorage.setItem('wtw:saved:v1', JSON.stringify(saved))
-          window.sessionStorage.setItem(
-            'wtw:session-path:v1',
-            JSON.stringify(path),
-          )
-          window.localStorage.setItem('wtw:spin-hint-seen', '1')
-          window.localStorage.setItem('wtw:theme', 'dark')
-        } catch {}
-      },
-      { saved, path },
-    )
-    await page.reload()
-    await page
-      .getByRole('button', { name: 'Skip first time load' })
-      .click({ timeout: 3_000 })
-      .catch(() => {})
-    await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
-    const globe = page.getByLabel('Infinite movie poster menu')
-    const webgl = await expect(globe)
-      .toHaveAttribute('data-webgl-state', 'ready', { timeout: 60_000 })
-      .then(
-        () => true,
-        () => false,
-      )
-    test.skip(!webgl, 'needs WebGL')
-
-    // Turn the globe a little, so the links are not where they started.
-    await page.mouse.move(700, 450)
-    await page.mouse.down()
-    await page.mouse.move(520, 470, { steps: 12 })
-    await page.mouse.up()
-    await page.waitForTimeout(2_500)
-
-    const about = page.locator('button.warp-info-button')
-    const drawer = page.locator('.warp-about-drawer')
-    const closeAbout = () => page.keyboard.press('Escape')
-    const clip = { x: 0, y: 0, width: 900, height: 700 }
-    // The drawer blurs the globe, so change the settings, close it, then look.
-    const showConstellations = async (on: boolean) => {
-      await about.click()
-      await page
-        .getByRole('group', { name: 'Session path' })
-        .getByRole('button', { name: on ? 'On' : 'Off', exact: true })
-        .click()
-      await closeAbout()
-      await expect(drawer).toHaveCount(0)
-      await page.waitForTimeout(500)
-      return (await page.screenshot({ clip })).toString('base64')
-    }
-    const lines = async () => {
-      const on = await showConstellations(true)
-      const off = await showConstellations(false)
-      return compareShots(page, off, on)
-    }
+    await openWithConstellations(page)
+    const lines = marksDiffer(page)
 
     // Light marks on the dark globe...
     const dark = await lines()
@@ -413,12 +427,29 @@ test.describe('Gallery user flows', () => {
     expect(dark.meanDelta).toBeGreaterThan(0)
 
     // ...and ink on the light one.
-    await about.click()
+    await page.locator('button.warp-info-button').click()
     await page.getByRole('button', { name: 'Light', exact: true }).click()
-    await closeAbout()
+    await page.keyboard.press('Escape')
     await expect(page.locator('main')).toHaveAttribute('data-theme', 'light')
     const light = await lines()
     expect(light.changed).toBeGreaterThan(30)
     expect(light.meanDelta).toBeLessThan(0)
+  })
+
+  test('links stay on posters after resize', async ({ page }) => {
+    test.skip(
+      (page.viewportSize()?.width ?? 0) <= 900,
+      'the drawer fills a phone',
+    )
+    await openWithConstellations(page)
+
+    // The globe has gone to sleep by now; a resize must wake it and the marks
+    // must be redrawn with the posters at the new size.
+    await page.setViewportSize({ width: 1180, height: 760 })
+    await page.waitForTimeout(1_200)
+
+    const diff = await marksDiffer(page)()
+    expect(diff.changed).toBeGreaterThan(30)
+    expect(diff.meanDelta).toBeGreaterThan(0)
   })
 })
