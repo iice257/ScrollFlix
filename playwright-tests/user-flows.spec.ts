@@ -1,14 +1,15 @@
 import { readFileSync } from 'node:fs'
 import { type Page, expect, test } from '@playwright/test'
 
-// Film ids are `${index}-${tmdbId}`; these are all in the first data file.
+// Film ids are `c${tmdbId}`; these indices are all in the first catalogue chunk.
 const filmIds = (indices: number[]) => {
+  const manifest = JSON.parse(
+    readFileSync('public/json/catalog/manifest.json', 'utf8'),
+  ) as { chunks: string[] }
   const films = JSON.parse(
-    readFileSync('public/json/0.json', 'utf8'),
-  ) as Array<{
-    id: number | string
-  }>
-  return indices.map((index) => `${index}-${films[index].id}`)
+    readFileSync(`public/json/catalog/${manifest.chunks[0]}`, 'utf8'),
+  ) as Array<[number | string]>
+  return indices.map((index) => `c${films[index][0]}`)
 }
 
 // Mean brightness change and the number of pixels that differ between two

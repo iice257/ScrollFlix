@@ -153,14 +153,15 @@ type Row = {
 
 const rows: Row[] = []
 
-const localIds = (indices: number[]) =>
-  indices.map((index) => {
-    const file = Math.floor(index / 216)
-    const films = JSON.parse(
-      readFileSync(`public/json/${file}.json`, 'utf8'),
-    ) as Array<{ id: number | string }>
-    return `${index}-${films[index % 216].id}`
-  })
+const localIds = (indices: number[]) => {
+  const manifest = JSON.parse(
+    readFileSync('public/json/catalog/manifest.json', 'utf8'),
+  ) as { chunks: string[] }
+  const films = JSON.parse(
+    readFileSync(`public/json/catalog/${manifest.chunks[0]}`, 'utf8'),
+  ) as Array<[number | string]>
+  return indices.map((index) => `c${films[index][0]}`)
+}
 
 const seedStorage = async (page: Page) => {
   const saved = localIds(SAVED_INDICES).map((id, position) => ({
