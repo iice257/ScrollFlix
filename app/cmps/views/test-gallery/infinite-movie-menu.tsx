@@ -56,12 +56,14 @@ type InfiniteMovieMenuProps<T> = {
   isActive?: boolean
   onMovingChange?: (moving: boolean) => void
   // `source` tells a user's tap apart from a shuffle landing on the poster.
+  // 'land' is a quiet shuffle landing: the globe does not focus the poster.
   onOpenItem?: (
     item: InfiniteMovieMenuItem<T>,
-    source: 'tap' | 'shuffle',
+    source: 'tap' | 'shuffle' | 'land',
   ) => void
   // Spin to this item, then open it (Shuffle). The nonce re-triggers repeats.
-  spinRequest?: { itemId: string; nonce: number } | null
+  // `quiet` lands without focusing the poster, for when no card follows.
+  spinRequest?: { itemId: string; nonce: number; quiet?: boolean } | null
   onReady?: () => void
   // Called once a globe built for this exact set of items is running (the
   // globe is rebuilt, a little late, when the films change).
@@ -3503,13 +3505,17 @@ export const InfiniteMovieMenu = <T,>({
     const engine = engineRef.current
     if (!engine) {
       // Fallback (no WebGL): nothing to spin, open straight away.
-      onOpenItem?.(item, 'shuffle')
+      onOpenItem?.(item, spinRequest.quiet ? 'land' : 'shuffle')
       return
     }
     const arrive = (index: number) => {
       activeItemRef.current = item
       setActiveItem(item)
       onActiveItemChange(item)
+      if (spinRequest.quiet) {
+        onOpenItem?.(item, 'land')
+        return
+      }
       engine.setDetailFocus(item.id, true, 'fast', index)
       onOpenItem?.(item, 'shuffle')
     }
