@@ -142,6 +142,30 @@ export const chooseRandomIds = (
   return chosen
 }
 
+// The `count` items with the smallest keys, in key order, without sorting the
+// whole list (the catalogue can hold 100,000 films).
+export const firstByKey = <T>(
+  items: readonly T[],
+  keyOf: (item: T) => string,
+  count: number,
+) => {
+  const best: { item: T; key: string }[] = []
+  for (const item of items) {
+    const key = keyOf(item)
+    if (best.length >= count && key >= best[best.length - 1].key) continue
+    let low = 0
+    let high = best.length
+    while (low < high) {
+      const mid = (low + high) >> 1
+      if (best[mid].key <= key) low = mid + 1
+      else high = mid
+    }
+    best.splice(low, 0, { item, key })
+    if (best.length > count) best.pop()
+  }
+  return best.map((entry) => entry.item)
+}
+
 let cachePromise: Promise<Cache | null> | null = null
 const openCache = () => {
   cachePromise ??= (async () => {

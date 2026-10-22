@@ -85,6 +85,7 @@ import {
   loadAllMovies,
   loadFirstChunk,
   loadMovieText,
+  posterBackdropUrl,
   prefersSavedData,
   toTitleKey,
   withWeightedRatings,
@@ -130,6 +131,13 @@ import {
 import { NowPlayingBar, type NowPlayingFilm } from './now-playing-bar'
 import { PARTY_OFF, partyReducer, weirdnessScore } from './party/party-logic'
 import { PartyFinal, PartyHud, PartySetup } from './party/party-ui'
+import {
+  STARTER_ALPHA_COUNT,
+  firstByKey,
+  getWarmPosterUrl,
+  loadPosterBlob,
+  seedStarterSet,
+} from './poster-cache'
 import { PosterFlight, type ViewRect } from './poster-flight'
 import { savedStore } from './saved-store'
 import {
@@ -582,15 +590,65 @@ const hasLatinLeadingTitle = (movie: TestMovie) =>
 type MoviePosterProps = {
   movie: TestMovie
   loading?: 'eager' | 'lazy'
+  // The first screen of the index: fetched straight away, ahead of the rest.
+  priority?: boolean
   size?: 'thumb' | 'list' | 'detail'
 }
+
+// A poster that fails to load is tried again after these pauses (and as soon
+// as the connection returns), instead of staying blank for the whole visit.
+const POSTER_TILE_RETRY_MS = [1500, 6000, 20000]
 
 const MoviePoster = ({
   movie,
   loading = 'lazy',
+  priority = false,
   size = 'thumb',
 }: MoviePosterProps) => {
   const [loadState, setLoadState] = useState<PosterLoadState>('loading')
+  const [attempt, setAttempt] = useState(0)
+  // A copy fetched around the HTTP cache, used after a failed first try.
+  const [recovered, setRecovered] = useState<string | null>(null)
+  const src =
+    size === 'detail'
+      ? (movie.posterDetailUrl ?? movie.posterUrl)
+      : size === 'list'
+        ? (movie.posterListUrl ?? movie.posterUrl)
+        : movie.posterUrl
+  // The detail card sits on the thumbnail the globe already loaded, and the
+  // sharper image fades in over it, so opening a poster never flashes empty.
+  const baseSrc =
+    size === 'detail' && movie.posterDetailUrl ? movie.posterUrl : null
+
+  useEffect(() => {
+    if (loadState !== 'error') return
+    const retry = () => {
+      setAttempt((count) => count + 1)
+      setLoadState('loading')
+    }
+    const delay = POSTER_TILE_RETRY_MS[attempt]
+    const timer = delay === undefined ? 0 : window.setTimeout(retry, delay)
+    window.addEventListener('online', retry, { once: true })
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('online', retry)
+    }
+  }, [attempt, loadState])
+
+  useEffect(() => {
+    if (attempt === 0) return
+    let cancelled = false
+    let objectUrl: string | null = null
+    void loadPosterBlob(src).then((blob) => {
+      if (cancelled || !blob) return
+      objectUrl = URL.createObjectURL(blob)
+      setRecovered(objectUrl)
+    })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [attempt, src])
 
   return (
     <span
@@ -602,19 +660,26 @@ const MoviePoster = ({
           : undefined
       }
     >
+      {baseSrc ? (
+        <img
+          className='warp-poster-base'
+          src={baseSrc}
+          alt=''
+          aria-hidden='true'
+          crossOrigin='anonymous'
+          decoding='async'
+        />
+      ) : null}
       <img
-        src={
-          size === 'detail'
-            ? (movie.posterDetailUrl ?? movie.posterUrl)
-            : size === 'list'
-              ? (movie.posterListUrl ?? movie.posterUrl)
-              : movie.posterUrl
-        }
+        key={attempt}
+        src={recovered ?? getWarmPosterUrl(src) ?? src}
         alt=''
+        decoding='async'
+        fetchPriority={priority ? 'high' : undefined}
         // TMDB only sends CORS headers when asked and does not vary on it, so
         // a plain request would cache a copy the globe's WebGL cannot use.
         crossOrigin={movie.posterDetailUrl ? 'anonymous' : undefined}
-        loading={loading}
+        loading={priority ? 'eager' : loading}
         onError={() => setLoadState('error')}
         // The fade starts once the pixels are decoded, not when the bytes land.
         onLoad={(event) => {
@@ -1244,6 +1309,23 @@ export const TestGalleryApp = () => {
   const [timeLabel, setTimeLabel] = useState('')
   const [isGlobeMoving, setIsGlobeMoving] = useState(false)
   const [theme, setTheme] = useState<Theme>(readTheme)
+  // Keeps the first films of the index, and a few random ones, on the device,
+  // so the next visit starts populated. Waits for the catalogue to settle.
+  useEffect(() => {
+    if (!movies.length || prefersSavedData()) return
+    const timer = window.setTimeout(() => {
+      const toFilm = (movie: TestMovie) => ({
+        id: movie.id,
+        thumbUrl: movie.posterUrl,
+        listUrl: movie.posterListUrl ?? movie.posterUrl,
+      })
+      seedStarterSet(
+        firstByKey(movies, getTitleKey, STARTER_ALPHA_COUNT).map(toFilm),
+        movies.slice(0, GALLERY_WINDOW_SIZE).map(toFilm),
+      )
+    }, 3000)
+    return () => window.clearTimeout(timer)
+  }, [movies])
   // Leaving browser full screen (its own Esc, a gesture) leaves immersive mode.
   useEffect(() => {
     const syncFullscreen = () => {
@@ -3662,6 +3744,7 @@ const ListRowChunk = memo(
                 isCollapsed={isCollapsed}
                 isRandomPulse={randomPulseId === movie.id}
                 movie={movie}
+                priority={eager}
                 selectedGenres={selectedGenres}
                 onOpenMovie={onOpenMovie}
                 onSelectMovie={onSelectMovie}
@@ -3679,6 +3762,7 @@ type ListRowProps = {
   isCollapsed: boolean
   isRandomPulse: boolean
   movie: TestMovie
+  priority: boolean
   selectedGenres: string[]
   onOpenMovie: (movie: TestMovie) => void
   onSelectMovie: (movie: TestMovie) => void
@@ -3695,6 +3779,7 @@ const ListRow = memo(
     isCollapsed,
     isRandomPulse,
     movie,
+    priority,
     selectedGenres,
     onOpenMovie,
     onSelectMovie,
@@ -3718,7 +3803,7 @@ const ListRow = memo(
           onFocus={() => onSelectMovie(movie)}
         >
           <span className='warp-list-row-poster' aria-hidden='true'>
-            <MoviePoster movie={movie} size='list' />
+            <MoviePoster movie={movie} priority={priority} size='list' />
           </span>
           <span className='warp-list-row-main'>
             <span className='warp-list-row-title'>{movie.title}</span>
@@ -5799,13 +5884,11 @@ const MovieDetailsCard = ({
     '--details-drag-y': `${dragOffset}px`,
     // A mood run dresses the card in the colours of the worlds it was made from.
     ...(premiumMood ? moodCardVars(premiumMood.palette) : null),
-    // CSS images are fetched without CORS, so catalogue films use a size the
-    // globe never requests (it is blurred anyway); see MoviePoster.
-    '--details-backdrop': `url(${JSON.stringify(
-      movie.posterDetailUrl
-        ? movie.posterUrl.replace('/w154/', '/w92/')
-        : movie.posterUrl,
-    )})`,
+    // CSS images are fetched without CORS. A copy cached from such a request
+    // has no CORS headers and breaks the same URL for the globe and index
+    // tiles, so catalogue films use a size nothing else requests (w92 is the
+    // index, w154 the globe, w342 the card); see posterBackdropUrl.
+    '--details-backdrop': `url(${JSON.stringify(posterBackdropUrl(movie))})`,
   } as CSSProperties
   const movieText = useMovieText(movie)
   const titleTranslation = useTitleTranslation(movie.title)
