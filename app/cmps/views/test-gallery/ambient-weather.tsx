@@ -150,7 +150,6 @@ export const AmbientWeather = ({
       ref={canvasRef}
       className='warp-ambient-weather'
       data-weather={kind}
-      role='presentation'
       style={{
         position: 'fixed',
         inset: 0,
