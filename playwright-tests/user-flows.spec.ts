@@ -92,6 +92,16 @@ const openWithConstellations = async (page: Page) => {
   await page.waitForTimeout(2_500)
 }
 
+// The first Esc dismisses the menu's tips (only on the first open), the next
+// one closes the drawer.
+const closeDrawer = async (page: Page) => {
+  await page.keyboard.press('Escape')
+  if (await page.locator('.warp-about-drawer').count()) {
+    await page.keyboard.press('Escape')
+  }
+  await expect(page.locator('.warp-about-drawer')).toHaveCount(0)
+}
+
 // Compares the globe with the marks on and off. Marks sit on a few posters,
 // so if none are in view the globe is turned a little and it tries again.
 const marksDiffer = (page: Page) => {
@@ -103,8 +113,7 @@ const marksDiffer = (page: Page) => {
       .getByRole('group', { name: 'Session path' })
       .getByRole('button', { name: on ? 'On' : 'Off', exact: true })
       .click()
-    await page.keyboard.press('Escape')
-    await expect(page.locator('.warp-about-drawer')).toHaveCount(0)
+    await closeDrawer(page)
     await page.waitForTimeout(500)
     return (await page.screenshot({ clip })).toString('base64')
   }
@@ -464,7 +473,7 @@ test.describe('Gallery user flows', () => {
     // ...and ink on the light one.
     await page.locator('button.warp-info-button').click()
     await page.getByRole('button', { name: 'Light', exact: true }).click()
-    await page.keyboard.press('Escape')
+    await closeDrawer(page)
     await expect(page.locator('main')).toHaveAttribute('data-theme', 'light')
     const light = await lines()
     expect(light.changed).toBeGreaterThan(30)
