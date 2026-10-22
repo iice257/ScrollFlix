@@ -4764,6 +4764,83 @@
     color: #050505;
   }
 
+  /* Under the Appearance switch: what Dynamic is (once, with a close button)
+     and, while it is on, the sky's one-liner and where location comes from. */
+  .warp-setting-note {
+    position: relative;
+    flex: 1 0 100%;
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    border-radius: 12px;
+    background: rgb(255 255 255 / 0.05);
+    padding: 10px 36px 10px 12px;
+    animation: warp-nudge-fade 220ms ease 320ms both;
+  }
+
+  .warp-setting-note.is-live {
+    padding-right: 12px;
+    animation: none;
+  }
+
+  .warp-setting-note p {
+    margin: 0;
+    color: rgb(255 255 255 / 0.6);
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.45;
+  }
+
+  .warp-setting-note .warp-setting-note-line {
+    color: rgb(255 255 255 / 0.9);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .warp-setting-note-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border: 0;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.08);
+    padding: 0;
+    color: rgb(255 255 255 / 0.8);
+    transition: background 160ms ease;
+  }
+
+  .warp-setting-note-close svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .warp-setting-note-close:hover {
+    background: rgb(255 255 255 / 0.16);
+  }
+
+  .warp-setting-note-close:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+  }
+
+  .warp-theme-tip {
+    display: grid;
+    max-width: 240px;
+    gap: 6px;
+    padding: 9px 12px;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .warp-theme-tip span + span {
+    color: rgb(255 255 255 / 0.62);
+    font-weight: 600;
+  }
+
   .warp-sound-settings {
     display: grid;
   }

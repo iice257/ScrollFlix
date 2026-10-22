@@ -18,7 +18,6 @@ import {
   type LucideIcon,
   Maximize2,
   Minimize2,
-  Moon,
   Mouse,
   MousePointerClick,
   MoveHorizontal,
@@ -30,7 +29,6 @@ import {
   Shuffle,
   SlidersHorizontal,
   Sparkles,
-  Sun,
   Users,
   X,
 } from 'lucide-react'
@@ -67,6 +65,13 @@ import {
   useSoundEffects,
 } from '../../../audio/use-sound-effects'
 import { useMediaQuery } from '../../../hooks/use-media-query'
+import {
+  type Sky,
+  type ThemePref,
+  parseThemePref,
+  resolveDynamic,
+  resolveTheme,
+} from '../../../utils/dynamic-weather'
 import { isIOS, syncBrowserChrome } from '../../../utils/platform'
 import { cn } from '../../../utils/tw'
 import {
@@ -182,6 +187,9 @@ import {
 import './session-path.css'
 import { stopsFromPath } from './share/path-art'
 import { useTitleTranslation } from './use-title-translation'
+import { AmbientWeather } from './ambient-weather'
+import { AppearanceSetting, useDynamicHint } from './dynamic-theme-setting'
+import { useDynamicSky } from './use-dynamic-sky'
 import { WeatherLayer, type WeatherStorm } from './weather-layer'
 
 // TestMovie, the catalogue loading and the legacy id migration live in
@@ -265,11 +273,10 @@ type Theme = 'dark' | 'light'
 // `quiet` lands the globe on the film without a card following it.
 type SpinRequest = { itemId: string; nonce: number; quiet?: boolean }
 
-const readTheme = (): Theme => {
+// The saved choice: Dark, Light or Dynamic. Anything unknown is Dark.
+const readThemePref = (): ThemePref => {
   try {
-    return window.localStorage.getItem(THEME_STORAGE_KEY) === 'light'
-      ? 'light'
-      : 'dark'
+    return parseThemePref(window.localStorage.getItem(THEME_STORAGE_KEY))
   } catch {
     return 'dark'
   }
@@ -1243,7 +1250,13 @@ export const TestGalleryApp = () => {
   const [errorMessage, setErrorMessage] = useState('')
   const [timeLabel, setTimeLabel] = useState('')
   const [isGlobeMoving, setIsGlobeMoving] = useState(false)
-  const [theme, setTheme] = useState<Theme>(readTheme)
+  const [themePref, setThemePref] = useState<ThemePref>(readThemePref)
+  // Dynamic: light by day, dark by night, plus rain or snow when it is
+  // happening nearby. Only asks the server while Dynamic is the choice.
+  const sky = useDynamicSky(themePref)
+  const theme: Theme = resolveTheme(themePref, sky)
+  const ambientWeather =
+    themePref === 'dynamic' ? resolveDynamic(sky).effect : null
   // Leaving browser full screen (its own Esc, a gesture) leaves immersive mode.
   useEffect(() => {
     const syncFullscreen = () => {
@@ -1313,8 +1326,8 @@ export const TestGalleryApp = () => {
     syncBrowserChrome(theme)
   }, [theme])
 
-  const changeTheme = useCallback((nextTheme: Theme) => {
-    setTheme(nextTheme)
+  const changeTheme = useCallback((nextTheme: ThemePref) => {
+    setThemePref(nextTheme)
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme)
     } catch {
@@ -2628,6 +2641,8 @@ export const TestGalleryApp = () => {
       data-now-playing={nowPlayingFilm ? 'true' : undefined}
       data-mode={mode}
       data-theme={theme}
+      data-theme-pref={themePref}
+      data-weather={ambientWeather ?? 'clear'}
       data-immersive={immersive ? 'true' : 'false'}
       data-golden={goldenHour ? 'true' : 'false'}
       onPointerDownCapture={blockWhileLoading}
@@ -2655,6 +2670,15 @@ export const TestGalleryApp = () => {
         />
       ) : null}
       <WeatherLayer register={registerStorm} />
+      <AmbientWeather
+        kind={ambientWeather}
+        light={theme === 'light'}
+        paused={
+          Boolean(detailsMovieId) ||
+          (shuffleProSnapshot.phase !== 'idle' &&
+            shuffleProSnapshot.phase !== 'armed')
+        }
+      />
       <GoldenHourWash />
       {demoMode &&
       mode === 'wall' &&
@@ -3236,7 +3260,8 @@ export const TestGalleryApp = () => {
       {aboutPresence.isPresent ? (
         <AboutDrawer
           movieCount={movies.length}
-          theme={theme}
+          themePref={themePref}
+          sky={sky}
           onThemeChange={changeTheme}
           genreCount={genreSummaries.length}
           globeCount={visibleMovies.length}
@@ -4754,9 +4779,10 @@ export const formatFilmCount = (count: number) =>
   count >= 1000 ? `${Math.floor(count / 1000)}k+` : String(count)
 
 type AboutDrawerProps = {
-  theme: Theme
+  themePref: ThemePref
+  sky: Sky
   movieCount: number
-  onThemeChange: (theme: Theme) => void
+  onThemeChange: (theme: ThemePref) => void
   genreCount: number
   globeCount: number
   maximized: boolean
@@ -4920,36 +4946,6 @@ const AboutGlobeDiagram = () => (
       <path d='M 0 0 L 10 5 L 0 10 z' className='warp-about-diagram-head' />
     </marker>
   </svg>
-)
-
-const AppearanceSetting = ({
-  theme,
-  onThemeChange,
-}: {
-  theme: Theme
-  onThemeChange: (theme: Theme) => void
-}) => (
-  <fieldset className='warp-about-setting'>
-    <legend>Appearance</legend>
-    <div className='warp-theme-switch'>
-      {(['dark', 'light'] as const).map((option) => (
-        <button
-          type='button'
-          key={option}
-          aria-pressed={theme === option}
-          className={cn(theme === option && 'is-active')}
-          onClick={() => onThemeChange(option)}
-        >
-          {option === 'dark' ? (
-            <Moon aria-hidden='true' />
-          ) : (
-            <Sun aria-hidden='true' />
-          )}
-          {option === 'dark' ? 'Dark' : 'Light'}
-        </button>
-      ))}
-    </div>
-  </fieldset>
 )
 
 type GlobeLineSettingProps = {
@@ -5121,7 +5117,8 @@ const DemoModeSetting = () => {
 }
 
 const AboutDrawer = ({
-  theme,
+  themePref,
+  sky,
   movieCount,
   onThemeChange,
   genreCount,
@@ -5136,6 +5133,8 @@ const AboutDrawer = ({
   // First-open tips for the two globe-line switches; they live across the
   // compact and full versions of the menu.
   const nudges = useLineNudges()
+  const dynamicHint = useDynamicHint(themePref)
+  const theme = resolveTheme(themePref, sky)
   return maximized ? (
     <section
       className='warp-about-page'
@@ -5183,7 +5182,12 @@ const AboutDrawer = ({
         <section className='warp-about-section'>
           <h3>Settings</h3>
           <div className='warp-about-settings'>
-            <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
+            <AppearanceSetting
+              pref={themePref}
+              sky={sky}
+              hint={dynamicHint}
+              onChange={onThemeChange}
+            />
             <SessionPathSetting nudges={nudges} light={theme === 'light'} />
             <FavoriteLinksSetting nudges={nudges} light={theme === 'light'} />
             <RepeatPathsSetting />
@@ -5291,7 +5295,12 @@ const AboutDrawer = ({
       </header>
       <AboutControls />
       <ShuffleProShelf onShare={onShareRecap} />
-      <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
+      <AppearanceSetting
+        pref={themePref}
+        sky={sky}
+        hint={dynamicHint}
+        onChange={onThemeChange}
+      />
       <SessionPathSetting nudges={nudges} light={theme === 'light'} />
       <FavoriteLinksSetting nudges={nudges} light={theme === 'light'} />
       <RepeatPathsSetting />
