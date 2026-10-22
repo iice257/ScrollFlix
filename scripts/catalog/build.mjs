@@ -3,18 +3,19 @@
 //   node scripts/catalog/build.mjs --mode seed|nightly|bootstrap
 //        --state <dir> --out <dir> [--target 100000]
 //
-//   seed       the whole catalogue from TMDB: choose the vote threshold for
-//              the target count, list every film above it, fetch details.
+//   seed       the candidates from TMDB (every film with at least 10 votes),
+//              fetch details, then publish the top --target by vote count.
 //   nightly    read the state, refetch only the films TMDB says changed plus
-//              new releases, merge and rebuild.
+//              new releases, merge and re-cut.
+//   recut      no network: re-cut the published catalogue from the state.
 //   bootstrap  no network: convert the repo's old data (public/json/0-4.json
 //              and public/json/catalog, plus the local posters) into v2, to
 //              publish a first release before the first seed.
 //
-// --state holds films.ndjson.gz and meta.json. --out receives the public
-// files (manifest.json and the hashed chunks). Every mode ends by printing
-// { count, minVotes, requests, failures }, and exits 1 rather than publish
-// something half-built.
+// --state holds films.ndjson.gz (every candidate) and meta.json. --out
+// receives the public files (manifest.json and the hashed chunks) for the top
+// --target films. Every mode ends by printing { count, minVotes, candidates,
+// requests, failures }, and exits 1 rather than publish something half-built.
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -22,7 +23,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { averageColour, colourOfImage } from './avg-colour.mjs'
 import { createTmdbClient } from './tmdb-client.mjs'
 import { encodeChunks, normaliseFilm } from './rows.mjs'
-import { chooseMinVotes, discoverIds } from './seed.mjs'
+import { DISCOVER_FLOOR, discoverIds } from './seed.mjs'
 import {
   fetchFilms,
   mergeChanges,
@@ -30,6 +31,7 @@ import {
   readState,
   writeState,
 } from './state.mjs'
+import { cutByVotes } from './threshold.mjs'
 
 const FAILURE_LIMIT = 0.02
 const SHRINK_LIMIT = 0.95
@@ -56,11 +58,12 @@ export const changeWindows = (lastSync, today) => {
   return windows.length ? windows : [{ start: lastSync, end: today }]
 }
 
-const summarise = ({ count, minVotes, client, colour }) => {
+const summarise = ({ count, minVotes, candidates, client, colour }) => {
   const tmdb = client?.stats() ?? { requests: 0, failures: 0 }
   return {
     count,
     minVotes,
+    candidates,
     requests: tmdb.requests + (colour?.requests ?? 0),
     failures: tmdb.failures + (colour?.failures ?? 0),
   }
@@ -80,9 +83,11 @@ const assertHealthy = (summary, previousCount) => {
 }
 
 // Replaces the public output and the state. Called only once a run has
-// passed its checks, so a failed run leaves the previous files alone.
-const publish = async ({ films, meta, stateDir, outDir }) => {
-  const { manifest, files } = encodeChunks([...films.values()])
+// passed its checks, so a failed run leaves the previous files alone. The
+// state keeps every candidate; the public files get the cut (the top films by
+// votes, see threshold.mjs).
+const publish = async ({ films, cut, meta, stateDir, outDir }) => {
+  const { manifest, files } = encodeChunks(cut.films)
   await rm(outDir, { recursive: true, force: true })
   await mkdir(outDir, { recursive: true })
   for (const [name, content] of files) {
@@ -90,8 +95,44 @@ const publish = async ({ films, meta, stateDir, outDir }) => {
   }
   // The manifest goes last: it is what points at the files above.
   await writeFile(join(outDir, 'manifest.json'), JSON.stringify(manifest))
-  await writeState(stateDir, films, { ...meta, count: films.size, version: 2 })
+  await writeState(stateDir, films, {
+    ...meta,
+    minVotes: cut.minVotes,
+    count: cut.films.length,
+    candidates: films.size,
+    version: 2,
+  })
 }
+
+// Cuts the candidates, checks the result is healthy, publishes it and
+// returns the summary.
+const finish = async ({
+  films,
+  target,
+  floor,
+  lastSync,
+  previousCount,
+  client,
+  colour,
+  stateDir,
+  outDir,
+}) => {
+  const cut = cutByVotes(films, target, floor)
+  const summary = summarise({
+    count: cut.films.length,
+    minVotes: cut.minVotes,
+    candidates: films.size,
+    client,
+    colour,
+  })
+  assertHealthy(summary, previousCount)
+  await publish({ films, cut, meta: { lastSync, floor }, stateDir, outDir })
+  return summary
+}
+
+// The lowest vote count the candidate state was collected at. Older state
+// has no `floor`; then everything in it was published, at `minVotes`.
+export const stateFloor = (meta) => meta.floor ?? meta.minVotes ?? 1
 
 export const runSeed = async ({
   client,
@@ -105,10 +146,9 @@ export const runSeed = async ({
 }) => {
   const prev = await readState(stateDir)
   const prevMeta = await readMeta(stateDir)
-  const minVotes = await chooseMinVotes(client, target)
-  log(`minVotes ${minVotes}`)
+  const floor = DISCOVER_FLOOR
   const ids = [
-    ...(await discoverIds(client, minVotes, { toYear: currentYear + 1 })),
+    ...(await discoverIds(client, floor, { toYear: currentYear + 1 })),
   ].sort((a, b) => a - b)
   log(`${ids.length} candidate films`)
   const { changed, failedIds, colour } = await fetchFilms({
@@ -118,23 +158,28 @@ export const runSeed = async ({
     colourOf,
     onProgress: (done, total) => log(`${done}/${total} details`),
   })
-  const films = mergeChanges(new Map(), changed, minVotes)
+  const films = mergeChanges(new Map(), changed, floor)
   // A film that failed to fetch keeps what we knew about it.
   for (const id of failedIds) if (prev.has(id)) films.set(id, prev.get(id))
-  const summary = summarise({ count: films.size, minVotes, client, colour })
-  assertHealthy(summary, prevMeta?.bootstrap ? 0 : prevMeta?.count)
-  await publish({
+  const summary = await finish({
     films,
-    meta: { lastSync: today, minVotes },
+    target,
+    floor,
+    lastSync: today,
+    previousCount: prevMeta?.bootstrap ? 0 : prevMeta?.count,
+    client,
+    colour,
     stateDir,
     outDir,
   })
+  log(`minVotes ${summary.minVotes}, ${summary.count} films`)
   return summary
 }
 
 export const runNightly = async ({
   client,
   colourOf,
+  target = 100_000,
   stateDir,
   outDir,
   today = isoDay(new Date()),
@@ -157,7 +202,8 @@ export const runNightly = async ({
     }
   }
   log(`${ids.size} known films changed since ${meta.lastSync}`)
-  const recent = await discoverIds(client, meta.minVotes, {
+  const floor = stateFloor(meta)
+  const recent = await discoverIds(client, floor, {
     fromYear: currentYear - 1,
     toYear: currentYear + 1,
   })
@@ -169,21 +215,45 @@ export const runNightly = async ({
     prev,
     colourOf,
   })
-  const films = mergeChanges(prev, changed, meta.minVotes)
-  const summary = summarise({
-    count: films.size,
-    minVotes: meta.minVotes,
+  const films = mergeChanges(prev, changed, floor)
+  return finish({
+    films,
+    target,
+    floor,
+    lastSync: today,
+    previousCount: meta.count,
     client,
     colour,
-  })
-  assertHealthy(summary, meta.count)
-  await publish({
-    films,
-    meta: { lastSync: today, minVotes: meta.minVotes },
     stateDir,
     outDir,
   })
-  return summary
+}
+
+// Re-cuts the published catalogue from the state alone, with no network:
+// for a new target or threshold, or to repair a bad cut.
+export const runRecut = async ({
+  target = 100_000,
+  stateDir,
+  outDir,
+  today = isoDay(new Date()),
+}) => {
+  const films = await readState(stateDir)
+  const meta = await readMeta(stateDir)
+  if (!meta || !films.size || meta.bootstrap) {
+    throw new CatalogAbort(
+      'There is no seeded state to cut. Run the workflow with mode "seed" first.',
+    )
+  }
+  return finish({
+    films,
+    target,
+    floor: stateFloor(meta),
+    lastSync: meta.lastSync ?? today,
+    // A recut may legitimately shrink the catalogue a lot.
+    previousCount: 0,
+    stateDir,
+    outDir,
+  })
 }
 
 // Old local data -> TMDB-shaped details, so the same normaliser applies.
@@ -286,11 +356,12 @@ export const runBootstrap = async ({
   // run must be a seed.
   await publish({
     films,
-    meta: { lastSync: today, minVotes, bootstrap: true },
+    cut: { films: [...films.values()], minVotes },
+    meta: { lastSync: today, floor: minVotes, bootstrap: true },
     stateDir,
     outDir,
   })
-  return summarise({ count: films.size, minVotes })
+  return summarise({ count: films.size, minVotes, candidates: films.size })
 }
 
 const parseArgs = (argv) =>
@@ -303,9 +374,9 @@ const parseArgs = (argv) =>
 export const main = async (argv) => {
   const args = parseArgs(argv)
   const { mode, state: stateDir, out: outDir } = args
-  if (!['seed', 'nightly', 'bootstrap'].includes(mode) || !stateDir || !outDir) {
+  if (!['seed', 'nightly', 'recut', 'bootstrap'].includes(mode) || !stateDir || !outDir) {
     console.error(
-      'Usage: build.mjs --mode seed|nightly|bootstrap --state <dir> --out <dir> [--target 100000]',
+      'Usage: build.mjs --mode seed|nightly|recut|bootstrap --state <dir> --out <dir> [--target 100000]',
     )
     return 2
   }
@@ -315,6 +386,12 @@ export const main = async (argv) => {
     if (mode === 'bootstrap') {
       const root = fileURLToPath(new URL('../..', import.meta.url))
       summary = await runBootstrap({ root, stateDir, outDir })
+    } else if (mode === 'recut') {
+      summary = await runRecut({
+        target: Number(args.target ?? 100_000),
+        stateDir,
+        outDir,
+      })
     } else {
       const token = process.env.TMDB_API_READ_TOKEN
       if (!token) {

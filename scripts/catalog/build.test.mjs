@@ -8,6 +8,7 @@ import {
   changeWindows,
   runBootstrap,
   runNightly,
+  runRecut,
   runSeed,
 } from './build.mjs'
 import { details, fakeClient, film } from './fixtures/details.mjs'
@@ -100,11 +101,18 @@ describe('seed', () => {
       today: '2026-10-18',
       currentYear: 2026,
     })
-    expect(summary).toMatchObject({ count: 3, minVotes: 1, failures: 0 })
+    expect(summary).toMatchObject({
+      count: 3,
+      minVotes: 10,
+      candidates: 3,
+      failures: 0,
+    })
     expect(await readMeta(stateDir)).toEqual({
       lastSync: '2026-10-18',
-      minVotes: 1,
+      floor: 10,
+      minVotes: 10,
       count: 3,
+      candidates: 3,
       version: 2,
     })
     const manifest = await readManifest()
@@ -266,6 +274,104 @@ describe('nightly', () => {
       }),
     ).rejects.toThrow(/seed/)
   })
+})
+
+// 50 films with distinct vote counts 1000 down to 951 (details(id) votes
+// 1000 - id for ids under 500).
+describe('the cut to the target', () => {
+  const ids = Array.from({ length: 50 }, (_, i) => i + 1)
+  const movies = new Map(ids.map((id) => [id, details(id)]))
+  const discoverFn = (params) =>
+    params.primary_release_year === 2001
+      ? {
+          page: 1,
+          total_pages: 1,
+          // TMDB caps this at 10,000 however many films match.
+          total_results: 10_000,
+          results: ids.map((id) => ({
+            id,
+            poster_path: `/poster${id}.jpg`,
+            release_date: '2001-01-01',
+          })),
+        }
+      : { page: 1, total_pages: 0, total_results: 10_000, results: [] }
+
+  it('seed publishes the top films by votes, ignoring a capped total_results', async () => {
+    const client = fakeClient({ movies, discoverFn })
+    const summary = await runSeed({
+      client,
+      colourOf,
+      target: 20,
+      stateDir,
+      outDir,
+      today: '2026-10-18',
+      currentYear: 2026,
+    })
+    // Film 20 has 980 votes: the 20th most voted. Not the floor of 1.
+    expect(summary).toMatchObject({ count: 20, minVotes: 980, candidates: 50 })
+    expect((await readManifest()).count).toBe(20)
+    expect(await readMeta(stateDir)).toMatchObject({
+      floor: 10,
+      minVotes: 980,
+      count: 20,
+      candidates: 50,
+    })
+    // The state keeps every candidate.
+    expect((await readState(stateDir)).size).toBe(50)
+    for (const params of client.calls.discover) {
+      expect(params['vote_count.gte']).toBe(10)
+    }
+  })
+
+  it('recut widens the catalogue from the state with no network', async () => {
+    await seedFifty()
+    const summary = await runRecut({ target: 30, stateDir, outDir })
+    expect(summary).toMatchObject({ count: 30, minVotes: 970, candidates: 50 })
+    expect((await readManifest()).count).toBe(30)
+    expect((await readMeta(stateDir)).count).toBe(30)
+    expect((await readState(stateDir)).size).toBe(50)
+  })
+
+  it('nightly cuts new and changed films with the same rule', async () => {
+    await seedFifty()
+    // A new film with more votes than all the rest enters the top 20.
+    const client = fakeClient({
+      movies: new Map([[99, details(99, { vote_count: 5000 })]]),
+      discoverFn: () => ({
+        page: 1,
+        total_pages: 1,
+        results: [{ id: 99, poster_path: '/p.jpg', release_date: '2026-01-01' }],
+      }),
+    })
+    const summary = await runNightly({
+      client,
+      colourOf,
+      target: 20,
+      stateDir,
+      outDir,
+      today: '2026-10-18',
+      currentYear: 2026,
+    })
+    expect(summary).toMatchObject({ count: 20, minVotes: 981, candidates: 51 })
+    expect((await readManifest()).count).toBe(20)
+  })
+
+  it('recut needs a seeded state', async () => {
+    await expect(runRecut({ stateDir, outDir })).rejects.toThrow(/seed/)
+  })
+
+  const seedFifty = async () => {
+    const films = new Map(ids.map((id) => [id, film(id)]))
+    await writeState(stateDir, films, {
+      lastSync: '2026-10-10',
+      floor: 10,
+      minVotes: 980,
+      // What was published last time: the top 20.
+      count: 20,
+      candidates: 50,
+      version: 2,
+    })
+  }
 })
 
 // Bootstrap converts the data the repo shipped before catalogue v2. Once

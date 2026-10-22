@@ -1,11 +1,14 @@
-// Finding which films belong in the catalogue: pick the vote threshold that
-// gives about the target count, then list every film above it.
+// Finding which films are candidates for the catalogue: every film with at
+// least DISCOVER_FLOOR votes. The published catalogue is then cut from these
+// by rank (see threshold.mjs), so widening it later needs no refetch.
 import { mapPool } from './pool.mjs'
 
 const FIRST_YEAR = 1874
 // TMDB serves at most 500 pages (10,000 films) for any one query.
 const MAX_PAGES = 500
-const MIN_VOTES_RANGE = [1, 200]
+// The lowest vote count a film is collected at. Comfortably under the vote
+// count of the 100,000th film, so the cut always has headroom.
+export const DISCOVER_FLOOR = 10
 const PAGE_CONCURRENCY = 16
 
 const baseParams = (minVotes) => ({
@@ -14,24 +17,6 @@ const baseParams = (minVotes) => ({
   sort_by: 'vote_count.desc',
   'vote_count.gte': minVotes,
 })
-
-// The smallest vote threshold whose film count is within 5% of the target
-// (or under it). The count only ever falls as the threshold rises, so this
-// is a binary search: about eight probes.
-export const chooseMinVotes = async (client, target) => {
-  const limit = target * 1.05
-  let [low, high] = MIN_VOTES_RANGE
-  while (low < high) {
-    const middle = Math.floor((low + high) / 2)
-    const { total_results: total } = await client.discover({
-      ...baseParams(middle),
-      page: 1,
-    })
-    if (total <= limit) high = middle
-    else low = middle + 1
-  }
-  return low
-}
 
 const pad = (value) => String(value).padStart(2, '0')
 
