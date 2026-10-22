@@ -67,18 +67,6 @@ export const useDynamicHint = (
   }, [pref, dismiss])
 
   useEffect(() => {
-    if (!visible) return
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      dismiss()
-    }
-    window.addEventListener('keydown', handleKeyDown, true)
-    return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [visible, dismiss])
-
-  useEffect(() => {
     const openedAt = Date.now()
     return () => {
       if (!visibleRef.current) return

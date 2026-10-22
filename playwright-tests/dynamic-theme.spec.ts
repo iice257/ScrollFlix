@@ -127,6 +127,23 @@ test.describe('Dynamic theme', () => {
     await expect(page.locator('canvas.warp-ambient-weather')).toHaveCount(0)
   })
 
+  test('the first-open hint never gets in the way of Esc closing the menu', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      for (const kind of ['path', 'links'])
+        window.localStorage.setItem(`wtw:globe-lines-nudge:${kind}:v1`, '1')
+    })
+    await load(page)
+    await page.getByRole('button', { name: 'About ScrollFlix' }).click()
+    const menu = page.getByRole('complementary', { name: 'About ScrollFlix' })
+    await expect(
+      menu.getByText(/Follows your daylight and weather/),
+    ).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+  })
+
   for (const pref of ['dark', 'light']) {
     test(`the ${pref} theme never asks for the weather`, async ({ page }) => {
       const requests = countWeatherRequests(page)
