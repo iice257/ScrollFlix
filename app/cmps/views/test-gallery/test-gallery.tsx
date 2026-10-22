@@ -185,11 +185,11 @@ import {
   useShuffleProController,
 } from './shuffle-pro/use-shuffle-pro'
 import './session-path.css'
-import { stopsFromPath } from './share/path-art'
-import { useTitleTranslation } from './use-title-translation'
 import { AmbientWeather } from './ambient-weather'
 import { AppearanceSetting, useDynamicHint } from './dynamic-theme-setting'
+import { stopsFromPath } from './share/path-art'
 import { useDynamicSky } from './use-dynamic-sky'
+import { useTitleTranslation } from './use-title-translation'
 import { WeatherLayer, type WeatherStorm } from './weather-layer'
 
 // TestMovie, the catalogue loading and the legacy id migration live in
