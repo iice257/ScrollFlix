@@ -382,7 +382,7 @@ export class ShuffleProController {
     const result = reduceStreak(this.streak, event, {
       immersive: this.deps.isImmersive(),
       random: this.deps.random,
-      demo: this.demoMode(),
+      demo: this.devMode(),
     })
     const before = this.streak
     this.setStreak(result.state)
@@ -417,19 +417,19 @@ export class ShuffleProController {
   // The collection the Gold rule reads: the demo session's own set in demo
   // mode, the real one otherwise.
   private foundPaths(): FoundPaths {
-    return this.demoMode()
+    return import.meta.env.DEV && this.devMode()
       ? (this.deps.getDemoFound?.() ?? {})
       : this.deps.getFound()
   }
 
-  private demoMode() {
+  private devMode() {
     return import.meta.env.DEV && (this.deps.getDemoMode?.() ?? false)
   }
 
   // Found paths stop the streak triggers (the surprise would wear out); a held
   // press is deliberate and never asks, and dev mode lifts the rule.
   private isBlocked(tier: Tier) {
-    if (this.demoMode()) return false
+    if (this.devMode()) return false
     return isPathBlocked(tier, this.deps.getFound())
   }
 
@@ -468,7 +468,7 @@ export class ShuffleProController {
         found: this.foundPaths(),
         random: this.deps.random,
         goldenHour: this.deps.isGoldenHour?.() ?? false,
-        demo: this.demoMode(),
+        demo: this.devMode(),
       }),
       prewarmed: false,
       source: info.source ?? 'pointer',
@@ -560,7 +560,7 @@ export class ShuffleProController {
             found: this.foundPaths(),
             random: this.deps.random,
             goldenHour: this.deps.isGoldenHour?.() ?? false,
-            demo: this.demoMode(),
+            demo: this.devMode(),
           })
     this.beginRun(tier, {
       automatic: true,
