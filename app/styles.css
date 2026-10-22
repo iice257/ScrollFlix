@@ -4837,7 +4837,7 @@
   }
 
   .warp-theme-tip span + span {
-    color: rgb(255 255 255 / 0.62);
+    opacity: 0.72;
     font-weight: 600;
   }
 

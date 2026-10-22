@@ -1245,10 +1245,6 @@
   outline: 2px solid rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"] .warp-theme-tip span + span {
-  color: rgb(33 26 16 / 0.62);
-}
-
 .warp-shell[data-theme="light"] .warp-nudge-card {
   border: 1px solid rgb(33 26 16 / 0.18);
   background: rgb(221 214 200 / 0.98);
