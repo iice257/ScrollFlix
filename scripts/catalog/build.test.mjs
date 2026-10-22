@@ -103,14 +103,14 @@ describe('seed', () => {
     })
     expect(summary).toMatchObject({
       count: 3,
-      minVotes: 10,
+      minVotes: 5,
       candidates: 3,
       failures: 0,
     })
     expect(await readMeta(stateDir)).toEqual({
       lastSync: '2026-10-18',
-      floor: 10,
-      minVotes: 10,
+      floor: 5,
+      minVotes: 5,
       count: 3,
       candidates: 3,
       version: 2,
@@ -311,7 +311,7 @@ describe('the cut to the target', () => {
     expect(summary).toMatchObject({ count: 20, minVotes: 980, candidates: 50 })
     expect((await readManifest()).count).toBe(20)
     expect(await readMeta(stateDir)).toMatchObject({
-      floor: 10,
+      floor: 5,
       minVotes: 980,
       count: 20,
       candidates: 50,
@@ -319,7 +319,7 @@ describe('the cut to the target', () => {
     // The state keeps every candidate.
     expect((await readState(stateDir)).size).toBe(50)
     for (const params of client.calls.discover) {
-      expect(params['vote_count.gte']).toBe(10)
+      expect(params['vote_count.gte']).toBe(5)
     }
   })
 

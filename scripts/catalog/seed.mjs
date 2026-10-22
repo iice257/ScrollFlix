@@ -6,9 +6,9 @@ import { mapPool } from './pool.mjs'
 const FIRST_YEAR = 1874
 // TMDB serves at most 500 pages (10,000 films) for any one query.
 const MAX_PAGES = 500
-// The lowest vote count a film is collected at. Comfortably under the vote
-// count of the 100,000th film, so the cut always has headroom.
-export const DISCOVER_FLOOR = 10
+// The lowest vote count a film is collected at. The 100,000th film has about
+// 10 votes, so this leaves headroom for the cut to move.
+export const DISCOVER_FLOOR = 5
 const PAGE_CONCURRENCY = 16
 
 const baseParams = (minVotes) => ({

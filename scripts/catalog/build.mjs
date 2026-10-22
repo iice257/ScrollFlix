@@ -3,7 +3,7 @@
 //   node scripts/catalog/build.mjs --mode seed|nightly|bootstrap
 //        --state <dir> --out <dir> [--target 100000]
 //
-//   seed       the candidates from TMDB (every film with at least 10 votes),
+//   seed       the candidates from TMDB (every film with at least 5 votes),
 //              fetch details, then publish the top --target by vote count.
 //   nightly    read the state, refetch only the films TMDB says changed plus
 //              new releases, merge and re-cut.
