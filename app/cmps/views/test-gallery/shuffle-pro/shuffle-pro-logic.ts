@@ -132,7 +132,15 @@ export type StreakEvent =
 export const EMPTY_STREAK: StreakState = { streak: 0, bigSpinRun: 0 }
 
 export const STREAK_RULES = {
-  normal: { bigSpinRun: 5, streakRoll: 10, rollChance: 0.05 },
+  // From `streakRoll` shuffles on, each shuffle rolls `rollChance` for an
+  // Amethyst run; `pityAt` shuffles in a row guarantee one, so the tier always
+  // has a deliberate route.
+  normal: {
+    bigSpinRun: 5,
+    streakRoll: 10,
+    rollChance: 0.05,
+    pityAt: 15,
+  },
   immersive: { bigSpinRun: 3, streak: 6 },
 } as const
 
@@ -143,7 +151,15 @@ export const reduceStreak = (
     immersive,
     random,
     demo = false,
-  }: { immersive: boolean; random: () => number; demo?: boolean },
+    pity = true,
+  }: {
+    immersive: boolean
+    random: () => number
+    demo?: boolean
+    // Off for a streak that is counted without starting a run (a released
+    // hold): the guarantee waits for the next shuffle instead of being spent.
+    pity?: boolean
+  },
 ): { state: StreakState; trigger: BaseTier | null } => {
   if (event.type === 'neutral') return { state, trigger: null }
   if (event.type === 'break' || event.type === 'runEnd') {
@@ -164,10 +180,11 @@ export const reduceStreak = (
   } else {
     const rules = STREAK_RULES.normal
     if (next.bigSpinRun >= rules.bigSpinRun) trigger = 'frost'
+    else if (pity && next.streak >= rules.pityAt) trigger = 'amethyst'
     else if (
       next.streak >= rules.streakRoll &&
-      // Demo mode takes the chance out: the tenth shuffle is Amethyst.
-      (demo || random() < rules.rollChance)
+      // Dev mode takes the chance out: the tenth shuffle is Amethyst.
+      ((import.meta.env.DEV && demo) || random() < rules.rollChance)
     ) {
       trigger = 'amethyst'
     }
@@ -205,15 +222,11 @@ const GOLDEN_FOUND_GOLD_CHANCE = 0.5
 export const hasUnlockedGold = (found: FoundPaths) =>
   Boolean(found.frost && found.amethyst && found.jade)
 
-// A path that has been found stops starting runs, so the surprise isn't worn
-// out; the "Repeat found paths" setting turns every path back on. A base tier
-// that would be upgraded to a Gold that isn't found yet still goes through.
-export const isPathBlocked = (
-  tier: Tier,
-  found: FoundPaths,
-  repeatFound: boolean,
-) => {
-  if (repeatFound || !found[tier]) return false
+// A path that has been found stops starting runs by itself, so the surprise
+// isn't worn out; a deliberate hold is never blocked. A base tier that would
+// be upgraded to a Gold that isn't found yet still goes through.
+export const isPathBlocked = (tier: Tier, found: FoundPaths) => {
+  if (!found[tier]) return false
   return !(tier !== 'gold' && hasUnlockedGold(found) && !found.gold)
 }
 
@@ -235,8 +248,12 @@ export const resolveTier = (
     demo?: boolean
   },
 ): Tier => {
-  // Demo mode is deterministic: the tier is the one the gesture asked for.
-  if (demo) return base
+  // Dev mode is deterministic: no golden hour and no repeat-Gold dice. Gold
+  // follows the normal unlock rule over the tiers seen in the dev session,
+  // and once it has been seen it goes back to the tier asked for.
+  if (import.meta.env.DEV && demo) {
+    return !found.gold && hasUnlockedGold(found) ? 'gold' : base
+  }
   if (found.gold) {
     const chance = goldenHour
       ? GOLDEN_FOUND_GOLD_CHANCE
@@ -329,8 +346,7 @@ export const scaleProfile = (
 
 // Bonus paths that only the mood page can start. They are kept apart from the
 // four tiers: finding one never counts toward Gold and never marks a tier as
-// found. A path that has been found stops starting runs unless "Repeat found
-// paths" is on, like the tiers.
+// found. A path that has been found stops starting runs, like the tiers.
 export type MoodPath = 'resonance' | 'eclipse' | 'wanderer'
 
 export const MOOD_PATHS: readonly MoodPath[] = [
@@ -348,8 +364,7 @@ export const MOOD_PATH_LABELS: Record<MoodPath, string> = {
 export const isMoodPathBlocked = (
   path: MoodPath,
   found: Partial<Record<MoodPath, unknown>>,
-  repeatFound: boolean,
-) => !repeatFound && Boolean(found[path])
+) => Boolean(found[path])
 
 export const PEAK_DRIFT = 0.04
 const PEAK_DRIFT_PERIOD_MS = 1700

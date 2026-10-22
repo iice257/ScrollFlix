@@ -90,11 +90,12 @@ export type ControllerDeps = {
   isImmersive: () => boolean
   isReducedMotion: () => boolean
   getFound: () => FoundPaths
-  // True when found paths should keep starting runs (a setting; off by default).
-  getRepeatFound?: () => boolean
-  // True in demo mode: found paths never block, the odds are taken out and
-  // the tenth shuffle is Amethyst. A setting; off by default.
+  // True in dev mode (local development only): found paths never block, the
+  // odds are taken out and the tenth shuffle is Amethyst.
   getDemoMode?: () => boolean
+  // The tiers seen in this dev session. Dev mode reads Gold's unlock from here
+  // instead of the real collection, which it never touches.
+  getDemoFound?: () => FoundPaths
   // The streak count after each shuffle, for the best-streak record.
   onStreak?: (streak: number) => void
   // True while the golden hour is on and Gold is easier to find.
@@ -413,19 +414,23 @@ export class ShuffleProController {
 
   getStreak = () => this.streak
 
+  // The collection the Gold rule reads: the demo session's own set in demo
+  // mode, the real one otherwise.
+  private foundPaths(): FoundPaths {
+    return this.demoMode()
+      ? (this.deps.getDemoFound?.() ?? {})
+      : this.deps.getFound()
+  }
+
   private demoMode() {
-    return this.deps.getDemoMode?.() ?? false
+    return import.meta.env.DEV && (this.deps.getDemoMode?.() ?? false)
   }
 
   // Found paths stop the streak triggers (the surprise would wear out); a held
-  // press is deliberate and never asks, and demo mode lifts the rule.
+  // press is deliberate and never asks, and dev mode lifts the rule.
   private isBlocked(tier: Tier) {
     if (this.demoMode()) return false
-    return isPathBlocked(
-      tier,
-      this.deps.getFound(),
-      this.deps.getRepeatFound?.() ?? false,
-    )
+    return isPathBlocked(tier, this.deps.getFound())
   }
 
   // A run is spinning up or landing; new actions can't start another.
@@ -460,7 +465,7 @@ export class ShuffleProController {
       ny: info.ny,
       triggered: false,
       tier: resolveTier(this.deps.isImmersive() ? 'jade' : 'frost', {
-        found: this.deps.getFound(),
+        found: this.foundPaths(),
         random: this.deps.random,
         goldenHour: this.deps.isGoldenHour?.() ?? false,
         demo: this.demoMode(),
@@ -552,7 +557,7 @@ export class ShuffleProController {
       base === 'gold'
         ? 'gold'
         : resolveTier(base, {
-            found: this.deps.getFound(),
+            found: this.foundPaths(),
             random: this.deps.random,
             goldenHour: this.deps.isGoldenHour?.() ?? false,
             demo: this.demoMode(),
@@ -719,6 +724,7 @@ export class ShuffleProController {
     return reduceStreak(this.streak, event, {
       immersive: this.deps.isImmersive(),
       random: () => 1,
+      pity: false,
     }).state
   }
 
