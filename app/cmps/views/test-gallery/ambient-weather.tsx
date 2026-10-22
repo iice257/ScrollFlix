@@ -11,14 +11,14 @@ type Drop = {
   b: number
 }
 
-const COUNT = 90
+const COUNT = 110
 const MAX_DPR = 1.5
 // Drawn at half the display rate: the layer is atmosphere, not the hero.
 const FRAME_MS = 1000 / 30
 
 // Light rain or drifting snow over the whole page, for the Dynamic theme.
 // pointer-events are off, so the globe and every control work through it. It
-// draws about 90 particles at 30 fps on a small canvas, stops while the tab is
+// draws about 110 particles at 30 fps on a small canvas, stops while the tab is
 // hidden or `paused` (a film card is open, or Shuffle Pro is running its own
 // sky), and with reduced motion it draws one still frame and never animates.
 export const AmbientWeather = ({
@@ -61,14 +61,14 @@ export const AmbientWeather = ({
       }
     }
 
-    const rainInk = light ? '70, 92, 130' : '196, 214, 255'
-    const snowInk = light ? '90, 110, 150' : '255, 255, 255'
+    const rainInk = light ? '48, 68, 110' : '196, 214, 255'
+    const snowInk = light ? '70, 92, 140' : '255, 255, 255'
 
     const draw = (dt: number, now: number) => {
       ctx.clearRect(0, 0, width, height)
       if (kind === 'rain') {
         ctx.lineCap = 'round'
-        ctx.lineWidth = 1.2
+        ctx.lineWidth = light ? 1.4 : 1.2
         for (const drop of drops) {
           const speed = 780 + drop.a * 420
           const slant = 90 + drop.b * 60
@@ -78,8 +78,8 @@ export const AmbientWeather = ({
             drop.y = -40 - Math.random() * 80
             drop.x = Math.random() * (width + 200) - 100
           }
-          const length = 14 + drop.a * 14
-          ctx.strokeStyle = `rgba(${rainInk}, ${0.35 + drop.b * 0.4})`
+          const length = 16 + drop.a * 16
+          ctx.strokeStyle = `rgba(${rainInk}, ${0.45 + drop.b * 0.45})`
           ctx.beginPath()
           ctx.moveTo(drop.x, drop.y)
           ctx.lineTo(drop.x - (slant / speed) * length, drop.y - length)
@@ -158,7 +158,7 @@ export const AmbientWeather = ({
         pointerEvents: 'none',
         // Above the globe, below the dock, cards and menus.
         zIndex: 3,
-        opacity: paused ? 0 : 0.42,
+        opacity: paused ? 0 : 0.5,
         transition: 'opacity 400ms ease',
       }}
     />

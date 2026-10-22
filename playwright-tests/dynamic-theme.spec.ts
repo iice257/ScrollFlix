@@ -98,11 +98,22 @@ test.describe('Dynamic theme', () => {
     page,
   }) => {
     await stubSky(page, { isDay: false, weather: 'rain' })
+    // The globe-line tips would sit over the switch on a first open.
+    await page.addInitScript(() => {
+      for (const kind of ['path', 'links'])
+        window.localStorage.setItem(`wtw:globe-lines-nudge:${kind}:v1`, '1')
+    })
     await load(page)
     await expect(shell(page)).toHaveAttribute('data-theme-pref', 'dark')
     await page.getByRole('button', { name: 'About ScrollFlix' }).click()
     const menu = page.getByRole('complementary', { name: 'About ScrollFlix' })
     await expect(menu).toBeVisible()
+    // First open: a one-time hint says what Dynamic is, and where location
+    // comes from.
+    await expect(
+      menu.getByText(/Follows your daylight and weather/),
+    ).toBeVisible()
+    await expect(menu.getByText(/Location comes from your IP/)).toBeVisible()
     await menu.getByRole('button', { name: 'Dynamic', exact: true }).click()
     await expect(shell(page)).toHaveAttribute('data-theme-pref', 'dynamic')
     await expect(shell(page)).toHaveAttribute('data-theme', 'dark')

@@ -5133,7 +5133,7 @@ const AboutDrawer = ({
   // First-open tips for the two globe-line switches; they live across the
   // compact and full versions of the menu.
   const nudges = useLineNudges()
-  const dynamicHint = useDynamicHint(themePref)
+  const dynamicHint = useDynamicHint(themePref, nudges.visible.length > 0)
   const theme = resolveTheme(themePref, sky)
   return maximized ? (
     <section

@@ -45,9 +45,14 @@ export type DynamicHint = {
   dismiss: () => void
 }
 
-export const useDynamicHint = (pref: ThemePref): DynamicHint => {
+// `blocked` holds the hint back while another first-open tip is on screen, so
+// two tips never stack on the same part of the menu.
+export const useDynamicHint = (
+  pref: ThemePref,
+  blocked: boolean,
+): DynamicHint => {
   const [seen, setSeen] = useState(hasSeenDynamicHint)
-  const visible = !seen && pref !== 'dynamic'
+  const visible = !seen && !blocked && pref !== 'dynamic'
   const visibleRef = useRef(visible)
   visibleRef.current = visible
 
