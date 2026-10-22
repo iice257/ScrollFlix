@@ -312,6 +312,12 @@ const POSTER_REVEAL_MS = 260
 const POSTER_REVEAL_REDUCED_MS = 160
 const POSTER_REVEAL_STAGGER_MS = 9
 const POSTER_REVEAL_MAX_LEAD_MS = 420
+// The first wave, once the wall appears: posters reveal from the centre out,
+// over this long, starting this long after the wall begins to fade in.
+const POSTER_WAVE_MS = 650
+const POSTER_WAVE_DELAY_MS = 120
+// Reveal clock value for a poster held back: so far ahead that it never starts.
+const REVEAL_HELD_SECONDS = 1e9
 
 // When a poster that landed at `now` starts its fade, and where the stagger
 // cursor moves to. Posters queue a few ms apart; once the queue is longer than
@@ -1432,6 +1438,8 @@ class InfiniteMovieEngine<T> {
   // after a placeholder) swaps in without fading again.
   private readonly revealedCells = new Set<number>()
   private revealCursor = 0
+  private revealGateOpen = false
+  private readonly heldReveals = new Set<number>()
   private control: ArcballControl
   private frameId = 0
   private time = 0
@@ -2339,18 +2347,74 @@ class InfiniteMovieEngine<T> {
     )
   }
 
+  // Posters that land while the loader still covers the wall wait (an empty
+  // slot) and are revealed as a wave from the centre once the wall shows, so
+  // the fade is seen instead of finishing behind the loader.
+  private watchWallVisible() {
+    const shell = this.canvas.closest<HTMLElement>('[data-gallery-ready]')
+    if (!shell || shell.dataset.galleryReady !== 'false') {
+      this.revealGateOpen = true
+      return
+    }
+    const observer = new MutationObserver(() => {
+      if (shell.dataset.galleryReady === 'false') return
+      observer.disconnect()
+      this.openRevealGate()
+    })
+    observer.observe(shell, {
+      attributes: true,
+      attributeFilter: ['data-gallery-ready'],
+    })
+    this.cleanupCallbacks.push(() => observer.disconnect())
+  }
+
+  private openRevealGate() {
+    this.revealGateOpen = true
+    const held = [...this.heldReveals]
+    this.heldReveals.clear()
+    if (!held.length || this.disposed || this.contextLost) return
+    this.sortByFacing(held, 0)
+    const now = performance.now()
+    const reduced = this.reducedMotion()
+    held.forEach((index, rank) => {
+      const delay = reduced
+        ? 0
+        : POSTER_WAVE_DELAY_MS + (rank / held.length) * POSTER_WAVE_MS
+      this.startReveal(index, now + delay)
+    })
+    this.renderDirty = true
+  }
+
   // Starts the cell's one fade, a few ms after the previous cell's.
   private markPosterArrived(index: number) {
     if (!this.revealTexture || this.revealedCells.has(index)) return
     this.revealedCells.add(index)
-    const now = performance.now()
+    if (!this.revealGateOpen) {
+      this.heldReveals.add(index)
+      // Far in the future: the slot stays empty until the gate opens.
+      this.writeRevealStart(index, REVEAL_HELD_SECONDS)
+      return
+    }
     const { start, cursor } = nextRevealStart(
-      now,
+      performance.now(),
       this.revealCursor,
       index,
       this.reducedMotion(),
     )
     this.revealCursor = cursor
+    this.startReveal(index, start)
+  }
+
+  private startReveal(index: number, start: number) {
+    this.writeRevealStart(index, (start - this.revealEpoch) / 1000 + 1)
+    this.revealUntil = Math.max(
+      this.revealUntil,
+      start + POSTER_REVEAL_MS + 120,
+    )
+  }
+
+  private writeRevealStart(index: number, seconds: number) {
+    if (!this.revealTexture) return
     const gl = this.gl
     gl.activeTexture(gl.TEXTURE1)
     gl.bindTexture(gl.TEXTURE_2D, this.revealTexture)
@@ -2363,13 +2427,9 @@ class InfiniteMovieEngine<T> {
       1,
       gl.RED,
       gl.FLOAT,
-      new Float32Array([(start - this.revealEpoch) / 1000 + 1]),
+      new Float32Array([seconds]),
     )
     gl.activeTexture(gl.TEXTURE0)
-    this.revealUntil = Math.max(
-      this.revealUntil,
-      start + POSTER_REVEAL_MS + 120,
-    )
   }
 
   private async loadTextureImages(
@@ -2389,6 +2449,7 @@ class InfiniteMovieEngine<T> {
       .map((_, index) => index)
       .sort((a, b) => facing[b] - facing[a])
     const loaded = new Set<number>()
+    this.watchWallVisible()
 
     // A poster that could not be fetched falls back to its tiny sprite (or its
     // colour) so the slot is not left empty. Posters that load never show a
@@ -2412,6 +2473,10 @@ class InfiniteMovieEngine<T> {
       window.clearTimeout(safetyNet)
       this.canvas.dataset.webglState = 'ready'
       this.reportProgress(100)
+      // Backstop for the wall-visible watcher: never leave posters held.
+      window.setTimeout(() => {
+        if (!this.revealGateOpen && !this.disposed) this.openRevealGate()
+      }, 900)
     }
     const safetyNet = window.setTimeout(markReady, GLOBE_READY_SAFETY_NET_MS)
     // Slow posters shouldn't hold everyone back: once most have settled the
@@ -2956,7 +3021,7 @@ class InfiniteMovieEngine<T> {
     gl.uniform1i(this.locations.uRevealTex, 1)
     gl.uniform1f(
       this.locations.uRevealActive,
-      performance.now() < this.revealUntil ? 1 : 0,
+      performance.now() < this.revealUntil || this.heldReveals.size ? 1 : 0,
     )
     gl.uniform1f(
       this.locations.uRevealSeconds,
