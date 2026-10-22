@@ -109,10 +109,14 @@ const marksDiffer = (page: Page) => {
   // The drawer blurs the globe, so change the setting, close it, then look.
   const shot = async (on: boolean) => {
     await page.locator('button.warp-info-button').click()
-    await page
+    // Press it with the keyboard: on a slow runner the drawer's entrance and
+    // the line tips keep the button "unstable" for a click.
+    const toggle = page
       .getByRole('group', { name: 'Session path' })
       .getByRole('button', { name: on ? 'On' : 'Off', exact: true })
-      .click()
+    await toggle.focus()
+    await page.keyboard.press('Enter')
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
     await closeDrawer(page)
     await page.waitForTimeout(500)
     return (await page.screenshot({ clip })).toString('base64')
