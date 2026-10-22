@@ -4,7 +4,9 @@ name: Catalogue
 # `catalog-latest` / `catalog.tar.gz`, which `npm run build` pulls. Nightly it
 # refetches only what changed; it re-seeds from scratch on the 1st of each
 # month, on a manual "seed" run, and whenever there is no usable state yet
-# (no release, an empty release, or the bootstrap catalogue).
+# (no release, an empty release, or the bootstrap catalogue). The state keeps
+# every candidate film (5 or more votes); the published catalogue is the top
+# 100,000 by vote count, and a manual "recut" run re-cuts it without TMDB.
 #
 # Needs the repository secret TMDB_API_READ_TOKEN. VERCEL_DEPLOY_HOOK_URL is
 # optional: when set, a successful run triggers a production deploy.
@@ -15,11 +17,12 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'nightly updates what changed; seed rebuilds everything'
+        description: 'nightly updates what changed; seed rebuilds everything; recut re-cuts the published films from the saved state, no TMDB calls'
         type: choice
         options:
           - nightly
           - seed
+          - recut
         default: nightly
 
 permissions:

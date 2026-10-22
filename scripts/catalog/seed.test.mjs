@@ -1,48 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { fakeClient } from './fixtures/details.mjs'
-import { chooseMinVotes, discoverIds } from './seed.mjs'
+import { discoverIds } from './seed.mjs'
 
 const result = (id) => ({
   id,
   poster_path: `/p${id}.jpg`,
   release_date: '2000-01-01',
-})
-
-describe('chooseMinVotes', () => {
-  it('picks smallest n under target·1.05', async () => {
-    // total(n) = 1,000,000 / n, so n = 10 gives 100,000 and n = 9 gives 111,111.
-    const client = fakeClient({
-      discoverFn: (params) => ({
-        page: 1,
-        total_pages: 1,
-        results: [],
-        total_results: Math.floor(1_000_000 / params['vote_count.gte']),
-      }),
-    })
-    expect(await chooseMinVotes(client, 100_000)).toBe(10)
-    // Binary search, not a scan.
-    expect(client.calls.discover.length).toBeLessThanOrEqual(10)
-    for (const params of client.calls.discover) {
-      expect(params.include_adult).toBe(false)
-      expect(params.include_video).toBe(false)
-    }
-  })
-
-  it('returns 1 when even every film fits, and 200 when none does', async () => {
-    const small = fakeClient({
-      discoverFn: () => ({ page: 1, total_pages: 1, total_results: 5, results: [] }),
-    })
-    expect(await chooseMinVotes(small, 100_000)).toBe(1)
-    const huge = fakeClient({
-      discoverFn: () => ({
-        page: 1,
-        total_pages: 1,
-        total_results: 9e9,
-        results: [],
-      }),
-    })
-    expect(await chooseMinVotes(huge, 100_000)).toBe(200)
-  })
 })
 
 describe('discoverIds', () => {
