@@ -183,12 +183,12 @@
 - the sky shader quality probe (`QUALITY_PROBE_FRAMES`, `QUALITY_STEP_DOWN_MS`)
 - Shuffle Pro (`shuffle-pro/`)
 
-- [ ] **Step 1: Run** `npm run perf`. Then record a 6 s Chrome performance trace of `all-on` spinning, with Playwright `page.context().tracing` or CDP `Tracing.start`. Open it as JSON and list the top 10 self-time functions.
-- [ ] **Step 2:** For each item over 0.5 ms per frame, fix it at the source. Typical fixes:
+- [x] **Step 1: Run** `npm run perf`. Then record a 6 s Chrome performance trace of `all-on` spinning, with Playwright `page.context().tracing` or CDP `Tracing.start`. Open it as JSON and list the top 10 self-time functions.
+- [x] **Step 2:** For each item over 0.5 ms per frame, fix it at the source. Typical fixes:
   - stop React re-renders during spin (move per-frame values to refs, and add `memo` to children that take changing props)
   - skip overlay rAF while nothing is shown
   - avoid string building or style writes per frame
-- [ ] **Step 3:** Each fix ships with a unit test where the logic is testable, for example `weather-logic`. Otherwise a benchmark row must improve.
-- [ ] **Step 4: Run** `npm run perf`. Expected: `all-on` p95 ≤ 16.7 ms, every feature within 1 ms of `all-off`, and `idle-all-on` at 0 engine rAF and ≤ 15 twinkle ticks per second.
-- [ ] **Step 5: Run** `npm run check && npm run test:unit && npm run build && npm run test:e2e`. Expected: all green.
-- [ ] **Step 6: Commit** with "Spin within the 16.7 ms budget with every feature on". Put the before/after `perf.md` table in the commit body.
+- [x] **Step 3:** Each fix ships with a unit test where the logic is testable, for example `weather-logic`. Otherwise a benchmark row must improve.
+- [x] **Step 4: Run** `npm run perf`. Expected: `all-on` p95 ≤ 16.7 ms, every feature within 1 ms of `all-off`, and `idle-all-on` at 0 engine rAF and ≤ 15 twinkle ticks per second.
+- [x] **Step 5: Run** `npm run check && npm run test:unit && npm run build && npm run test:e2e`. Expected: all green.
+- [x] **Step 6: Commit** with "Spin within the 16.7 ms budget with every feature on". Put the before/after `perf.md` table in the commit body.
