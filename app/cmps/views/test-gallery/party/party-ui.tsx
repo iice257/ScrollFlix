@@ -1,72 +1,54 @@
-import { ArrowRight, Crown, Plus, Users, X } from 'lucide-react'
+import { ArrowRight, Crown, Link2, Plus, Users, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '../../../../utils/tw'
 import './party.css'
+import './party-v2.css'
 import {
   MAX_NAME_LENGTH,
   MAX_PLAYERS,
   MIN_PLAYERS,
+  PARTY_MODES,
+  type PartyMode,
   type PartyState,
+  type StartOptions,
   currentPlayerIndex,
   currentRound,
   playerTotal,
   standings,
   winners,
 } from './party-logic'
+import {
+  Dot,
+  MODE_BLURBS,
+  MODE_LABELS,
+  PLAYER_COLORS,
+  colorOf,
+  useEscape,
+} from './party-parts'
 
-export const PLAYER_COLORS = [
-  '#ff7a2f',
-  '#a78bfa',
-  '#ffd23f',
-  '#ff6b9d',
-  '#5eead4',
-  '#60a5fa',
-]
-
-const colorOf = (index: number) => PLAYER_COLORS[index % PLAYER_COLORS.length]
-
-export const weirdnessLabel = (score: number) =>
-  score >= 75
-    ? 'Truly strange'
-    : score >= 50
-      ? 'Weird'
-      : score >= 25
-        ? 'A bit off'
-        : 'Mainstream'
-
-const Dot = ({ index, name }: { index: number; name: string }) => (
-  <span
-    className='party-dot'
-    style={{ background: colorOf(index) }}
-    aria-hidden='true'
-  >
-    {name.trim().charAt(0).toUpperCase() || index + 1}
-  </span>
-)
+export { PLAYER_COLORS } from './party-parts'
 
 // ------------------------------------------------------------------ setup
 
 type SetupProps = {
-  onStart: (names: string[], rounds: number) => void
+  onStart: (options: StartOptions) => void
   onClose: () => void
 }
 
 export const PartySetup = ({ onStart, onClose }: SetupProps) => {
   const [names, setNames] = useState<string[]>(['', ''])
   const [rounds, setRounds] = useState(2)
+  const [mode, setMode] = useState<PartyMode>('year')
+  const [settle, setSettle] = useState(true)
+  const [online, setOnline] = useState(false)
   const firstRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
-    firstRef.current?.focus()
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      onClose()
-    }
-    window.addEventListener('keydown', handleKeyDown, true)
-    return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [onClose])
+    // On a phone the keyboard would cover the choices, so only a mouse and
+    // keyboard setup starts with the cursor in the first name.
+    if (window.matchMedia('(pointer: fine)').matches) firstRef.current?.focus()
+  }, [])
+  useEscape(onClose)
 
   return (
     <section className='party-layer' aria-label='Pass the globe'>
@@ -80,7 +62,7 @@ export const PartySetup = ({ onStart, onClose }: SetupProps) => {
         className='party-card'
         onSubmit={(event) => {
           event.preventDefault()
-          onStart(names, rounds)
+          onStart({ names, rounds, mode, settle, online })
         }}
       >
         <header className='party-heading'>
@@ -90,11 +72,34 @@ export const PartySetup = ({ onStart, onClose }: SetupProps) => {
           <div>
             <h2>Pass the globe</h2>
             <p>
-              Take turns flicking the globe. Whatever it lands on gets a
-              weirdness score, and the highest total wins.
+              Take turns flicking the globe, then guess your way to the best
+              score. The night ends with one film to watch.
             </p>
           </div>
         </header>
+
+        <fieldset className='party-segment' aria-label='How you are playing'>
+          {[
+            { value: false, label: 'Same phone' },
+            { value: true, label: 'Over chat' },
+          ].map((option) => (
+            <button
+              type='button'
+              aria-pressed={online === option.value}
+              key={option.label}
+              className={cn(online === option.value && 'is-active')}
+              onClick={() => setOnline(option.value)}
+            >
+              {option.value ? <Link2 aria-hidden='true' /> : null}
+              {option.label}
+            </button>
+          ))}
+        </fieldset>
+        <p className='party-hint'>
+          {online
+            ? 'Each turn ends with a link. Send it to the next player and they carry on from their own phone.'
+            : 'Pass this phone around the room.'}
+        </p>
 
         <fieldset className='party-players'>
           <legend>Who is playing?</legend>
@@ -108,6 +113,7 @@ export const PartySetup = ({ onStart, onClose }: SetupProps) => {
                 placeholder={`Player ${index + 1}`}
                 aria-label={`Player ${index + 1} name`}
                 autoComplete='off'
+                enterKeyHint='next'
                 onChange={(event) =>
                   setNames((current) =>
                     current.map((item, at) =>
@@ -144,22 +150,53 @@ export const PartySetup = ({ onStart, onClose }: SetupProps) => {
           ) : null}
         </fieldset>
 
-        <fieldset className='party-rounds'>
-          <legend>Rounds</legend>
-          <div>
-            {[1, 2, 3].map((count) => (
-              <button
-                type='button'
-                key={count}
-                aria-pressed={rounds === count}
-                className={cn(rounds === count && 'is-active')}
-                onClick={() => setRounds(count)}
-              >
-                {count}
-              </button>
-            ))}
-          </div>
+        <fieldset className='party-modes'>
+          <legend>Game</legend>
+          {PARTY_MODES.map((option) => (
+            <button
+              type='button'
+              key={option}
+              aria-pressed={mode === option}
+              className={cn(mode === option && 'is-active')}
+              onClick={() => setMode(option)}
+            >
+              <strong>{MODE_LABELS[option]}</strong>
+              <small>{MODE_BLURBS[option]}</small>
+            </button>
+          ))}
         </fieldset>
+
+        <div className='party-options'>
+          <fieldset className='party-rounds'>
+            <legend>Rounds</legend>
+            <div>
+              {[1, 2, 3].map((count) => (
+                <button
+                  type='button'
+                  key={count}
+                  aria-pressed={rounds === count}
+                  className={cn(rounds === count && 'is-active')}
+                  onClick={() => setRounds(count)}
+                >
+                  {count}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <button
+            type='button'
+            role='switch'
+            aria-checked={settle}
+            className={cn('party-switch', settle && 'is-on')}
+            onClick={() => setSettle((value) => !value)}
+          >
+            <span>
+              <strong>Settle it</strong>
+              <small>Veto down to tonight&rsquo;s film</small>
+            </span>
+            <i />
+          </button>
+        </div>
 
         <button type='submit' className='party-start'>
           Start
@@ -174,73 +211,49 @@ export const PartySetup = ({ onStart, onClose }: SetupProps) => {
 
 type HudProps = {
   state: PartyState
-  onNext: () => void
+  // Over chat, the player holding this phone.
+  me: number | null
   onEnd: () => void
 }
 
-export const PartyHud = ({ state, onNext, onEnd }: HudProps) => {
-  const index = currentPlayerIndex(state)
+// The pill under the top bar while a player is up and the globe is theirs.
+export const PartyHud = ({ state, me, onEnd }: HudProps) => {
+  const index = me ?? currentPlayerIndex(state)
   const player = state.players[index]
-  const nextName =
-    state.players[(state.turn + 1) % state.players.length]?.name ?? ''
-  const lastTurn = state.turn + 1 >= state.players.length * state.rounds
-  const result = state.phase === 'result' ? state.last : null
 
   return (
     <aside className='party-hud' aria-label='Pass the globe'>
       <div className='party-pill' data-phase={state.phase}>
-        <Dot index={result ? result.player : index} name={player?.name ?? ''} />
-        {result ? (
-          <>
-            <span className='party-copy'>
-              <strong>
-                {state.players[result.player]?.name} landed on {result.title}
-              </strong>
-              <small>
-                Weirdness <b>{result.score}</b> · {weirdnessLabel(result.score)}
-              </small>
-            </span>
-            <button type='button' className='party-next' onClick={onNext}>
-              {lastTurn ? 'Results' : `Pass to ${nextName}`}
-              <ArrowRight aria-hidden='true' />
-            </button>
-          </>
-        ) : (
-          <>
-            <span className='party-copy'>
-              <strong>{player?.name}&rsquo;s turn</strong>
-              <small>
-                Round {currentRound(state)} of {state.rounds} · flick the globe
-                or shuffle
-              </small>
-            </span>
-            <button
-              type='button'
-              className='party-end'
-              aria-label='End the game'
-              onClick={onEnd}
-            >
-              <X aria-hidden='true' />
-            </button>
-          </>
-        )}
+        <Dot index={index} name={player?.name ?? ''} />
+        <span className='party-copy'>
+          <strong>{player?.name}&rsquo;s turn</strong>
+          <small className={cn(state.notice && 'is-notice')} aria-live='polite'>
+            {state.notice ??
+              `Round ${currentRound(state)} of ${state.rounds} · flick or shuffle`}
+          </small>
+        </span>
+        <button
+          type='button'
+          className='party-end'
+          aria-label='End the game'
+          onClick={onEnd}
+        >
+          <X aria-hidden='true' />
+        </button>
       </div>
-      {/* The scores sit out of the way while the film's card is open. */}
-      {state.phase === 'turn' ? (
-        <ul className='party-scores'>
-          {state.players.map((item, at) => (
-            <li
-              key={`score-${PLAYER_COLORS[at]}`}
-              className={cn(at === index && state.phase === 'turn' && 'is-up')}
-              style={{ '--player': colorOf(at) } as never}
-            >
-              <i />
-              <span>{item.name}</span>
-              <b>{playerTotal(item)}</b>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      <ul className='party-scores'>
+        {state.players.map((item, at) => (
+          <li
+            key={`score-${PLAYER_COLORS[at]}`}
+            className={cn(at === index && 'is-up')}
+            style={{ '--player': colorOf(at) } as never}
+          >
+            <i />
+            <span>{item.name}</span>
+            <b>{playerTotal(item)}</b>
+          </li>
+        ))}
+      </ul>
     </aside>
   )
 }
@@ -249,24 +262,23 @@ export const PartyHud = ({ state, onNext, onEnd }: HudProps) => {
 
 type FinalProps = {
   state: PartyState
+  // The label for the main button and whether it hands the phone on.
+  primary: { label: string; onClick: () => void } | null
   onAgain: () => void
   onDone: () => void
+  onShare?: () => void
 }
 
-export const PartyFinal = ({ state, onAgain, onDone }: FinalProps) => {
+export const PartyFinal = ({
+  state,
+  primary,
+  onAgain,
+  onDone,
+  onShare,
+}: FinalProps) => {
   const ranked = standings(state.players)
   const top = new Set(winners(state.players))
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      onDone()
-    }
-    window.addEventListener('keydown', handleKeyDown, true)
-    return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [onDone])
+  useEscape(onDone)
 
   const names = [...top].map((at) => state.players[at]?.name).join(' and ')
 
@@ -287,7 +299,7 @@ export const PartyFinal = ({ state, onAgain, onDone }: FinalProps) => {
             <h2>
               {names} {top.size > 1 ? 'share it' : 'wins'}
             </h2>
-            <p>The weirdest landings of the night.</p>
+            <p>{MODE_LABELS[state.mode]} · final scores</p>
           </div>
         </header>
         <ol className='party-board'>
@@ -316,13 +328,29 @@ export const PartyFinal = ({ state, onAgain, onDone }: FinalProps) => {
           })}
         </ol>
         <div className='party-actions'>
-          <button type='button' className='party-start' onClick={onAgain}>
-            Play again
-          </button>
+          {primary ? (
+            <button
+              type='button'
+              className='party-start'
+              onClick={primary.onClick}
+            >
+              {primary.label}
+              <ArrowRight aria-hidden='true' />
+            </button>
+          ) : (
+            <button type='button' className='party-start' onClick={onAgain}>
+              Play again
+            </button>
+          )}
           <button type='button' className='party-ghost' onClick={onDone}>
             Done
           </button>
         </div>
+        {onShare && !primary ? (
+          <button type='button' className='party-quit' onClick={onShare}>
+            Copy a link to these results
+          </button>
+        ) : null}
       </div>
     </section>
   )
