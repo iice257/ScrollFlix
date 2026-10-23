@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { decodeRow, decodeText, encodeChunks, normaliseFilm } from './rows.mjs'
+import {
+  decodeRow,
+  decodeText,
+  encodeChunks,
+  normaliseFilm,
+  rankTrailers,
+} from './rows.mjs'
 
 const film = (id, extra = {}) => ({
   id,
@@ -17,6 +23,9 @@ const film = (id, extra = {}) => ({
   tagline: `Tagline ${id}`,
   imdbId: `tt${String(id).padStart(7, '0')}`,
   avgColour: 'a1b2c3',
+  originalTitle: '',
+  originalLanguage: 'en',
+  trailers: [],
   ...extra,
 })
 
@@ -73,7 +82,43 @@ describe('normaliseFilm', () => {
       overview: 'Dreams.',
       tagline: 'Your mind is the scene of the crime.',
       imdbId: 'tt1375666',
+      originalTitle: '',
+      originalLanguage: '',
+      trailers: [],
     })
+  })
+
+  it('keeps the original title only when it differs from the title', () => {
+    const base = { ...details, original_language: 'fr' }
+    expect(
+      normaliseFilm({ ...base, title: 'Amelie', original_title: 'Amélie' })
+        .originalTitle,
+    ).toBe('')
+    expect(
+      normaliseFilm({ ...base, title: 'Inception', original_title: 'INCEPTION' })
+        .originalTitle,
+    ).toBe('')
+    const spirited = normaliseFilm({
+      ...base,
+      title: 'Spirited Away',
+      original_title: ' 千と千尋の神隠し ',
+      original_language: 'ja',
+    })
+    expect(spirited.originalTitle).toBe('千と千尋の神隠し')
+    expect(spirited.originalLanguage).toBe('ja')
+  })
+
+  it('stores the ranked trailer keys', () => {
+    const film = normaliseFilm({
+      ...details,
+      videos: {
+        results: [
+          { site: 'YouTube', key: 'teaserKey1', type: 'Teaser' },
+          { site: 'YouTube', key: 'trailerKey', type: 'Trailer' },
+        ],
+      },
+    })
+    expect(film.trailers).toEqual(['trailerKey', 'teaserKey1'])
   })
 
   it('returns null without a poster or a year', () => {
@@ -98,7 +143,60 @@ describe('normaliseFilm', () => {
       genres: [],
       rating10: 0,
       voteCount: 0,
+      trailers: [],
     })
+  })
+})
+
+const video = (key, extra = {}) => ({
+  site: 'YouTube',
+  type: 'Trailer',
+  official: true,
+  iso_639_1: 'en',
+  published_at: '2020-01-01T00:00:00.000Z',
+  key,
+  ...extra,
+})
+
+describe('rankTrailers', () => {
+  it('puts the official English trailer first and teasers last', () => {
+    const keys = rankTrailers([
+      video('teaser0001', { type: 'Teaser' }),
+      video('unofficial', { official: false }),
+      video('frenchtrl1', { iso_639_1: 'fr' }),
+      video('officialen'),
+    ])
+    expect(keys).toEqual(['officialen', 'frenchtrl1', 'unofficial'])
+  })
+
+  it('prefers the newest when everything else is equal', () => {
+    const keys = rankTrailers([
+      video('olderkey01', { published_at: '2015-01-01T00:00:00.000Z' }),
+      video('newerkey01', { published_at: '2021-01-01T00:00:00.000Z' }),
+    ])
+    expect(keys).toEqual(['newerkey01', 'olderkey01'])
+  })
+
+  it('drops other sites, other types, bad keys and repeats', () => {
+    const keys = rankTrailers([
+      video('vimeokey01', { site: 'Vimeo' }),
+      video('cliptype01', { type: 'Clip' }),
+      video('featurette', { type: 'Featurette' }),
+      video('x'),
+      video('has space!!'),
+      video('goodkey001'),
+      video('goodkey001'),
+    ])
+    expect(keys).toEqual(['goodkey001'])
+  })
+
+  it('keeps at most three and copes with nothing', () => {
+    const many = ['aaaaaaaa1', 'aaaaaaaa2', 'aaaaaaaa3', 'aaaaaaaa4'].map((k) =>
+      video(k),
+    )
+    expect(rankTrailers(many)).toHaveLength(3)
+    expect(rankTrailers(undefined)).toEqual([])
+    expect(rankTrailers([])).toEqual([])
   })
 })
 
@@ -173,7 +271,7 @@ describe('rows', () => {
     const films = [film(1), film(2), film(3)]
     const { manifest } = encodeChunks(films, fixedAt)
     expect(manifest).toMatchObject({
-      version: 2,
+      version: 3,
       count: 3,
       chunkSize: 2000,
       textChunkSize: 500,
@@ -181,6 +279,42 @@ describe('rows', () => {
     })
     expect(manifest.genres[0]).toBe('Drama')
     expect(manifest.countries[0]).toBe('France')
+  })
+
+  it('decodes old three-field text rows as films without the new fields', () => {
+    expect(decodeText(['Overview', 'Tagline', 'tt1'])).toEqual({
+      overview: 'Overview',
+      tagline: 'Tagline',
+      imdbId: 'tt1',
+      originalTitle: '',
+      originalLanguage: '',
+      trailers: [],
+    })
+  })
+
+  it('round-trips original title and trailers, and writes them as one string', () => {
+    const films = [
+      film(1, {
+        originalTitle: '千と千尋の神隠し',
+        originalLanguage: 'ja',
+        trailers: ['abc12345', 'def67890'],
+      }),
+    ]
+    const encoded = encodeChunks(films, fixedAt)
+    const [text] = JSON.parse(encoded.files.get(encoded.manifest.texts[0]))
+    expect(text.slice(3)).toEqual([
+      '千と千尋の神隠し',
+      'ja',
+      'abc12345 def67890',
+    ])
+    expect(decodeAll(encoded)).toEqual(films)
+  })
+
+  it('encodes films from an old state, with no new fields, without crashing', () => {
+    const { originalTitle, originalLanguage, trailers, ...old } = film(1)
+    const encoded = encodeChunks([old], fixedAt)
+    const [text] = JSON.parse(encoded.files.get(encoded.manifest.texts[0]))
+    expect(text).toEqual(['Overview 1', 'Tagline 1', 'tt0000001', '', '', ''])
   })
 
   it('row layout matches the spec', () => {
@@ -202,6 +336,6 @@ describe('rows', () => {
       91,
     ])
     const [text] = JSON.parse(files.get(manifest.texts[0]))
-    expect(text).toEqual(['Overview 1', 'Tagline 1', 'tt0000001'])
+    expect(text).toEqual(['Overview 1', 'Tagline 1', 'tt0000001', '', 'en', ''])
   })
 })

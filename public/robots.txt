@@ -6,6 +6,7 @@ Allow: /
 Disallow: /json/
 Disallow: /media/
 Disallow: /assets/
+Allow: /api/og
 
 # Common crawl optimizations
 # Crawl-delay: 1

@@ -190,30 +190,21 @@ describe('Space hold', () => {
 })
 
 describe('isPathBlocked', () => {
-  it('lets a path that has not been found through', () => {
-    expect(isPathBlocked('frost', {}, false)).toBe(false)
-    expect(isPathBlocked('jade', { frost: 1 }, false)).toBe(false)
+  it('never blocks a path that is not found', () => {
+    expect(isPathBlocked('frost', {})).toBe(false)
+    expect(isPathBlocked('jade', { frost: 1 })).toBe(false)
   })
 
-  it('blocks a path once it is found', () => {
-    expect(isPathBlocked('frost', { frost: 1 }, false)).toBe(true)
-    expect(isPathBlocked('amethyst', { frost: 1, amethyst: 2 }, false)).toBe(
-      true,
-    )
+  it('blocks a path that has been found', () => {
+    expect(isPathBlocked('frost', { frost: 1 })).toBe(true)
+    expect(isPathBlocked('amethyst', { frost: 1, amethyst: 2 })).toBe(true)
   })
 
-  it('lets every path through when repeats are on', () => {
-    expect(isPathBlocked('frost', { frost: 1 }, true)).toBe(false)
-    expect(
-      isPathBlocked('gold', { frost: 1, amethyst: 1, jade: 1, gold: 1 }, true),
-    ).toBe(false)
-  })
-
-  it('still lets a found path through when it would become the first Gold', () => {
+  it('lets a base tier through while Gold is unlocked but not found', () => {
     const found = { frost: 1, amethyst: 1, jade: 1 }
-    expect(isPathBlocked('frost', found, false)).toBe(false)
-    expect(isPathBlocked('gold', { ...found, gold: 1 }, false)).toBe(true)
-    expect(isPathBlocked('frost', { ...found, gold: 1 }, false)).toBe(true)
+    expect(isPathBlocked('frost', found)).toBe(false)
+    expect(isPathBlocked('gold', { ...found, gold: 1 })).toBe(true)
+    expect(isPathBlocked('frost', { ...found, gold: 1 })).toBe(true)
   })
 })
 
@@ -233,6 +224,7 @@ const play = (
     immersive?: boolean
     random?: () => number
     demo?: boolean
+    pity?: boolean
   } = {},
 ) => {
   let state: StreakState = EMPTY_STREAK
@@ -242,6 +234,7 @@ const play = (
       immersive: options.immersive ?? false,
       random: options.random ?? (() => 0.99),
       demo: options.demo,
+      pity: options.pity,
     })
     state = result.state
     results.push({ state, trigger: result.trigger })
@@ -373,8 +366,86 @@ describe('reduceStreak', () => {
   })
 
   it('does not fire on a 5% roll that misses', () => {
-    const results = play(repeat(shuffle, 20), { random: () => 0.05 })
+    const results = play(repeat(shuffle, 14), { random: () => 0.05 })
     expect(results.every((r) => r.trigger === null)).toBe(true)
+  })
+
+  describe('Amethyst pity', () => {
+    const miss = () => 0.99
+
+    it('does not fire at the 14th shuffle when every roll misses', () => {
+      const results = play(repeat(shuffle, 14), { random: miss })
+      expect(results.every((r) => r.trigger === null)).toBe(true)
+      expect(results[13].state).toEqual({ streak: 14, bigSpinRun: 0 })
+    })
+
+    it('guarantees Amethyst at the 15th shuffle, whatever the dice say', () => {
+      const results = play(repeat(shuffle, 15), { random: miss })
+      expect(results.slice(0, 14).every((r) => r.trigger === null)).toBe(true)
+      expect(results[14].trigger).toBe('amethyst')
+      expect(results[14].state).toEqual(EMPTY_STREAK)
+    })
+
+    it('still lets the roll win anywhere from the 10th to the 14th', () => {
+      for (let win = 10; win <= 14; win += 1) {
+        // The roll misses until shuffle `win`, where it finally lands.
+        let rolls = 0
+        const results = play(repeat(shuffle, win), {
+          random: () => (++rolls === win - 9 ? 0.01 : 0.99),
+        })
+        expect(results[win - 1].trigger).toBe('amethyst')
+        expect(results.filter((r) => r.trigger)).toHaveLength(1)
+      }
+    })
+
+    it('starts the count over after a run, so pity needs 15 more', () => {
+      const results = play(repeat(shuffle, 30), { random: miss })
+      expect(results[14].trigger).toBe('amethyst')
+      expect(results.slice(15, 29).every((r) => r.trigger === null)).toBe(true)
+      expect(results[29].trigger).toBe('amethyst')
+    })
+
+    it('starts over after a break', () => {
+      const events: StreakEvent[] = [
+        ...repeat(shuffle, 14),
+        brk,
+        ...repeat(shuffle, 14),
+      ]
+      const results = play(events, { random: miss })
+      expect(results.every((r) => r.trigger === null)).toBe(true)
+      expect(results[14].state).toEqual(EMPTY_STREAK)
+    })
+
+    it('counts big spins toward the streak, and neutral events not at all', () => {
+      const events: StreakEvent[] = []
+      for (let i = 0; i < 15; i += 1) {
+        events.push(i % 2 ? bigSpin : shuffle, neutral)
+      }
+      const triggers = play(events, { random: miss }).filter((r) => r.trigger)
+      expect(triggers).toHaveLength(1)
+      expect(triggers[0].trigger).toBe('amethyst')
+    })
+
+    it('waits for the next shuffle when it is not allowed to fire', () => {
+      const results = play(repeat(shuffle, 16), { random: miss, pity: false })
+      expect(results.every((r) => r.trigger === null)).toBe(true)
+      expect(results[15].state.streak).toBe(16)
+    })
+
+    it('leaves the immersive rule alone: Jade at 6, never Amethyst', () => {
+      const results = play(repeat(shuffle, 15), {
+        immersive: true,
+        random: miss,
+      })
+      expect(results[5].trigger).toBe('jade')
+      expect(results.filter((r) => r.trigger === 'amethyst')).toHaveLength(0)
+    })
+
+    it('does not change the dev-mode rule: Amethyst at the 10th', () => {
+      const results = play(repeat(shuffle, 15), { demo: true, random: miss })
+      expect(results[9].trigger).toBe('amethyst')
+      expect(results[14].trigger).toBeNull()
+    })
   })
 
   it('mixes action types toward the streak roll', () => {
@@ -496,19 +567,33 @@ describe('resolveTier', () => {
     ).toBe('jade')
   })
 
-  it('returns the base tier, whatever was found, in demo mode', () => {
-    const all = { frost: 1, amethyst: 1, jade: 1, gold: 1 }
+  it('keeps the base tier in dev mode until all three have been seen', () => {
     for (const base of ['frost', 'amethyst', 'jade'] as const) {
       expect(
-        resolveTier(base, { found: all, random: () => 0, demo: true }),
-      ).toBe(base)
-      expect(
         resolveTier(base, {
-          found: { frost: 1, amethyst: 1, jade: 1 },
+          found: { frost: 1, amethyst: 1 },
           random: () => 0,
           goldenHour: true,
           demo: true,
         }),
+      ).toBe(base)
+    }
+  })
+
+  it('makes Gold reachable in dev mode, deterministically', () => {
+    const seen = { frost: 1, amethyst: 1, jade: 1 }
+    for (const base of ['frost', 'amethyst', 'jade'] as const) {
+      expect(
+        resolveTier(base, { found: seen, random: () => 0.99, demo: true }),
+      ).toBe('gold')
+    }
+  })
+
+  it('goes back to the base tier in dev mode once Gold has been seen', () => {
+    const all = { frost: 1, amethyst: 1, jade: 1, gold: 1 }
+    for (const base of ['frost', 'amethyst', 'jade'] as const) {
+      expect(
+        resolveTier(base, { found: all, random: () => 0, demo: true }),
       ).toBe(base)
     }
   })
@@ -678,9 +763,8 @@ describe('scaleProfile', () => {
 
 describe('isMoodPathBlocked', () => {
   it('blocks a found path unless repeating is on', () => {
-    expect(isMoodPathBlocked('resonance', {}, false)).toBe(false)
-    expect(isMoodPathBlocked('resonance', { resonance: {} }, false)).toBe(true)
-    expect(isMoodPathBlocked('resonance', { resonance: {} }, true)).toBe(false)
-    expect(isMoodPathBlocked('eclipse', { resonance: {} }, false)).toBe(false)
+    expect(isMoodPathBlocked('resonance', {})).toBe(false)
+    expect(isMoodPathBlocked('resonance', { resonance: {} })).toBe(true)
+    expect(isMoodPathBlocked('eclipse', { resonance: {} })).toBe(false)
   })
 })

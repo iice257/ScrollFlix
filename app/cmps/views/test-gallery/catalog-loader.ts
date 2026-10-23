@@ -40,6 +40,12 @@ export type TestMovie = {
   // Lower-case title without accents: what sorting and searching compare, so
   // neither pays for locale-aware string work per comparison.
   titleKey?: string
+  // Filled when the text chunk loads, and only by catalogues built from
+  // version 3 on. The original title is kept only when it differs from the
+  // English one. Trailer keys are YouTube video ids, best first.
+  originalTitle?: string
+  originalLanguage?: string
+  trailerKeys?: string[]
 }
 
 export type CatalogRow = [
@@ -58,7 +64,7 @@ export type CatalogRow = [
 ]
 export type CatalogTables = { countries: string[]; genres: string[] }
 export type CatalogManifestV2 = CatalogTables & {
-  version: 2
+  version: 2 | 3
   count: number
   chunks: string[]
   texts: string[]
@@ -66,7 +72,14 @@ export type CatalogManifestV2 = CatalogTables & {
   textChunkSize: number
   generatedAt: string
 }
-export type MovieText = { overview: string; tagline: string; imdbId?: string }
+export type MovieText = {
+  overview: string
+  tagline: string
+  imdbId?: string
+  originalTitle?: string
+  originalLanguage?: string
+  trailerKeys?: string[]
+}
 
 const CATALOG_URL = '/json/catalog'
 const TMDB_IMAGE_URL = 'https://image.tmdb.org/t/p'
@@ -169,6 +182,18 @@ export const mapCatalogRow = (
     textIndex,
   }
 }
+
+// The blurred card backdrop is a CSS image, which is fetched without CORS. A
+// response cached from such a request carries no CORS headers, so the same URL
+// then fails for WebGL and for the CORS-enabled index tiles (blank posters).
+// It therefore uses a catalogue size nothing else requests.
+export const POSTER_BACKDROP_SIZE = 'w185'
+export const posterBackdropUrl = (
+  movie: Pick<TestMovie, 'posterUrl' | 'posterDetailUrl'>,
+) =>
+  movie.posterDetailUrl
+    ? movie.posterUrl.replace('/w154/', `/${POSTER_BACKDROP_SIZE}/`)
+    : movie.posterUrl
 
 export type DeviceSignals = {
   coarsePointer: boolean
@@ -328,16 +353,21 @@ export const loadAllMovies = ({
     return request
   })
 
-// Text rows: [overview, tagline, imdbId].
-type TextRow = [string, string, string?]
+// Text rows: [overview, tagline, imdbId, originalTitle, originalLanguage,
+// trailer keys as one space-separated string]. Rows from before catalogue
+// version 3 stop after the third entry.
+type TextRow = [string, string, string?, string?, string?, string?]
 const textChunkRequests = new Map<number, Promise<TextRow[]>>()
 const loadedTextChunks = new Map<number, TextRow[]>()
 let knownTextChunkSize = 0
 
-const textFromRow = (row: TextRow | undefined): MovieText => ({
+export const textFromRow = (row: TextRow | undefined): MovieText => ({
   overview: row?.[0] ?? '',
   tagline: row?.[1] ?? '',
   imdbId: row?.[2] ?? '',
+  originalTitle: row?.[3] ?? '',
+  originalLanguage: row?.[4] ?? '',
+  trailerKeys: row?.[5] ? row[5].split(' ').filter(Boolean) : [],
 })
 
 export const getCachedMovieText = (movie: TestMovie): MovieText | null => {
@@ -349,7 +379,7 @@ export const getCachedMovieText = (movie: TestMovie): MovieText | null => {
   return textFromRow(rows[movie.textIndex - chunk * knownTextChunkSize])
 }
 
-// A film's overview, tagline and IMDb id, fetched when it is shown.
+// A film's overview, tagline, IMDb id, original title and trailers, fetched when it is shown.
 export const loadMovieText = async (movie: TestMovie): Promise<MovieText> => {
   const cached = getCachedMovieText(movie)
   if (cached || movie.textIndex === undefined) return cached ?? movie

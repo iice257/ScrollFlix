@@ -425,82 +425,6 @@
     }
   }
 
-  /* Demo mode's streak counter. */
-  .warp-demo-chip {
-    position: fixed;
-    top: max(16px, calc(env(safe-area-inset-top) + 10px));
-    left: 50%;
-    z-index: 53;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    border: 1px solid rgb(255 255 255 / 0.12);
-    border-radius: 999px;
-    background: rgb(18 18 18 / 0.72);
-    padding: 7px 14px;
-    color: rgb(255 255 255 / 0.9);
-    font-size: 11.5px;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-    white-space: nowrap;
-    translate: -50% 0;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    pointer-events: none;
-    animation: warp-demo-chip-in 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
-
-  .warp-demo-chip-item {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 7px;
-    opacity: 0.62;
-    transition: opacity 240ms ease;
-  }
-
-  .warp-demo-chip-item.is-near {
-    opacity: 1;
-  }
-
-  .warp-demo-chip-label {
-    color: rgb(255 255 255 / 0.62);
-    font-size: 9.5px;
-    font-weight: 650;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .warp-demo-chip-value {
-    font-weight: 700;
-    letter-spacing: -0.01em;
-  }
-
-  .warp-demo-chip-divider {
-    width: 1px;
-    height: 12px;
-    background: rgb(255 255 255 / 0.18);
-  }
-
-  /* Narrow screens: the brand sits top left, so the counter drops below it. */
-  @media (max-width: 720px) {
-    .warp-demo-chip {
-      top: max(64px, calc(env(safe-area-inset-top) + 58px));
-    }
-  }
-
-  @keyframes warp-demo-chip-in {
-    from {
-      opacity: 0;
-      transform: translateY(-6px);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .warp-demo-chip {
-      animation: none;
-    }
-  }
-
   .warp-fallback-menu {
     position: absolute;
     inset: 0;
@@ -648,17 +572,23 @@
     height: 100%;
     object-fit: cover;
     opacity: 0;
-    filter: blur(var(--warp-poster-blur, 10px));
-    /* A poster comes in soft and sharpens as it is decoded. */
-    transition:
-      opacity 220ms ease-out,
-      filter 220ms ease-out;
+    /* One plain fade from the empty slot, once the pixels are decoded. */
+    transition: opacity 240ms ease-out;
   }
 
   .warp-poster-frame[data-poster-state="loaded"] img,
   .warp-poster-frame[data-poster-state="fallback"] img {
     opacity: 1;
-    filter: blur(0);
+  }
+
+  /* The card's poster sits on the thumbnail already on screen from the globe;
+     the sharper image fades in over it. */
+  .warp-poster-frame img.warp-poster-base {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    opacity: 1;
+    transition: none;
   }
 
   .warp-poster-frame[data-poster-state="loaded"] .warp-poster-placeholder,
@@ -4057,10 +3987,6 @@
     isolation: auto;
   }
 
-  .warp-list-row-poster .warp-poster-frame {
-    --warp-poster-blur: 5px;
-  }
-
   .warp-list-row-poster .warp-poster-placeholder {
     min-height: 0;
     place-items: center;
@@ -6169,10 +6095,9 @@
       animation: none;
     }
 
-    /* Posters still fade in, without the blur. */
+    /* Posters still fade in, a little quicker. */
     .warp-poster-frame img {
-      filter: none;
-      transition: opacity 200ms ease-out;
+      transition: opacity 160ms ease-out;
     }
   }
 
@@ -6444,6 +6369,356 @@
   .warp-details-heart.is-saved svg {
     fill: currentColor;
     animation: warp-heart-pop 200ms cubic-bezier(0.34, 1.6, 0.5, 1) both;
+  }
+
+  /* The trailer button: the same pill as "Where to watch", but quiet, so the
+     white one stays the main action. */
+  .warp-details-trailer {
+    display: inline-flex;
+    width: fit-content;
+    max-width: 100%;
+    flex: 0 0 auto;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid rgb(255 255 255 / 0.2);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.08);
+    padding: 0 20px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 850;
+    letter-spacing: -0.02em;
+    text-decoration: none;
+    transition:
+      background 160ms ease,
+      border-color 160ms ease,
+      transform 160ms ease;
+  }
+
+  /* On phones the trailer entry is a frosted pill on the poster. */
+  .warp-details-poster {
+    position: relative;
+  }
+
+  .warp-details-trailer-pill {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    z-index: 2;
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border: 1px solid rgb(255 255 255 / 0.26);
+    border-radius: 999px;
+    background: rgb(10 10 10 / 0.46);
+    backdrop-filter: blur(14px) saturate(1.4);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    padding: 0 18px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 850;
+    letter-spacing: -0.02em;
+    text-decoration: none;
+    white-space: nowrap;
+    transform: translateX(-50%);
+    transition:
+      background 160ms ease,
+      border-color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .warp-details-trailer-pill:hover {
+    border-color: rgb(255 255 255 / 0.5);
+    background: rgb(10 10 10 / 0.62);
+  }
+
+  .warp-details-trailer-pill:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 3px;
+  }
+
+  .warp-details-trailer-pill:active {
+    transform: translateX(-50%) scale(0.97);
+  }
+
+  .warp-details-trailer:hover,
+  .warp-details-trailer:focus-visible {
+    outline: none;
+    border-color: rgb(255 255 255 / 0.4);
+    background: rgb(255 255 255 / 0.18);
+  }
+
+  .warp-details-trailer:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 3px;
+  }
+
+  .warp-details-trailer:active {
+    transform: translateY(1px) scale(0.98);
+  }
+
+  /* One quiet status line under the title: translating, or why it could not. */
+  .warp-details-original-title.is-note {
+    animation: warp-translate-note 4s ease both;
+  }
+
+  @keyframes warp-translate-note {
+    0%,
+    80% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
+  /* The trailer player: a centred 16:9 player on desktop, a full-height sheet
+     on phones. */
+  .warp-trailer-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 140;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    pointer-events: none;
+  }
+
+  .warp-trailer-backdrop {
+    position: fixed;
+    inset: 0;
+    border: 0;
+    background: rgb(0 0 0 / 0.78);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    pointer-events: auto;
+    animation: warp-details-backdrop-in 260ms ease both;
+  }
+
+  .warp-trailer-card {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    width: min(960px, calc(100vw - 48px));
+    max-height: calc(100dvh - 48px);
+    gap: 18px;
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid rgb(255 255 255 / 0.16);
+    border-radius: 28px;
+    background: rgb(9 9 9 / 0.98);
+    box-shadow: 0 42px 130px rgb(0 0 0 / 0.72);
+    padding: 22px 24px 24px;
+    color: #fff;
+    pointer-events: auto;
+    animation: warp-details-card-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .warp-trailer-grip {
+    display: none;
+  }
+
+  .warp-trailer-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .warp-trailer-heading h2 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 900;
+    letter-spacing: -0.045em;
+    line-height: 1.05;
+  }
+
+  .warp-trailer-heading p {
+    margin: 5px 0 0;
+    max-width: 52ch;
+    overflow: hidden;
+    color: rgb(255 255 255 / 0.56);
+    font-size: 13px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .warp-trailer-stage {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border-radius: 18px;
+    background: #000;
+  }
+
+  .warp-trailer-player,
+  .warp-trailer-player iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+
+  .warp-trailer-loading {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 28px;
+    height: 28px;
+    margin: -14px 0 0 -14px;
+    border: 2px solid rgb(255 255 255 / 0.18);
+    border-top-color: #fff;
+    border-radius: 999px;
+    pointer-events: none;
+    animation: warp-trailer-spin 800ms linear infinite;
+  }
+
+  .warp-trailer-stage.is-ready .warp-trailer-loading {
+    display: none;
+  }
+
+  @keyframes warp-trailer-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* A quiet way out under the player when it is the wrong film. */
+  .warp-trailer-wrong {
+    margin: -4px 0 0;
+    color: rgb(255 255 255 / 0.5);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    text-align: center;
+  }
+
+  .warp-trailer-wrong a {
+    color: rgb(255 255 255 / 0.78);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .warp-trailer-wrong a:hover,
+  .warp-trailer-wrong a:focus-visible {
+    outline: none;
+    color: #fff;
+  }
+
+  .warp-trailer-stage.is-failed {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 16px;
+    padding: 24px;
+    background: rgb(255 255 255 / 0.05);
+    text-align: center;
+  }
+
+  .warp-trailer-stage.is-failed p {
+    margin: 0;
+    color: rgb(255 255 255 / 0.78);
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .warp-trailer-youtube {
+    display: inline-flex;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 999px;
+    background: #fff;
+    padding: 0 22px;
+    color: #050505;
+    font-size: 14px;
+    font-weight: 850;
+    letter-spacing: -0.02em;
+    text-decoration: none;
+    transition: transform 160ms ease;
+  }
+
+  .warp-trailer-youtube:hover {
+    transform: translateY(-1px);
+  }
+
+  .warp-trailer-youtube:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 3px;
+  }
+
+  @media (max-width: 720px) {
+    .warp-trailer-layer {
+      place-items: end center;
+      padding: 0;
+    }
+
+    .warp-trailer-card {
+      width: 100%;
+      max-height: calc(100dvh - 12px);
+      align-content: start;
+      border-radius: 26px 26px 0 0;
+      padding: 8px 16px max(20px, env(safe-area-inset-bottom));
+      animation: warp-trailer-sheet-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+      transition: transform 200ms ease;
+    }
+
+    .warp-trailer-grip {
+      display: grid;
+      width: 100%;
+      height: 26px;
+      place-items: center;
+      border: 0;
+      background: transparent;
+      cursor: grab;
+      touch-action: none;
+    }
+
+    .warp-trailer-handle {
+      width: 42px;
+      height: 5px;
+      border-radius: 999px;
+      background: rgb(255 255 255 / 0.32);
+    }
+
+    .warp-trailer-stage {
+      border-radius: 14px;
+    }
+
+    .warp-details-trailer {
+      height: 38px;
+      padding-inline: 16px;
+      font-size: 13px;
+    }
+  }
+
+  @keyframes warp-trailer-sheet-in {
+    from {
+      transform: translateY(40px);
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .warp-trailer-card,
+    .warp-trailer-backdrop,
+    .warp-details-original-title.is-note {
+      animation: none;
+    }
+
+    .warp-trailer-loading {
+      animation-duration: 2.4s;
+    }
   }
 
   @keyframes warp-heart-pop {

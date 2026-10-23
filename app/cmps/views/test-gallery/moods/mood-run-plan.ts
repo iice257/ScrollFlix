@@ -22,8 +22,8 @@ export type MoodVisit = {
 }
 
 const plan = (visit: MoodVisit, landings: Landings): MoodPlan => {
-  const { moodPaths, repeatFound } = shuffleProStore.get()
-  return planMoodRun({ ...visit, landings, found: moodPaths, repeatFound })
+  const { moodPaths } = shuffleProStore.get()
+  return planMoodRun({ ...visit, landings, found: moodPaths })
 }
 
 // What landing now would earn, without keeping anything.
@@ -32,11 +32,8 @@ export const previewMoodRun = (visit: MoodVisit, landings = readLandings()) =>
 
 // Whether the pair chosen is one Resonance would still start on.
 export const resonanceOpen = (selected: readonly MoodFilter[]) => {
-  const { moodPaths, repeatFound } = shuffleProStore.get()
-  return (
-    isOddPair(selected) &&
-    !isMoodPathBlocked('resonance', moodPaths, repeatFound)
-  )
+  const { moodPaths } = shuffleProStore.get()
+  return isOddPair(selected) && !isMoodPathBlocked('resonance', moodPaths)
 }
 
 // The world one landing from an Eclipse, if an Eclipse can still start.
@@ -44,8 +41,8 @@ export const eclipseNudge = (
   selected: readonly MoodFilter[],
   landings = readLandings(),
 ) => {
-  const { moodPaths, repeatFound } = shuffleProStore.get()
-  if (isMoodPathBlocked('eclipse', moodPaths, repeatFound)) return null
+  const { moodPaths } = shuffleProStore.get()
+  if (isMoodPathBlocked('eclipse', moodPaths)) return null
   return eclipseHint(landings, selected)
 }
 

@@ -116,7 +116,7 @@ describe('seed', () => {
       version: 2,
     })
     const manifest = await readManifest()
-    expect(manifest).toMatchObject({ version: 2, count: 3 })
+    expect(manifest).toMatchObject({ version: 3, count: 3 })
     expect(existsSync(join(outDir, manifest.chunks[0]))).toBe(true)
     expect(existsSync(join(outDir, manifest.texts[0]))).toBe(true)
   })

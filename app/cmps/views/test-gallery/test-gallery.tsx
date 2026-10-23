@@ -9,7 +9,9 @@ import {
   ChevronRight,
   ChevronsDown,
   ChevronsUp,
+  Clapperboard,
   Dices,
+  ExternalLink,
   Hand,
   Heart,
   Info,
@@ -84,6 +86,7 @@ import {
   loadAllMovies,
   loadFirstChunk,
   loadMovieText,
+  posterBackdropUrl,
   prefersSavedData,
   toTitleKey,
   withWeightedRatings,
@@ -130,6 +133,13 @@ import { NowPlayingBar, type NowPlayingFilm } from './now-playing-bar'
 import { PartyLayer } from './party/party-layer'
 import type { PartyMovieInfo } from './party/party-parts'
 import { toPartyFilm, usePartyGame } from './party/use-party'
+import {
+  STARTER_ALPHA_COUNT,
+  firstByKey,
+  getWarmPosterUrl,
+  loadPosterBlob,
+  seedStarterSet,
+} from './poster-cache'
 import { PosterFlight, type ViewRect } from './poster-flight'
 import { savedStore } from './saved-store'
 import {
@@ -140,7 +150,7 @@ import {
 } from './search-facets'
 import { type PathPoint, sessionPathStore } from './session-path'
 import { shareLink } from './share/share-link'
-import { DemoStreakChip } from './shuffle-pro/demo-streak-chip'
+import { devModeStore } from './shuffle-pro/dev-mode'
 import {
   GoldenHourNote,
   GoldenHourWash,
@@ -181,6 +191,11 @@ import {
 } from './shuffle-pro/use-shuffle-pro'
 import './session-path.css'
 import { stopsFromPath } from './share/path-art'
+import {
+  readDeadTrailers,
+  trailerButtonFor,
+  youtubeSearchUrl,
+} from './trailer/trailer-logic'
 import { useTitleTranslation } from './use-title-translation'
 import { WeatherLayer, type WeatherStorm } from './weather-layer'
 
@@ -244,11 +259,22 @@ const EXIT_ANIMATION_MS = 220
 // Loaded when someone first shares, so the artwork code stays out of the
 // initial bundle.
 const ShareSheet = lazy(() => import('./share/share-sheet'))
+// Same for the trailer player and the YouTube script behind it.
+const TrailerSheet = lazy(() => import('./trailer/trailer-sheet'))
 // The mood page and its eight illustrated scenes load on the first visit or
 // when the browser is idle after the globe is up.
 const loadMoodPage = () => import('./moods/mood-page')
 const MoodPage = lazy(loadMoodPage)
 const MOOD_NUDGE_STORAGE_KEY = 'wtw:mood-nudge-seen'
+// Dev mode's streak chip: a local-development tool. With the DEV check folded
+// to false in a production build, the chunk is never emitted.
+const DevStreakChip = import.meta.env.DEV
+  ? lazy(() =>
+      import('./shuffle-pro/demo-streak-chip').then((m) => ({
+        default: m.DemoStreakChip,
+      })),
+    )
+  : null
 
 const SPIN_HINT_STORAGE_KEY = 'wtw:spin-hint-seen'
 const FULLSCREEN_HINT_STORAGE_KEY = 'wtw:fullscreen-hint-seen'
@@ -582,15 +608,65 @@ const hasLatinLeadingTitle = (movie: TestMovie) =>
 type MoviePosterProps = {
   movie: TestMovie
   loading?: 'eager' | 'lazy'
+  // The first screen of the index: fetched straight away, ahead of the rest.
+  priority?: boolean
   size?: 'thumb' | 'list' | 'detail'
 }
+
+// A poster that fails to load is tried again after these pauses (and as soon
+// as the connection returns), instead of staying blank for the whole visit.
+const POSTER_TILE_RETRY_MS = [1500, 6000, 20000]
 
 const MoviePoster = ({
   movie,
   loading = 'lazy',
+  priority = false,
   size = 'thumb',
 }: MoviePosterProps) => {
   const [loadState, setLoadState] = useState<PosterLoadState>('loading')
+  const [attempt, setAttempt] = useState(0)
+  // A copy fetched around the HTTP cache, used after a failed first try.
+  const [recovered, setRecovered] = useState<string | null>(null)
+  const src =
+    size === 'detail'
+      ? (movie.posterDetailUrl ?? movie.posterUrl)
+      : size === 'list'
+        ? (movie.posterListUrl ?? movie.posterUrl)
+        : movie.posterUrl
+  // The detail card sits on the thumbnail the globe already loaded, and the
+  // sharper image fades in over it, so opening a poster never flashes empty.
+  const baseSrc =
+    size === 'detail' && movie.posterDetailUrl ? movie.posterUrl : null
+
+  useEffect(() => {
+    if (loadState !== 'error') return
+    const retry = () => {
+      setAttempt((count) => count + 1)
+      setLoadState('loading')
+    }
+    const delay = POSTER_TILE_RETRY_MS[attempt]
+    const timer = delay === undefined ? 0 : window.setTimeout(retry, delay)
+    window.addEventListener('online', retry, { once: true })
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('online', retry)
+    }
+  }, [attempt, loadState])
+
+  useEffect(() => {
+    if (attempt === 0) return
+    let cancelled = false
+    let objectUrl: string | null = null
+    void loadPosterBlob(src).then((blob) => {
+      if (cancelled || !blob) return
+      objectUrl = URL.createObjectURL(blob)
+      setRecovered(objectUrl)
+    })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [attempt, src])
 
   return (
     <span
@@ -602,19 +678,26 @@ const MoviePoster = ({
           : undefined
       }
     >
+      {baseSrc ? (
+        <img
+          className='warp-poster-base'
+          src={baseSrc}
+          alt=''
+          aria-hidden='true'
+          crossOrigin='anonymous'
+          decoding='async'
+        />
+      ) : null}
       <img
-        src={
-          size === 'detail'
-            ? (movie.posterDetailUrl ?? movie.posterUrl)
-            : size === 'list'
-              ? (movie.posterListUrl ?? movie.posterUrl)
-              : movie.posterUrl
-        }
+        key={attempt}
+        src={recovered ?? getWarmPosterUrl(src) ?? src}
         alt=''
+        decoding='async'
+        fetchPriority={priority ? 'high' : undefined}
         // TMDB only sends CORS headers when asked and does not vary on it, so
         // a plain request would cache a copy the globe's WebGL cannot use.
         crossOrigin={movie.posterDetailUrl ? 'anonymous' : undefined}
-        loading={loading}
+        loading={priority ? 'eager' : loading}
         onError={() => setLoadState('error')}
         // The fade starts once the pixels are decoded, not when the bytes land.
         onLoad={(event) => {
@@ -1242,6 +1325,23 @@ export const TestGalleryApp = () => {
   const [timeLabel, setTimeLabel] = useState('')
   const [isGlobeMoving, setIsGlobeMoving] = useState(false)
   const [theme, setTheme] = useState<Theme>(readTheme)
+  // Keeps the first films of the index, and a few random ones, on the device,
+  // so the next visit starts populated. Waits for the catalogue to settle.
+  useEffect(() => {
+    if (!movies.length || prefersSavedData()) return
+    const timer = window.setTimeout(() => {
+      const toFilm = (movie: TestMovie) => ({
+        id: movie.id,
+        thumbUrl: movie.posterUrl,
+        listUrl: movie.posterListUrl ?? movie.posterUrl,
+      })
+      seedStarterSet(
+        firstByKey(movies, getTitleKey, STARTER_ALPHA_COUNT).map(toFilm),
+        movies.slice(0, GALLERY_WINDOW_SIZE).map(toFilm),
+      )
+    }, 3000)
+    return () => window.clearTimeout(timer)
+  }, [movies])
   // Leaving browser full screen (its own Esc, a gesture) leaves immersive mode.
   useEffect(() => {
     const syncFullscreen = () => {
@@ -1688,10 +1788,10 @@ export const TestGalleryApp = () => {
   })
   const menuControlRef = useRef<InfiniteMovieMenuControl | null>(null)
   const goldenHour = useGoldenHour()
-  const demoMode = useSyncExternalStore(
-    shuffleProStore.subscribe,
-    () => shuffleProStore.get().demoMode,
-    () => shuffleProStore.get().demoMode,
+  const devMode = useSyncExternalStore(
+    devModeStore.subscribe,
+    devModeStore.get,
+    devModeStore.get,
   )
   // Two independent switches, both off until turned on: the lines joining the
   // saved films, and the trail of films this visit has landed on.
@@ -2684,16 +2784,20 @@ export const TestGalleryApp = () => {
       ) : null}
       <WeatherLayer register={registerStorm} />
       <GoldenHourWash />
-      {demoMode &&
+      {import.meta.env.DEV &&
+      DevStreakChip &&
+      devMode &&
       mode === 'wall' &&
       !detailsMovieId &&
       !loaderLocked &&
       (shuffleProSnapshot.phase === 'idle' ||
         shuffleProSnapshot.phase === 'armed') ? (
-        <DemoStreakChip
-          controller={shuffleProController}
-          immersive={immersive}
-        />
+        <Suspense fallback={null}>
+          <DevStreakChip
+            controller={shuffleProController}
+            immersive={immersive}
+          />
+        </Suspense>
       ) : null}
       <GoldenHourNote active={goldenHour} />
       {/* Stays mounted in other views so returning to the gallery is instant. */}
@@ -3677,6 +3781,7 @@ const ListRowChunk = memo(
                 isCollapsed={isCollapsed}
                 isRandomPulse={randomPulseId === movie.id}
                 movie={movie}
+                priority={eager}
                 selectedGenres={selectedGenres}
                 onOpenMovie={onOpenMovie}
                 onSelectMovie={onSelectMovie}
@@ -3694,6 +3799,7 @@ type ListRowProps = {
   isCollapsed: boolean
   isRandomPulse: boolean
   movie: TestMovie
+  priority: boolean
   selectedGenres: string[]
   onOpenMovie: (movie: TestMovie) => void
   onSelectMovie: (movie: TestMovie) => void
@@ -3710,6 +3816,7 @@ const ListRow = memo(
     isCollapsed,
     isRandomPulse,
     movie,
+    priority,
     selectedGenres,
     onOpenMovie,
     onSelectMovie,
@@ -3733,7 +3840,7 @@ const ListRow = memo(
           onFocus={() => onSelectMovie(movie)}
         >
           <span className='warp-list-row-poster' aria-hidden='true'>
-            <MoviePoster movie={movie} size='list' />
+            <MoviePoster movie={movie} priority={priority} size='list' />
           </span>
           <span className='warp-list-row-main'>
             <span className='warp-list-row-title'>{movie.title}</span>
@@ -5070,16 +5177,18 @@ const FavoriteLinksSetting = ({
   />
 )
 
-// Found Shuffle Pro paths stop starting runs; this brings them all back.
-const RepeatPathsSetting = () => {
+// Dev mode, on local development only: the interface sounds are muted (the
+// Easter egg sounds stay), a streak chip shows, and Shuffle Pro's odds and
+// found-once rule are out of the way.
+const DevModeSetting = () => {
   const on = useSyncExternalStore(
-    shuffleProStore.subscribe,
-    () => shuffleProStore.get().repeatFound,
-    () => shuffleProStore.get().repeatFound,
+    devModeStore.subscribe,
+    devModeStore.get,
+    devModeStore.get,
   )
   return (
     <fieldset className='warp-about-setting'>
-      <legend>Repeat found paths</legend>
+      <legend>Dev mode</legend>
       <div className='warp-theme-switch'>
         {([true, false] as const).map((option) => (
           <button
@@ -5087,40 +5196,7 @@ const RepeatPathsSetting = () => {
             key={String(option)}
             aria-pressed={on === option}
             className={cn(on === option && 'is-active')}
-            onClick={() => shuffleProStore.setRepeatFound(option)}
-          >
-            {option ? (
-              <Sparkles aria-hidden='true' />
-            ) : (
-              <X aria-hidden='true' />
-            )}
-            {option ? 'On' : 'Off'}
-          </button>
-        ))}
-      </div>
-    </fieldset>
-  )
-}
-
-// Demo mode: for showing the effects off. Found paths never block, the odds
-// are taken out, and a small counter shows how close the streaks are.
-const DemoModeSetting = () => {
-  const on = useSyncExternalStore(
-    shuffleProStore.subscribe,
-    () => shuffleProStore.get().demoMode,
-    () => shuffleProStore.get().demoMode,
-  )
-  return (
-    <fieldset className='warp-about-setting'>
-      <legend>Demo mode</legend>
-      <div className='warp-theme-switch'>
-        {([true, false] as const).map((option) => (
-          <button
-            type='button'
-            key={String(option)}
-            aria-pressed={on === option}
-            className={cn(on === option && 'is-active')}
-            onClick={() => shuffleProStore.setDemoMode(option)}
+            onClick={() => devModeStore.set(option)}
           >
             {option ? (
               <Sparkles aria-hidden='true' />
@@ -5201,8 +5277,7 @@ const AboutDrawer = ({
             <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
             <SessionPathSetting nudges={nudges} light={theme === 'light'} />
             <FavoriteLinksSetting nudges={nudges} light={theme === 'light'} />
-            <RepeatPathsSetting />
-            <DemoModeSetting />
+            {import.meta.env.DEV && <DevModeSetting />}
             <SoundSettingsPanel />
           </div>
         </section>
@@ -5310,8 +5385,7 @@ const AboutDrawer = ({
       <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
       <SessionPathSetting nudges={nudges} light={theme === 'light'} />
       <FavoriteLinksSetting nudges={nudges} light={theme === 'light'} />
-      <RepeatPathsSetting />
-      <DemoModeSetting />
+      {import.meta.env.DEV && <DevModeSetting />}
       <SoundSettingsPanel categories={false} />
       <button type='button' className='warp-party-entry' onClick={onStartParty}>
         <Users aria-hidden='true' />
@@ -5662,6 +5736,16 @@ const MovieDetailsCard = ({
   // A different film means a different card: close the sheet.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the id is the trigger
   useEffect(() => setShareOpen(false), [movie.id])
+  const [trailerOpen, setTrailerOpen] = useState(false)
+  // Trailer keys that failed before on this device; read again whenever the
+  // player closes, since it may have found more.
+  const [deadTrailers, setDeadTrailers] = useState(readDeadTrailers)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the id is the trigger
+  useEffect(() => setTrailerOpen(false), [movie.id])
+  const closeTrailer = useCallback(() => {
+    setTrailerOpen(false)
+    setDeadTrailers(readDeadTrailers())
+  }, [])
   const [reducedMotion] = useState(() => readReducedMotion(null))
   // Wide screens get a centred panel with everything visible; small screens
   // keep the draggable bottom sheet with a More/Less toggle.
@@ -5794,9 +5878,53 @@ const MovieDetailsCard = ({
       Re-shuffle
     </button>
   )
+  const detailsStyle = {
+    '--details-drag-y': `${dragOffset}px`,
+    // A mood run dresses the card in the colours of the worlds it was made from.
+    ...(premiumMood ? moodCardVars(premiumMood.palette) : null),
+    // CSS images are fetched without CORS. A copy cached from such a request
+    // has no CORS headers and breaks the same URL for the globe and index
+    // tiles, so catalogue films use a size nothing else requests (w92 is the
+    // index, w154 the globe, w342 the card); see posterBackdropUrl.
+    '--details-backdrop': `url(${JSON.stringify(posterBackdropUrl(movie))})`,
+  } as CSSProperties
+  const movieText = useMovieText(movie)
+  const originalTitle = movieText?.originalTitle || movie.originalTitle || ''
+  const titleTranslation = useTitleTranslation(movie.title, {
+    hasOriginalTitle: Boolean(originalTitle),
+  })
+  const trailerKeys = movieText?.trailerKeys?.length
+    ? movieText.trailerKeys
+    : (movie.trailerKeys ?? [])
+  const trailerButton = trailerButtonFor(trailerKeys, deadTrailers)
+  // On phones the trailer entry sits on the poster as a frosted pill, so the
+  // action row keeps its three buttons. Wide screens use the row button.
+  const trailerPill =
+    trailerButton.kind === 'play' ? (
+      <button
+        type='button'
+        className='warp-details-trailer-pill'
+        aria-haspopup='dialog'
+        onClick={() => setTrailerOpen(true)}
+      >
+        <Play aria-hidden='true' size={14} strokeWidth={2.6} />
+        Trailer
+      </button>
+    ) : trailerButton.kind === 'youtube' ? (
+      <a
+        className='warp-details-trailer-pill'
+        href={youtubeSearchUrl(movie.title, hasYear ? movie.year : undefined)}
+        target='_blank'
+        rel='noopener noreferrer'
+      >
+        YouTube
+        <ExternalLink aria-hidden='true' size={13} strokeWidth={2.6} />
+      </a>
+    ) : null
   const posterImage = (
     <div className='warp-details-poster'>
       <MoviePoster loading='eager' movie={movie} size='detail' />
+      {isWide ? null : trailerPill}
     </div>
   )
   // A premium pick shows its poster as a collectible; the rest stay plain.
@@ -5811,20 +5939,6 @@ const MovieDetailsCard = ({
   ) : (
     posterImage
   )
-  const detailsStyle = {
-    '--details-drag-y': `${dragOffset}px`,
-    // A mood run dresses the card in the colours of the worlds it was made from.
-    ...(premiumMood ? moodCardVars(premiumMood.palette) : null),
-    // CSS images are fetched without CORS, so catalogue films use a size the
-    // globe never requests (it is blurred anyway); see MoviePoster.
-    '--details-backdrop': `url(${JSON.stringify(
-      movie.posterDetailUrl
-        ? movie.posterUrl.replace('/w154/', '/w92/')
-        : movie.posterUrl,
-    )})`,
-  } as CSSProperties
-  const movieText = useMovieText(movie)
-  const titleTranslation = useTitleTranslation(movie.title)
   const shareFound = useSyncExternalStore(
     shuffleProStore.subscribe,
     shuffleProStore.get,
@@ -5976,10 +6090,24 @@ const MovieDetailsCard = ({
                   </button>
                 ) : null}
               </div>
-              {titleTranslation.enabled && titleTranslation.english ? (
+              {originalTitle ? (
                 <p className='warp-details-original-title'>
-                  Original title: {movie.title}
+                  Original title · {originalTitle}
                 </p>
+              ) : titleTranslation.enabled && titleTranslation.english ? (
+                <p className='warp-details-original-title'>
+                  Original title · {movie.title}
+                </p>
+              ) : titleTranslation.failed ? (
+                <output className='warp-details-original-title is-note'>
+                  Couldn't translate this title here
+                </output>
+              ) : titleTranslation.busy ? (
+                <output className='warp-details-original-title is-note'>
+                  {titleTranslation.progress === null
+                    ? 'Translating…'
+                    : `Getting the translator ${Math.round(titleTranslation.progress * 100)}%`}
+                </output>
               ) : null}
               {movieText?.tagline ? (
                 <p className='warp-details-tagline'>{movieText.tagline}</p>
@@ -6011,6 +6139,38 @@ const MovieDetailsCard = ({
                   <Play aria-hidden='true' size={15} strokeWidth={2.6} />
                   Where to watch
                 </button>
+                {!isWide ? null : trailerButton.kind === 'play' ? (
+                  <button
+                    type='button'
+                    className='warp-details-trailer'
+                    aria-haspopup='dialog'
+                    onClick={() => setTrailerOpen(true)}
+                  >
+                    <Clapperboard
+                      aria-hidden='true'
+                      size={15}
+                      strokeWidth={2.4}
+                    />
+                    Play trailer
+                  </button>
+                ) : trailerButton.kind === 'youtube' ? (
+                  <a
+                    className='warp-details-trailer'
+                    href={youtubeSearchUrl(
+                      movie.title,
+                      hasYear ? movie.year : undefined,
+                    )}
+                    target='_blank'
+                    rel='noopener noreferrer'
+                  >
+                    <Clapperboard
+                      aria-hidden='true'
+                      size={15}
+                      strokeWidth={2.4}
+                    />
+                    Watch trailer on YouTube
+                  </a>
+                ) : null}
                 <button
                   type='button'
                   className={cn('warp-details-heart', saved && 'is-saved')}
@@ -6076,6 +6236,19 @@ const MovieDetailsCard = ({
                     input={shareInput}
                     link={shareLink(movie.id)}
                     onClose={() => setShareOpen(false)}
+                  />
+                </Suspense>,
+                document.querySelector('.warp-shell') ?? document.body,
+              )
+            : null}
+          {trailerOpen && trailerKeys.length
+            ? createPortal(
+                <Suspense fallback={null}>
+                  <TrailerSheet
+                    keys={trailerKeys}
+                    title={movie.title}
+                    year={hasYear ? movie.year : undefined}
+                    onClose={closeTrailer}
                   />
                 </Suspense>,
                 document.querySelector('.warp-shell') ?? document.body,

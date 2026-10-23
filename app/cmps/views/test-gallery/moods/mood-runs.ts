@@ -183,7 +183,6 @@ export type MoodRunInputs = {
   // The counts before this landing.
   landings: Landings
   found: Partial<Record<MoodPath, unknown>>
-  repeatFound: boolean
 }
 
 export type MoodPlan = {
@@ -222,8 +221,7 @@ const buildRun = (
 // others stay available for next time.
 export const planMoodRun = (input: MoodRunInputs): MoodPlan => {
   const counts = recordLanding(input.landings, input.selected)
-  const open = (path: MoodPath) =>
-    !isMoodPathBlocked(path, input.found, input.repeatFound)
+  const open = (path: MoodPath) => !isMoodPathBlocked(path, input.found)
 
   const eclipse = open('eclipse') ? eclipseWorlds(counts) : []
   if (eclipse.length) {
