@@ -140,7 +140,7 @@ import {
 } from './search-facets'
 import { type PathPoint, sessionPathStore } from './session-path'
 import { shareLink } from './share/share-link'
-import { DemoStreakChip } from './shuffle-pro/demo-streak-chip'
+import { devModeStore } from './shuffle-pro/dev-mode'
 import {
   GoldenHourNote,
   GoldenHourWash,
@@ -249,6 +249,15 @@ const ShareSheet = lazy(() => import('./share/share-sheet'))
 const loadMoodPage = () => import('./moods/mood-page')
 const MoodPage = lazy(loadMoodPage)
 const MOOD_NUDGE_STORAGE_KEY = 'wtw:mood-nudge-seen'
+// Dev mode's streak chip: a local-development tool. With the DEV check folded
+// to false in a production build, the chunk is never emitted.
+const DevStreakChip = import.meta.env.DEV
+  ? lazy(() =>
+      import('./shuffle-pro/demo-streak-chip').then((m) => ({
+        default: m.DemoStreakChip,
+      })),
+    )
+  : null
 
 const SPIN_HINT_STORAGE_KEY = 'wtw:spin-hint-seen'
 const FULLSCREEN_HINT_STORAGE_KEY = 'wtw:fullscreen-hint-seen'
@@ -1646,10 +1655,10 @@ export const TestGalleryApp = () => {
   })
   const menuControlRef = useRef<InfiniteMovieMenuControl | null>(null)
   const goldenHour = useGoldenHour()
-  const demoMode = useSyncExternalStore(
-    shuffleProStore.subscribe,
-    () => shuffleProStore.get().demoMode,
-    () => shuffleProStore.get().demoMode,
+  const devMode = useSyncExternalStore(
+    devModeStore.subscribe,
+    devModeStore.get,
+    devModeStore.get,
   )
   // Two independent switches, both off until turned on: the lines joining the
   // saved films, and the trail of films this visit has landed on.
@@ -2656,16 +2665,20 @@ export const TestGalleryApp = () => {
       ) : null}
       <WeatherLayer register={registerStorm} />
       <GoldenHourWash />
-      {demoMode &&
+      {import.meta.env.DEV &&
+      DevStreakChip &&
+      devMode &&
       mode === 'wall' &&
       !detailsMovieId &&
       !loaderLocked &&
       (shuffleProSnapshot.phase === 'idle' ||
         shuffleProSnapshot.phase === 'armed') ? (
-        <DemoStreakChip
-          controller={shuffleProController}
-          immersive={immersive}
-        />
+        <Suspense fallback={null}>
+          <DevStreakChip
+            controller={shuffleProController}
+            immersive={immersive}
+          />
+        </Suspense>
       ) : null}
       <GoldenHourNote active={goldenHour} />
       {/* Stays mounted in other views so returning to the gallery is instant. */}
@@ -5055,16 +5068,18 @@ const FavoriteLinksSetting = ({
   />
 )
 
-// Found Shuffle Pro paths stop starting runs; this brings them all back.
-const RepeatPathsSetting = () => {
+// Dev mode, on local development only: the interface sounds are muted (the
+// Easter egg sounds stay), a streak chip shows, and Shuffle Pro's odds and
+// found-once rule are out of the way.
+const DevModeSetting = () => {
   const on = useSyncExternalStore(
-    shuffleProStore.subscribe,
-    () => shuffleProStore.get().repeatFound,
-    () => shuffleProStore.get().repeatFound,
+    devModeStore.subscribe,
+    devModeStore.get,
+    devModeStore.get,
   )
   return (
     <fieldset className='warp-about-setting'>
-      <legend>Repeat found paths</legend>
+      <legend>Dev mode</legend>
       <div className='warp-theme-switch'>
         {([true, false] as const).map((option) => (
           <button
@@ -5072,40 +5087,7 @@ const RepeatPathsSetting = () => {
             key={String(option)}
             aria-pressed={on === option}
             className={cn(on === option && 'is-active')}
-            onClick={() => shuffleProStore.setRepeatFound(option)}
-          >
-            {option ? (
-              <Sparkles aria-hidden='true' />
-            ) : (
-              <X aria-hidden='true' />
-            )}
-            {option ? 'On' : 'Off'}
-          </button>
-        ))}
-      </div>
-    </fieldset>
-  )
-}
-
-// Demo mode: for showing the effects off. Found paths never block, the odds
-// are taken out, and a small counter shows how close the streaks are.
-const DemoModeSetting = () => {
-  const on = useSyncExternalStore(
-    shuffleProStore.subscribe,
-    () => shuffleProStore.get().demoMode,
-    () => shuffleProStore.get().demoMode,
-  )
-  return (
-    <fieldset className='warp-about-setting'>
-      <legend>Demo mode</legend>
-      <div className='warp-theme-switch'>
-        {([true, false] as const).map((option) => (
-          <button
-            type='button'
-            key={String(option)}
-            aria-pressed={on === option}
-            className={cn(on === option && 'is-active')}
-            onClick={() => shuffleProStore.setDemoMode(option)}
+            onClick={() => devModeStore.set(option)}
           >
             {option ? (
               <Sparkles aria-hidden='true' />
@@ -5186,8 +5168,7 @@ const AboutDrawer = ({
             <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
             <SessionPathSetting nudges={nudges} light={theme === 'light'} />
             <FavoriteLinksSetting nudges={nudges} light={theme === 'light'} />
-            <RepeatPathsSetting />
-            <DemoModeSetting />
+            {import.meta.env.DEV && <DevModeSetting />}
             <SoundSettingsPanel />
           </div>
         </section>
@@ -5294,8 +5275,7 @@ const AboutDrawer = ({
       <AppearanceSetting theme={theme} onThemeChange={onThemeChange} />
       <SessionPathSetting nudges={nudges} light={theme === 'light'} />
       <FavoriteLinksSetting nudges={nudges} light={theme === 'light'} />
-      <RepeatPathsSetting />
-      <DemoModeSetting />
+      {import.meta.env.DEV && <DevModeSetting />}
       <SoundSettingsPanel categories={false} />
       <button type='button' className='warp-party-entry' onClick={onStartParty}>
         <Users aria-hidden='true' />

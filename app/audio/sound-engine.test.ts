@@ -1,10 +1,32 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   LIMITER_KNEE,
   createCueLimiter,
+  playCue,
+  setDevSilence,
   softLimit,
   softLimitCurve,
 } from './sound-engine'
+import { soundStore } from './sound-settings'
+
+describe('dev silence', () => {
+  afterEach(() => {
+    setDevSilence(false)
+    vi.restoreAllMocks()
+  })
+
+  it('stops every interface cue before it reads the sound settings', () => {
+    const get = vi.spyOn(soundStore, 'get')
+    playCue('tap')
+    expect(get).toHaveBeenCalled()
+    get.mockClear()
+    setDevSilence(true)
+    playCue('tap')
+    playCue('landing')
+    playCue('shuffleStart')
+    expect(get).not.toHaveBeenCalled()
+  })
+})
 
 describe('cue limiter', () => {
   it('drops a cue that fires again inside its minimum interval', () => {

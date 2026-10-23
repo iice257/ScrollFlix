@@ -548,8 +548,16 @@ const playLayer = (
   }
 }
 
+// Dev mode (local development only) silences every interface cue and leaves
+// the Shuffle Pro Easter egg sounds, which do not go through playCue.
+let devSilence = false
+export const setDevSilence = (silent: boolean) => {
+  devSilence = import.meta.env.DEV && silent
+}
+
 // Plays one interface cue if sound is on for its category. Never throws.
 export const playCue = (cue: Cue, strength = 1, options: CueOptions = {}) => {
+  if (devSilence) return
   const spec = CUE_SPECS[cue]
   if (!isCategoryOn(soundStore.get(), spec.category)) return
   const audio = getAudio()
