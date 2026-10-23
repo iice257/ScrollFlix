@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createConstellationInput } from './constellation-geometry'
 import { createHoneycombSpherePositions } from './honeycomb-layout'
 import {
   BASE_RELEASE_TAU_MS,
@@ -257,5 +258,23 @@ describe('releaseTimeConstant', () => {
         msSinceLastMove: 80,
       }),
     ).toBeGreaterThan(BASE_RELEASE_TAU_MS)
+  })
+})
+
+describe('setConstellations', () => {
+  const input = (ids: string[], light = false) => ({
+    ids,
+    path: [{ id: 'a', tier: null, at: 0 }],
+    light,
+    visible: true,
+  })
+
+  it('marks render dirty once', () => {
+    const held = createConstellationInput()
+    expect(held.set(input(['a', 'b']))).toBe(true)
+    // The same films in fresh arrays are not a change.
+    expect(held.set(input(['a', 'b']))).toBe(false)
+    expect(held.set(input(['a', 'b'], true))).toBe(true)
+    expect(held.set(input(['a']))).toBe(true)
   })
 })

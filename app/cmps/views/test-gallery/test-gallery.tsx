@@ -93,7 +93,6 @@ import {
   withWeightedRatings,
 } from './catalog-loader'
 import { constellationSetting } from './constellation'
-import { ConstellationLayer } from './constellation-layer'
 import { formatGenreCount } from './genre-count'
 import { sessionPathSetting } from './globe-lines'
 import type { LineKind } from './globe-lines-nudge'
@@ -190,6 +189,7 @@ import {
   useShuffleProController,
 } from './shuffle-pro/use-shuffle-pro'
 import './session-path.css'
+import { perfFlag } from './perf-probe'
 import { stopsFromPath } from './share/path-art'
 import {
   readDeadTrailers,
@@ -2728,6 +2728,36 @@ export const TestGalleryApp = () => {
     }
   }, [shuffleProController])
 
+  // The globe draws the saved-film constellations and the session path itself.
+  const constellationIds = useMemo(
+    () => savedEntries.map((entry) => entry.id),
+    [savedEntries],
+  )
+  // The perf benchmark can force either one on or off (`?perf=1&path=1`).
+  const linksShown = perfFlag('constellations') ?? linksOn
+  const pathShown = perfFlag('path') ?? pathLinesOn
+  const constellationsVisible =
+    (linksShown || pathShown) &&
+    mode === 'wall' &&
+    initialGalleryReady &&
+    !detailsMovieId &&
+    !moodsOpen
+  useEffect(() => {
+    menuControlRef.current?.setConstellations({
+      ids: linksShown ? constellationIds : NO_IDS,
+      path: pathShown ? sessionPath : NO_PATH,
+      light: theme === 'light',
+      visible: constellationsVisible,
+    })
+  }, [
+    constellationIds,
+    sessionPath,
+    theme,
+    constellationsVisible,
+    linksShown,
+    pathShown,
+  ])
+
   return (
     <main
       ref={shellRef}
@@ -2806,19 +2836,6 @@ export const TestGalleryApp = () => {
         onSpinActiveChange={setShuffleSpinning}
         onGestureSettled={handleGestureSettled}
         onGlobePress={promptFullscreenHint}
-      />
-      <ConstellationLayer
-        controlRef={menuControlRef}
-        ids={linksOn ? savedEntries.map((entry) => entry.id) : NO_IDS}
-        path={pathLinesOn ? sessionPath : NO_PATH}
-        active={
-          (linksOn || pathLinesOn) &&
-          mode === 'wall' &&
-          initialGalleryReady &&
-          !detailsMovieId &&
-          !moodsOpen
-        }
-        light={theme === 'light'}
       />
 
       {mode === 'list' ? (

@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
+import { perfFlag } from './perf-probe'
 import { readReducedMotion } from './shuffle-pro/use-shuffle-pro'
 import {
+  FLICK_WEATHER_SPEED,
   type WeatherKind,
   liveCount,
   pickWeatherKind,
@@ -172,8 +174,16 @@ export const WeatherLayer = ({
       frame = window.requestAnimationFrame(tick)
     }
 
-    register(start)
+    // The benchmark (?perf=1) can switch weather off, or hold a storm on.
+    const perfWeather = perfFlag('weather')
+    register(perfWeather === false ? () => {} : start)
+    const keepStorming =
+      perfWeather === true
+        ? window.setInterval(() => start(FLICK_WEATHER_SPEED + 2, 1), 1500)
+        : 0
+    if (perfWeather === true) start(FLICK_WEATHER_SPEED + 2, 1)
     return () => {
+      window.clearInterval(keepStorming)
       register(null)
       stop()
     }
