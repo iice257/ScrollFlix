@@ -34,20 +34,6 @@
   stroke: rgb(33 26 16 / 0.92);
 }
 
-.warp-shell[data-theme="light"] .warp-demo-chip {
-  border: 1px solid rgb(33 26 16 / 0.12);
-  background: rgb(232 225 210 / 0.72);
-  color: rgb(33 26 16 / 0.9);
-}
-
-.warp-shell[data-theme="light"] .warp-demo-chip-label {
-  color: rgb(33 26 16 / 0.62);
-}
-
-.warp-shell[data-theme="light"] .warp-demo-chip-divider {
-  background: rgb(33 26 16 / 0.18);
-}
-
 .warp-shell[data-theme="light"] .warp-fallback-tile {
   background: rgb(233 226 211);
   box-shadow: 0 20px 60px rgb(110 78 34 / 0.176), inset 0 0 0 1px rgb(33 26 16 / 0.08);

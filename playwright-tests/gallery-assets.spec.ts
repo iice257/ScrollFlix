@@ -36,5 +36,9 @@ test('reveals the full poster gallery from the TMDB CDN', async ({ page }) => {
     'ready',
   )
   expect(posterRequests.length).toBeGreaterThan(0)
-  expect(posterRequests.every((url) => url.includes('/t/p/w154/'))).toBe(true)
+  // The globe asks for w154; the on-device starter set also keeps the index's
+  // w92 thumbnails. Nothing larger is ever requested up front.
+  expect(posterRequests.every((url) => /\/t\/p\/w(154|92)\//.test(url))).toBe(
+    true,
+  )
 })

@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from 'react'
 import { cn } from '../../../../utils/tw'
 import type { ShuffleProController } from './shuffle-pro-controller'
+import './demo-streak-chip.css'
 import { STREAK_RULES } from './shuffle-pro-logic'
 
-// Demo mode only: where the two automatic triggers stand, read from the
+// Dev mode only (local development; never in a production build): where the two automatic triggers stand, read from the
 // controller's own streak state. It re-renders on a streak change, never per
 // frame, and the gallery around it is not touched.
 export const DemoStreakChip = ({
@@ -26,31 +27,30 @@ export const DemoStreakChip = ({
     : STREAK_RULES.normal.streakRoll
   const spins = Math.min(streak.bigSpinRun, spinsGoal)
   const shuffles = Math.min(streak.streak, shufflesGoal)
+  const spinsNear = spins >= spinsGoal - 1
+  const shufflesNear = shuffles >= shufflesGoal - 1
+  // One action short of a guaranteed run, the label names what comes next.
+  const spinsTier = immersive ? 'Jade' : 'Frost'
+  const shufflesTier = immersive ? 'Jade' : 'Amethyst'
 
   return (
     <output
       className='warp-demo-chip'
-      aria-label={`Demo mode: ${spins} of ${spinsGoal} big spins, ${shuffles} of ${shufflesGoal} shuffles`}
+      aria-label={`Dev mode: ${spins} of ${spinsGoal} big spins${spinsNear ? `, ${spinsTier} next` : ''}, ${shuffles} of ${shufflesGoal} shuffles${shufflesNear ? `, ${shufflesTier} next` : ''}`}
     >
-      <span
-        className={cn(
-          'warp-demo-chip-item',
-          spins >= spinsGoal - 1 && 'is-near',
-        )}
-      >
-        <span className='warp-demo-chip-label'>Big spins</span>
+      <span className={cn('warp-demo-chip-item', spinsNear && 'is-near')}>
+        <span className='warp-demo-chip-label'>
+          {spinsNear ? `${spinsTier} next` : 'Big spins'}
+        </span>
         <span className='warp-demo-chip-value'>
           {spins} / {spinsGoal}
         </span>
       </span>
       <span className='warp-demo-chip-divider' aria-hidden='true' />
-      <span
-        className={cn(
-          'warp-demo-chip-item',
-          shuffles >= shufflesGoal - 1 && 'is-near',
-        )}
-      >
-        <span className='warp-demo-chip-label'>Shuffles</span>
+      <span className={cn('warp-demo-chip-item', shufflesNear && 'is-near')}>
+        <span className='warp-demo-chip-label'>
+          {shufflesNear ? `${shufflesTier} next` : 'Shuffles'}
+        </span>
         <span className='warp-demo-chip-value'>
           {shuffles} / {shufflesGoal}
         </span>

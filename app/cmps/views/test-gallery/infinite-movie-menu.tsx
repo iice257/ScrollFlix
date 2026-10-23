@@ -25,6 +25,7 @@ import {
   prewarmHoneycombLayout,
 } from './honeycomb-layout'
 import { perfProbe } from './perf-probe'
+import { loadPosterBlob } from './poster-cache'
 import { buildPosterIndex } from './poster-index'
 import { HoldRing } from './shuffle-pro/hold-ring'
 import { unlockAudio } from './shuffle-pro/shuffle-pro-audio'
@@ -298,11 +299,40 @@ const GLOBE_READY_LATE_FRACTION = 0.75
 const GLOBE_READY_LATE_MS = 9000
 // Longest stretch of texture uploads before handing the thread back.
 const UPLOAD_SLICE_MS = 8
-// A poster that has just been decoded eases from a soft blur to sharp (or, with
-// reduced motion, fades in over the soft version) in this long.
-const POSTER_REVEAL_MS = 220
-// Blur radius at the start of the reveal, as a share of the poster width.
-const POSTER_REVEAL_SOFTNESS = 0.1
+// A poster fades in from its empty slot, once, in this long (shorter with
+// reduced motion). Cells that land together start a few ms apart, so the
+// posters arrive as a soft wave instead of all at once; a backlog is spread
+// over at most POSTER_REVEAL_MAX_LEAD_MS.
+const POSTER_REVEAL_MS = 260
+const POSTER_REVEAL_REDUCED_MS = 160
+const POSTER_REVEAL_STAGGER_MS = 9
+const POSTER_REVEAL_MAX_LEAD_MS = 420
+// The first wave, once the wall appears: posters reveal from the centre out,
+// over this long, starting this long after the wall begins to fade in.
+const POSTER_WAVE_MS = 650
+const POSTER_WAVE_DELAY_MS = 120
+// Reveal clock value for a poster held back: so far ahead that it never starts.
+const REVEAL_HELD_SECONDS = 1e9
+
+// When a poster that landed at `now` starts its fade, and where the stagger
+// cursor moves to. Posters queue a few ms apart; once the queue is longer than
+// maxLead the rest spread over it by cell index instead of bunching at its end.
+export const nextRevealStart = (
+  now: number,
+  cursor: number,
+  index: number,
+  reduced = false,
+  stagger = POSTER_REVEAL_STAGGER_MS,
+  maxLead = POSTER_REVEAL_MAX_LEAD_MS,
+) => {
+  if (reduced) return { start: now, cursor }
+  const queued = Math.max(0, cursor - now)
+  if (queued > maxLead) {
+    const spread = (Math.imul(index, 2654435761) >>> 0) % maxLead
+    return { start: now + spread, cursor }
+  }
+  return { start: now + queued, cursor: now + queued + stagger }
+}
 
 // A timer rather than scheduler.yield, so the browser can paint and handle
 // input between slices instead of running every continuation first.
@@ -337,7 +367,11 @@ type DetailMotion = 'fast' | 'slow' | 'close'
 const POSTER_SPRITE_URL = '/media/poster-sprite.jpg'
 const POSTER_SPRITE_MANIFEST_URL = '/media/poster-sprite.json'
 const POSTER_RETRY_DELAYS_MS = [4000, 12000, 30000]
-const PLACEHOLDER_CELLS_PER_FRAME = 48
+// Then once a minute for this many more tries.
+const POSTER_RETRY_TAIL_MS = 60000
+const POSTER_RETRY_TAIL_ATTEMPTS = 10
+// How soon the not-yet-loaded posters are put back in facing order.
+const POSTER_REPRIORITISE_MS = 300
 
 type PosterSprite = {
   cellHeight: number
@@ -607,8 +641,6 @@ uniform vec4 uTint;
 uniform sampler2D uRevealTex;
 uniform float uRevealActive;
 uniform float uRevealSeconds;
-uniform float uRevealSoftness;
-uniform float uReducedMotion;
 uniform float uNow;
 
 out vec4 outColor;
@@ -622,21 +654,6 @@ float roundedRectMask(vec2 uv) {
   vec2 q = abs(uv - vec2(0.5)) - vec2(0.34, 0.39);
   float dist = length(max(q, 0.0)) - 0.11;
   return 1.0 - smoothstep(0.0, 0.024, dist);
-}
-
-// Nine-point soft look of a poster tile, two rings of eight taps around the
-// centre, kept inside the tile so neighbours never bleed in.
-vec4 blurTile(vec2 uv, float radius, vec2 tileSpan, vec2 tileOrigin) {
-  vec4 sum = texture(uTex, uv * tileSpan + tileOrigin) * 0.2;
-  for (int i = 0; i < 8; i++) {
-    float a = float(i) * 0.7853982;
-    vec2 dir = vec2(cos(a), sin(a));
-    vec2 inner = clamp(uv + dir * radius * 0.5, 0.0, 1.0);
-    vec2 outer = clamp(uv + dir * radius, 0.0, 1.0);
-    sum += texture(uTex, inner * tileSpan + tileOrigin) * 0.05;
-    sum += texture(uTex, outer * tileSpan + tileOrigin) * 0.05;
-  }
-  return sum;
 }
 
 void main() {
@@ -664,18 +681,13 @@ void main() {
   } else {
     color = texture(uTex, vUvs * tileSpan + tileOrigin);
     if (uRevealActive > 0.5) {
+      // One plain fade from the empty slot to the poster. A start time still
+      // in the future (the arrival stagger) keeps the slot empty until then.
       float arrived = texelFetch(uRevealTex, ivec2(cellX, cellY), 0).r;
-      float progress = arrived > 0.0
-        ? clamp((uNow - arrived) / uRevealSeconds, 0.0, 1.0)
-        : 1.0;
-      if (progress < 1.0) {
-        if (uReducedMotion > 0.5) {
-          vec4 soft = blurTile(vUvs, uRevealSoftness, tileSpan, tileOrigin);
-          color = mix(soft, color, progress);
-        } else {
-          float eased = 1.0 - pow(1.0 - progress, 3.0);
-          color = blurTile(vUvs, uRevealSoftness * (1.0 - eased), tileSpan, tileOrigin);
-        }
+      if (arrived > 0.0) {
+        float progress = clamp((uNow - arrived) / uRevealSeconds, 0.0, 1.0);
+        float eased = 1.0 - pow(1.0 - progress, 3.0);
+        color = mix(vec4(0.0196, 0.0196, 0.0196, 1.0), color, eased);
       }
     }
   }
@@ -1398,6 +1410,12 @@ class InfiniteMovieEngine<T> {
   private readonly revealEpoch = performance.now()
   private revealUntil = 0
   private revealPending = false
+  // Cells whose fade has started: a later image for the same cell (a retry
+  // after a placeholder) swaps in without fading again.
+  private readonly revealedCells = new Set<number>()
+  private revealCursor = 0
+  private revealGateOpen = false
+  private readonly heldReveals = new Set<number>()
   private control: ArcballControl
   private frameId = 0
   private time = 0
@@ -1575,8 +1593,6 @@ class InfiniteMovieEngine<T> {
       uRevealTex: gl.getUniformLocation(program, 'uRevealTex'),
       uRevealActive: gl.getUniformLocation(program, 'uRevealActive'),
       uRevealSeconds: gl.getUniformLocation(program, 'uRevealSeconds'),
-      uRevealSoftness: gl.getUniformLocation(program, 'uRevealSoftness'),
-      uReducedMotion: gl.getUniformLocation(program, 'uReducedMotion'),
       uNow: gl.getUniformLocation(program, 'uNow'),
     }
 
@@ -2401,7 +2417,79 @@ class InfiniteMovieEngine<T> {
     return (performance.now() - this.revealEpoch) / 1000 + 1
   }
 
+  private reducedMotion() {
+    return Boolean(
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+    )
+  }
+
+  // Posters that land while the loader still covers the wall wait (an empty
+  // slot) and are revealed as a wave from the centre once the wall shows, so
+  // the fade is seen instead of finishing behind the loader.
+  private watchWallVisible() {
+    const shell = this.canvas.closest<HTMLElement>('[data-gallery-ready]')
+    if (!shell || shell.dataset.galleryReady !== 'false') {
+      this.revealGateOpen = true
+      return
+    }
+    const observer = new MutationObserver(() => {
+      if (shell.dataset.galleryReady === 'false') return
+      observer.disconnect()
+      this.openRevealGate()
+    })
+    observer.observe(shell, {
+      attributes: true,
+      attributeFilter: ['data-gallery-ready'],
+    })
+    this.cleanupCallbacks.push(() => observer.disconnect())
+  }
+
+  private openRevealGate() {
+    this.revealGateOpen = true
+    const held = [...this.heldReveals]
+    this.heldReveals.clear()
+    if (!held.length || this.disposed || this.contextLost) return
+    this.sortByFacing(held, 0)
+    const now = performance.now()
+    const reduced = this.reducedMotion()
+    held.forEach((index, rank) => {
+      const delay = reduced
+        ? 0
+        : POSTER_WAVE_DELAY_MS + (rank / held.length) * POSTER_WAVE_MS
+      this.startReveal(index, now + delay)
+    })
+    this.renderDirty = true
+  }
+
+  // Starts the cell's one fade, a few ms after the previous cell's.
   private markPosterArrived(index: number) {
+    if (!this.revealTexture || this.revealedCells.has(index)) return
+    this.revealedCells.add(index)
+    if (!this.revealGateOpen) {
+      this.heldReveals.add(index)
+      // Far in the future: the slot stays empty until the gate opens.
+      this.writeRevealStart(index, REVEAL_HELD_SECONDS)
+      return
+    }
+    const { start, cursor } = nextRevealStart(
+      performance.now(),
+      this.revealCursor,
+      index,
+      this.reducedMotion(),
+    )
+    this.revealCursor = cursor
+    this.startReveal(index, start)
+  }
+
+  private startReveal(index: number, start: number) {
+    this.writeRevealStart(index, (start - this.revealEpoch) / 1000 + 1)
+    this.revealUntil = Math.max(
+      this.revealUntil,
+      start + POSTER_REVEAL_MS + 120,
+    )
+  }
+
+  private writeRevealStart(index: number, seconds: number) {
     if (!this.revealTexture) return
     const gl = this.gl
     gl.activeTexture(gl.TEXTURE1)
@@ -2415,10 +2503,9 @@ class InfiniteMovieEngine<T> {
       1,
       gl.RED,
       gl.FLOAT,
-      new Float32Array([this.revealNow()]),
+      new Float32Array([seconds]),
     )
     gl.activeTexture(gl.TEXTURE0)
-    this.revealUntil = performance.now() + POSTER_REVEAL_MS + 120
   }
 
   private async loadTextureImages(
@@ -2438,32 +2525,19 @@ class InfiniteMovieEngine<T> {
       .map((_, index) => index)
       .sort((a, b) => facing[b] - facing[a])
     const loaded = new Set<number>()
+    this.watchWallVisible()
 
-    // Pixelated placeholders for every cell that has no full poster yet,
-    // painted in small batches per frame so input never stalls.
-    void loadPosterSprite().then((sprite) => {
-      let cursor = 0
-      const paintBatch = () => {
+    // A poster that could not be fetched falls back to its tiny sprite (or its
+    // colour) so the slot is not left empty. Posters that load never show a
+    // sprite stage: each cell goes from empty to its thumbnail in one fade.
+    const paintFallback = (index: number) => {
+      void loadPosterSprite().then((sprite) => {
         if (this.disposed || this.contextLost || !this.texture) return
-        const end = Math.min(
-          indices.length,
-          cursor + PLACEHOLDER_CELLS_PER_FRAME,
-        )
-        for (; cursor < end; cursor += 1) {
-          const index = indices[cursor]
-          if (!loaded.has(index)) {
-            this.uploadPlaceholderCell(
-              index,
-              sprite,
-              uploadCanvas,
-              uploadContext,
-            )
-          }
-        }
-        if (cursor < indices.length) window.requestAnimationFrame(paintBatch)
-      }
-      paintBatch()
-    })
+        if (loaded.has(index)) return
+        this.uploadPlaceholderCell(index, sprite, uploadCanvas, uploadContext)
+        this.markPosterArrived(index)
+      })
+    }
 
     // Show the wall once every poster has settled; progress is settled / total.
     const total = Math.max(1, indices.length)
@@ -2475,6 +2549,10 @@ class InfiniteMovieEngine<T> {
       window.clearTimeout(safetyNet)
       this.canvas.dataset.webglState = 'ready'
       this.reportProgress(100)
+      // Backstop for the wall-visible watcher: never leave posters held.
+      window.setTimeout(() => {
+        if (!this.revealGateOpen && !this.disposed) this.openRevealGate()
+      }, 900)
     }
     const safetyNet = window.setTimeout(markReady, GLOBE_READY_SAFETY_NET_MS)
     // Slow posters shouldn't hold everyone back: once most have settled the
@@ -2518,7 +2596,10 @@ class InfiniteMovieEngine<T> {
         onLoaded(index, image)
         countSettled()
       },
-      countSettled,
+      (index) => {
+        paintFallback(index)
+        countSettled()
+      },
       POSTER_SETTLE_RETRY_DELAYS_MS,
     )
 
@@ -2537,12 +2618,15 @@ class InfiniteMovieEngine<T> {
     let failed = initialFailed
     let attempt = 0
     let timer = 0
+    let running = false
     const retry = async () => {
       window.clearTimeout(timer)
-      if (!failed.length || this.disposed || this.contextLost) return
+      if (running || !failed.length || this.disposed || this.contextLost) return
+      running = true
       const pending = failed
       failed = []
       failed = await this.loadPosterIndices(pending, 6, onLoaded)
+      running = false
       attempt += 1
       schedule()
     }
@@ -2551,14 +2635,25 @@ class InfiniteMovieEngine<T> {
         window.removeEventListener('online', retry)
         return
       }
-      const delay = POSTER_RETRY_DELAYS_MS[attempt]
+      // After the quick retries, keep trying slowly for a while longer, so a
+      // poster that failed on a bad connection fills in once it recovers.
+      const delay =
+        POSTER_RETRY_DELAYS_MS[attempt] ??
+        (attempt < POSTER_RETRY_DELAYS_MS.length + POSTER_RETRY_TAIL_ATTEMPTS
+          ? POSTER_RETRY_TAIL_MS
+          : undefined)
       if (delay !== undefined) timer = window.setTimeout(retry, delay)
     }
-    // Coming back online retries straight away, whatever the attempt count.
+    // Coming back online, or back to the tab, retries straight away.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void retry()
+    }
     window.addEventListener('online', retry)
+    document.addEventListener('visibilitychange', onVisible)
     this.cleanupCallbacks.push(() => {
       window.clearTimeout(timer)
       window.removeEventListener('online', retry)
+      document.removeEventListener('visibilitychange', onVisible)
     })
     schedule()
   }
@@ -2571,11 +2666,19 @@ class InfiniteMovieEngine<T> {
     retryDelaysMs: number[] = [],
   ) {
     const failed: number[] = []
+    // Whatever is still waiting is kept in the order the posters face the
+    // viewer now, so the ones on screen load before the ones behind the globe.
+    const queue = [...indices]
     let cursor = 0
-    let sliceStart = performance.now()
+    let lastSort = performance.now()
+    let sliceStart = lastSort
     const worker = async () => {
       while (!this.disposed && !this.contextLost) {
-        const index = indices[cursor]
+        if (performance.now() - lastSort > POSTER_REPRIORITISE_MS) {
+          lastSort = performance.now()
+          this.sortByFacing(queue, cursor)
+        }
+        const index = queue[cursor]
         cursor += 1
         if (index === undefined) return
         const item = this.items[index]
@@ -2616,6 +2719,25 @@ class InfiniteMovieEngine<T> {
       ),
     )
     return failed
+  }
+
+  // Reorders queue[from..] so the posters nearest the front of the globe come
+  // first (the same facing the first load uses).
+  private sortByFacing(queue: number[], from: number) {
+    if (queue.length - from < 2) return
+    const target = transformQuat3(
+      this.control.snapDirection,
+      conjugateQuat(this.control.orientation),
+    )
+    const itemCount = Math.max(1, this.items.length)
+    const facing = new Float32Array(itemCount).fill(-2)
+    this.instancePositions.forEach((position, instance) => {
+      const item = instance % itemCount
+      facing[item] = Math.max(facing[item], dot3(target, position))
+    })
+    const rest = queue.splice(from)
+    rest.sort((a, b) => facing[b] - facing[a])
+    queue.push(...rest)
   }
 
   private uploadPlaceholderCell(
@@ -2724,7 +2846,38 @@ class InfiniteMovieEngine<T> {
     return pending
   }
 
-  private fetchImage(src: string, fallbackSrc?: string) {
+  // The device cache first, then the network (kept for the next visit); the
+  // plain image request below is the fallback when neither route works.
+  private async fetchImage(src: string, fallbackSrc?: string) {
+    const abort = new AbortController()
+    const timer = window.setTimeout(
+      () => abort.abort(),
+      PRIMARY_IMAGE_TIMEOUT_MS,
+    )
+    const blob = await loadPosterBlob(src, { signal: abort.signal })
+    window.clearTimeout(timer)
+    if (blob) {
+      const decoded = await this.decodeBlob(blob)
+      if (decoded) return decoded
+    }
+    return this.fetchImageDirect(src, fallbackSrc)
+  }
+
+  private decodeBlob(blob: Blob) {
+    return new Promise<HTMLImageElement | null>((resolve) => {
+      const image = new Image()
+      const url = URL.createObjectURL(blob)
+      const done = (result: HTMLImageElement | null) => {
+        URL.revokeObjectURL(url)
+        resolve(result)
+      }
+      image.onload = () => done(image)
+      image.onerror = () => done(null)
+      image.src = url
+    })
+  }
+
+  private fetchImageDirect(src: string, fallbackSrc?: string) {
     return new Promise<HTMLImageElement>((resolve, reject) => {
       const image = new Image()
       let triedFallback = false
@@ -2953,13 +3106,12 @@ class InfiniteMovieEngine<T> {
     gl.uniform1i(this.locations.uRevealTex, 1)
     gl.uniform1f(
       this.locations.uRevealActive,
-      performance.now() < this.revealUntil ? 1 : 0,
+      performance.now() < this.revealUntil || this.heldReveals.size ? 1 : 0,
     )
-    gl.uniform1f(this.locations.uRevealSeconds, POSTER_REVEAL_MS / 1000)
-    gl.uniform1f(this.locations.uRevealSoftness, POSTER_REVEAL_SOFTNESS)
     gl.uniform1f(
-      this.locations.uReducedMotion,
-      this.reducedMotionQuery?.matches ? 1 : 0,
+      this.locations.uRevealSeconds,
+      (this.reducedMotion() ? POSTER_REVEAL_REDUCED_MS : POSTER_REVEAL_MS) /
+        1000,
     )
     gl.uniform1f(this.locations.uNow, this.revealNow())
     gl.activeTexture(gl.TEXTURE1)

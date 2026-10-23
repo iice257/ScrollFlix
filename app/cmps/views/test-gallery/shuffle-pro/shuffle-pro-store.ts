@@ -15,11 +15,6 @@ export type ShuffleProData = {
   totalRuns: number
   // The longest streak of shuffles reached, kept for the run recap.
   bestStreak: number
-  // Off by default: a path stops starting runs once it has been found.
-  repeatFound: boolean
-  // Off by default: for showing the effects off. Found paths never block,
-  // the odds are taken out and a streak counter shows.
-  demoMode: boolean
 }
 
 const EMPTY: ShuffleProData = {
@@ -27,8 +22,6 @@ const EMPTY: ShuffleProData = {
   moodPaths: {},
   totalRuns: 0,
   bestStreak: 0,
-  repeatFound: false,
-  demoMode: false,
 }
 const TIERS: readonly Tier[] = ['frost', 'amethyst', 'jade', 'gold']
 
@@ -45,8 +38,6 @@ export const parseShuffleProData = (raw: string | null): ShuffleProData => {
       moodPaths?: Record<string, Partial<FoundEntry>>
       totalRuns?: unknown
       bestStreak?: unknown
-      repeatFound?: unknown
-      demoMode?: unknown
     }
     if (parsed?.v !== 1 || typeof parsed.found !== 'object' || !parsed.found) {
       return EMPTY
@@ -87,8 +78,6 @@ export const parseShuffleProData = (raw: string | null): ShuffleProData => {
       bestStreak: isNumber(parsed.bestStreak)
         ? Math.max(0, Math.floor(parsed.bestStreak))
         : 0,
-      repeatFound: parsed.repeatFound === true,
-      demoMode: parsed.demoMode === true,
     }
   } catch {
     return EMPTY
@@ -182,15 +171,8 @@ export const shuffleProStore = {
     const data = load()
     if (streak > data.bestStreak) save({ ...data, bestStreak: streak })
   },
-  setRepeatFound(repeatFound: boolean) {
-    save({ ...load(), repeatFound })
-  },
-  setDemoMode(demoMode: boolean) {
-    save({ ...load(), demoMode })
-  },
-  // Clears what was found; the settings are preferences and stay.
+  // Clears what was found.
   reset() {
-    const { repeatFound, demoMode } = load()
-    save({ ...EMPTY, repeatFound, demoMode })
+    save(EMPTY)
   },
 }
