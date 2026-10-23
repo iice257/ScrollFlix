@@ -917,6 +917,20 @@ export const DEFAULT_SORT_DIRECTION: Record<ListGrouping, SortDirection> = {
   year: 'desc',
 }
 
+// The index opens newest first, then A–Z. Reset returns to exactly this.
+export const DEFAULT_SORT_RULES: SortRule[] = [
+  { key: 'year', direction: 'desc' },
+  { key: 'alpha', direction: 'asc' },
+]
+
+export const isDefaultSortRules = (rules: SortRule[]) =>
+  rules.length === DEFAULT_SORT_RULES.length &&
+  rules.every(
+    (rule, index) =>
+      rule.key === DEFAULT_SORT_RULES[index].key &&
+      rule.direction === DEFAULT_SORT_RULES[index].direction,
+  )
+
 // Numeric sort value per key; null means unknown and always sorts last.
 const getSortValue = (movie: TestMovie, key: ListGrouping): number | null => {
   switch (key) {
@@ -1275,9 +1289,7 @@ export const TestGalleryApp = () => {
     getCachedAllMovies() ?? getCachedFirstChunk() ?? [],
   )
   const [mode, setMode] = useState<ViewMode>('wall')
-  const [sortRules, setSortRules] = useState<SortRule[]>([
-    { key: 'alpha', direction: 'asc' },
-  ])
+  const [sortRules, setSortRules] = useState<SortRule[]>(DEFAULT_SORT_RULES)
   const [sortOpen, setSortOpen] = useState(false)
   const [listRandomNonce, setListRandomNonce] = useState(0)
   const reopenDetailsAfterListShuffleRef = useRef(false)
@@ -3309,7 +3321,7 @@ export const TestGalleryApp = () => {
           onDirection={(key, direction) =>
             setSortRules((rules) => applySortDirection(rules, key, direction))
           }
-          onReset={() => setSortRules([{ key: 'alpha', direction: 'asc' }])}
+          onReset={() => setSortRules(DEFAULT_SORT_RULES)}
           onToggle={(key) =>
             setSortRules((rules) => applySortToggle(rules, key))
           }
@@ -4479,10 +4491,7 @@ const SortPanel = ({
   onToggle,
 }: SortPanelProps) => {
   const pending = rules.find((rule) => !rule.direction)
-  const isDefault =
-    rules.length === 1 &&
-    rules[0].key === 'alpha' &&
-    rules[0].direction === 'asc'
+  const isDefault = isDefaultSortRules(rules)
 
   return (
     <section

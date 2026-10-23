@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mapCatalogRow } from './catalog-loader'
 import {
+  DEFAULT_SORT_RULES,
   type GalleryKeyState,
   applySortDirection,
   applySortToggle,
@@ -22,6 +23,7 @@ import {
   groupMoviesByRuntime,
   groupMoviesByVotes,
   groupMoviesByYear,
+  isDefaultSortRules,
   shouldHandleGalleryKey,
   sortMoviesByRules,
   sortMoviesForList,
@@ -247,6 +249,37 @@ describe('test gallery filtering helpers', () => {
         year: '----',
       }),
     ).toBe('Year: - | Rating: N/A | Hour: -')
+  })
+
+  it('defaults to year newest first, then A-Z', () => {
+    expect(DEFAULT_SORT_RULES).toEqual([
+      { key: 'year', direction: 'desc' },
+      { key: 'alpha', direction: 'asc' },
+    ])
+    expect(isDefaultSortRules(DEFAULT_SORT_RULES)).toBe(true)
+
+    const pool = [
+      { ...movies[1], title: 'Zodiac', year: '2007' },
+      { ...movies[0], title: 'Amelie', year: '2007' },
+      { ...movies[2], title: 'Memento', year: '2000' },
+      { ...movies[3], title: 'Alien', year: '1979' },
+    ]
+    expect(
+      sortMoviesByRules(pool, DEFAULT_SORT_RULES).map((item) => item.title),
+    ).toEqual(['Amelie', 'Zodiac', 'Memento', 'Alien'])
+  })
+
+  it('Reset target matches the default and edits never mutate it', () => {
+    const edited = applySortToggle(DEFAULT_SORT_RULES, 'rating')
+    expect(isDefaultSortRules(edited)).toBe(false)
+    expect(
+      isDefaultSortRules(applySortDirection(DEFAULT_SORT_RULES, 'year', 'asc')),
+    ).toBe(false)
+    expect(isDefaultSortRules([{ key: 'alpha', direction: 'asc' }])).toBe(false)
+    expect(DEFAULT_SORT_RULES).toEqual([
+      { key: 'year', direction: 'desc' },
+      { key: 'alpha', direction: 'asc' },
+    ])
   })
 
   it('falls back to A-Z ascending when no rule is active', () => {
