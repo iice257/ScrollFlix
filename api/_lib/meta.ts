@@ -1,4 +1,4 @@
-import type { Film } from './tmdb'
+import type { Film } from './tmdb.js'
 
 export const SITE = 'https://scroll-flix.vercel.app'
 

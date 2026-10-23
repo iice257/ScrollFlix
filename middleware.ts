@@ -4,8 +4,8 @@ import {
   isPreviewBot,
   previewFor,
   renderMetaHtml,
-} from './api/_lib/meta'
-import { fetchFilm } from './api/_lib/tmdb'
+} from './api/_lib/meta.js'
+import { fetchFilm } from './api/_lib/tmdb.js'
 
 // Routing Middleware (Node runtime, the default). Link-preview crawlers get a
 // tiny page of Open Graph tags for the shared URL. Everyone else, and any

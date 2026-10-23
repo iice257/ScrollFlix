@@ -1,11 +1,11 @@
 import { ImageResponse } from '@vercel/og'
-import { SITE } from './_lib/meta'
+import { SITE } from './_lib/meta.js'
 import {
   type Film,
   POSTER_BASE,
   fetchFilm,
   fetchPopularPosters,
-} from './_lib/tmdb'
+} from './_lib/tmdb.js'
 
 // 1200x630 share cards, drawn with @vercel/og (Satori) on the Node runtime.
 // Pinned to 0.8.x: 1.0.x looks for an hb.wasm its package does not ship (Node),
