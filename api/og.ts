@@ -115,6 +115,25 @@ const frame = (children: unknown[]): El =>
     children,
   )
 
+// Satori can't measure text, so estimate the title's wrapped line count and
+// shrink the type until it fits in at most three lines.
+const fitTitle = (title: string) => {
+  for (const size of [116, 96, 80, 68, 56]) {
+    const perLine = Math.floor(600 / (size * 0.55))
+    let lines = 1
+    let width = 0
+    for (const word of title.split(/\s+/)) {
+      const need = word.length + (width ? 1 : 0)
+      if (width && width + need > perLine) {
+        lines++
+        width = word.length
+      } else width += need
+    }
+    if (lines <= (size >= 96 ? 1 : 3)) return { size, lines }
+  }
+  return { size: 56, lines: 3 }
+}
+
 const filmCard = (film: Film, poster: string, mark: string | null): El => {
   const facts = [
     film.rating
@@ -148,7 +167,14 @@ const filmCard = (film: Film, poster: string, mark: string | null): El => {
         )
       : null,
   ]
-  const size = film.title.length <= 12 ? 116 : film.title.length <= 24 ? 88 : 68
+  const { size, lines } = fitTitle(film.title)
+  // Right column is 540 tall: eyebrow, title, facts, brand, and a gap of at
+  // least 32 above the brand. What is left is the overview's room.
+  const used = 56 + lines * size * 1.04 + 34 + 58 + 44 + 32 + 34
+  const overviewLines = Math.min(
+    lines >= 3 ? 1 : 2,
+    Math.floor((540 - used) / 39.2),
+  )
   return frame([
     glow('-100px', '-80px', 820, 0.3),
     glow('600px', '260px', 760, 0.12),
@@ -213,7 +239,7 @@ const filmCard = (film: Film, poster: string, mark: string | null): El => {
             film.title,
           ),
           h('div', { display: 'flex', alignItems: 'center' }, facts),
-          film.overview && film.title.length <= 24
+          film.overview && overviewLines > 0
             ? h(
                 'div',
                 {
@@ -222,7 +248,7 @@ const filmCard = (film: Film, poster: string, mark: string | null): El => {
                   lineHeight: 1.4,
                   fontWeight: 500,
                   color: MUTED,
-                  lineClamp: 3,
+                  lineClamp: overviewLines,
                   marginTop: 34,
                 },
                 film.overview,
