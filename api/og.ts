@@ -7,7 +7,8 @@ import {
   fetchPopularPosters,
 } from './_lib/tmdb'
 
-// 1200x630 share cards, drawn with @vercel/og (Satori) on the Node runtime.
+// 1200x630 share cards, drawn with @vercel/og (Satori) on the edge runtime:
+// the 1.0.x Node build looks for an hb.wasm that the package does not ship.
 // Elements are plain objects instead of JSX so no JSX transform is needed.
 // Palette is the app's: near-black ground, one teal accent.
 const INK = '#08090b'
@@ -51,8 +52,12 @@ const toDataUri = async (url: string): Promise<string | null> => {
     const res = await fetch(url, { signal: AbortSignal.timeout(3000) })
     if (!res.ok) return null
     const type = res.headers.get('content-type') ?? 'image/jpeg'
-    const bytes = Buffer.from(await res.arrayBuffer())
-    return `data:${type};base64,${bytes.toString('base64')}`
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    let binary = ''
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+    }
+    return `data:${type};base64,${btoa(binary)}`
   } catch {
     return null
   }
@@ -330,37 +335,37 @@ const render = async (card: El, cache: string): Promise<Response> => {
   return res
 }
 
-export default {
-  async fetch(request: Request) {
-    const url = new URL(request.url)
-    const kind = url.searchParams.get('kind')
-    const mark = await toDataUri(`${SITE}/icon-512.png`)
+export const config = { runtime: 'edge' }
 
-    if (kind === 'film') {
-      const id = url.searchParams.get('id') ?? ''
-      const film = await fetchFilm(id)
-      const poster =
-        film?.posterPath && (await toDataUri(POSTER_BASE + film.posterPath))
-      if (film && poster) {
-        return render(filmCard(film, poster, mark), IMMUTABLE)
-      }
-      // Unknown film or TMDB unreachable: the home card, cached briefly so a
-      // later request can recover.
-      return render(
-        defaultCard([], mark),
-        'public, no-transform, s-maxage=300, stale-while-revalidate=600',
-      )
+export default async function handler(request: Request) {
+  const url = new URL(request.url)
+  const kind = url.searchParams.get('kind')
+  const mark = await toDataUri(`${SITE}/icon-512.png`)
+
+  if (kind === 'film') {
+    const id = url.searchParams.get('id') ?? ''
+    const film = await fetchFilm(id)
+    const poster =
+      film?.posterPath && (await toDataUri(POSTER_BASE + film.posterPath))
+    if (film && poster) {
+      return render(filmCard(film, poster, mark), IMMUTABLE)
     }
-
-    const paths = await fetchPopularPosters(12)
-    const posters = (
-      await Promise.all(paths.map((p) => toDataUri(POSTER_BASE + p)))
-    ).filter((p): p is string => !!p)
+    // Unknown film or TMDB unreachable: the home card, cached briefly so a
+    // later request can recover.
     return render(
-      defaultCard(posters, mark),
-      posters.length
-        ? DEFAULT_CACHE
-        : 'public, no-transform, s-maxage=300, stale-while-revalidate=600',
+      defaultCard([], mark),
+      'public, no-transform, s-maxage=300, stale-while-revalidate=600',
     )
-  },
+  }
+
+  const paths = await fetchPopularPosters(12)
+  const posters = (
+    await Promise.all(paths.map((p) => toDataUri(POSTER_BASE + p)))
+  ).filter((p): p is string => !!p)
+  return render(
+    defaultCard(posters, mark),
+    posters.length
+      ? DEFAULT_CACHE
+      : 'public, no-transform, s-maxage=300, stale-while-revalidate=600',
+  )
 }

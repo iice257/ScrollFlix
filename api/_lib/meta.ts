@@ -23,12 +23,12 @@ const DEFAULT_TITLE = 'ScrollFlix - Interactive Movie Discovery'
 const DEFAULT_DESCRIPTION =
   'Spin a globe of 100k+ films. Open any poster, filter by mood, and find what to watch tonight.'
 
-export const defaultPreview = (): Preview => ({
+export const defaultPreview = (origin = SITE): Preview => ({
   title: DEFAULT_TITLE,
   description: DEFAULT_DESCRIPTION,
-  image: `${SITE}/api/og?kind=default`,
+  image: `${origin}/api/og?kind=default`,
   imageAlt: 'ScrollFlix: a globe of film posters',
-  url: `${SITE}/`,
+  url: `${origin}/`,
 })
 
 const clip = (text: string, max: number) =>
@@ -42,7 +42,8 @@ export const filmIdFromUrl = (url: URL) => {
 
 export const previewFor = (url: URL, film: Film | null): Preview => {
   const id = filmIdFromUrl(url)
-  if (!id || !film) return defaultPreview()
+  const origin = url.origin
+  if (!id || !film) return defaultPreview(origin)
   const facts = [film.year, film.rating ? `${film.rating.toFixed(1)}/10` : '']
     .filter(Boolean)
     .join(' · ')
@@ -52,9 +53,9 @@ export const previewFor = (url: URL, film: Film | null): Preview => {
       [facts, film.overview].filter(Boolean).join(' - ') || DEFAULT_DESCRIPTION,
       200,
     ),
-    image: `${SITE}/api/og?kind=film&id=${id}`,
+    image: `${origin}/api/og?kind=film&id=${id}`,
     imageAlt: `${film.title} poster on ScrollFlix`,
-    url: `${SITE}/?film=${id}`,
+    url: `${origin}/?film=${id}`,
   }
 }
 

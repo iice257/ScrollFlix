@@ -53,7 +53,7 @@ describe('previewFor', () => {
 
   it('falls back when the film is missing', () => {
     expect(previewFor(new URL('https://x.test/?film=27205'), null)).toEqual(
-      defaultPreview(),
+      defaultPreview('https://x.test'),
     )
   })
 
@@ -61,13 +61,13 @@ describe('previewFor', () => {
     for (const id of ['abc', '1;2', '', '../x']) {
       const url = new URL('https://x.test/')
       url.searchParams.set('film', id)
-      expect(previewFor(url, film)).toEqual(defaultPreview())
+      expect(previewFor(url, film)).toEqual(defaultPreview('https://x.test'))
     }
   })
 
   it('falls back with no film param', () => {
     expect(previewFor(new URL('https://x.test/'), film)).toEqual(
-      defaultPreview(),
+      defaultPreview('https://x.test'),
     )
   })
 })
@@ -85,7 +85,7 @@ describe('parseFilm', () => {
 describe('renderMetaHtml', () => {
   it('writes the tags and escapes everything', () => {
     const html = renderMetaHtml({
-      ...defaultPreview(),
+      ...defaultPreview('https://x.test'),
       title: '"><script>alert(1)</script>',
       description: "Tom & Jerry's <b>",
     })
