@@ -187,7 +187,7 @@ export const PartyLayer = ({
         return pass
       const primary = party.settle
         ? {
-            label: 'Settle tonight’s film',
+            label: 'Tonight’s film',
             onClick: () => dispatch({ type: 'settle' }),
           }
         : null
@@ -278,7 +278,6 @@ const Tonight = ({
             <Suspense fallback={null}>
               <ShareSheet
                 input={{
-                  movieId: movie.id,
                   title: movie.title,
                   year: movie.year,
                   detail: movie.rating ? `★ ${movie.rating}` : '',

@@ -13,7 +13,6 @@ import {
   type StartOptions,
   currentPlayerIndex,
   currentRound,
-  currentRoundMode,
   playerTotal,
   standings,
   winners,
@@ -221,13 +220,6 @@ type HudProps = {
 export const PartyHud = ({ state, me, onEnd }: HudProps) => {
   const index = me ?? currentPlayerIndex(state)
   const player = state.players[index]
-  const mode = currentRoundMode(state)
-  const prompt =
-    mode === 'year'
-      ? 'flick, then guess the year'
-      : mode === 'rating'
-        ? 'flick, then guess the rating'
-        : 'flick and let the others vote'
 
   return (
     <aside className='party-hud' aria-label='Pass the globe'>
@@ -237,7 +229,7 @@ export const PartyHud = ({ state, me, onEnd }: HudProps) => {
           <strong>{player?.name}&rsquo;s turn</strong>
           <small className={cn(state.notice && 'is-notice')} aria-live='polite'>
             {state.notice ??
-              `Round ${currentRound(state)} of ${state.rounds} · ${prompt}`}
+              `Round ${currentRound(state)} of ${state.rounds} · flick or shuffle`}
           </small>
         </span>
         <button

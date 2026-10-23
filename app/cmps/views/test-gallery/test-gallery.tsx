@@ -2864,7 +2864,8 @@ export const TestGalleryApp = () => {
                   </button>
                 </div>
               ) : null}
-              {initialGalleryReady && activeMovie ? (
+              {/* In a party game the centred film's year and rating stay hidden. */}
+              {initialGalleryReady && activeMovie && partyOff ? (
                 <button
                   type='button'
                   className={cn(
@@ -2882,7 +2883,9 @@ export const TestGalleryApp = () => {
                   </span>
                 </button>
               ) : null}
-              {initialGalleryReady ? <MoodLine onOpen={openMoods} /> : null}
+              {initialGalleryReady && partyOff ? (
+                <MoodLine onOpen={openMoods} />
+              ) : null}
             </>
           ) : null
         }

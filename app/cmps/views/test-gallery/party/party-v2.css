@@ -992,3 +992,16 @@ fieldset.party-choice {
 fieldset.party-decades {
   margin-inline: -20px;
 }
+
+.party-reveal-film .party-poster {
+  width: 76px;
+  border-radius: 12px;
+}
+
+.party-reveal-film .party-poster-title {
+  font-size: 0;
+}
+
+.party-pill[data-phase="turn"] .party-copy small {
+  max-width: none;
+}
