@@ -1,0 +1,994 @@
+/* Pass the globe v2: sheets, pickers, the reveal, the finale and tonight's
+   film. Builds on party.css and keeps its dark glass look. */
+
+.party-dot.is-small {
+  width: 26px;
+  height: 26px;
+  font-size: 12px;
+}
+
+.party-badge.is-green {
+  background: linear-gradient(135deg, #86efac, #34d399);
+}
+
+.party-badge.is-muted {
+  background: rgb(255 255 255 / 0.12);
+  color: rgb(255 255 255 / 0.82);
+}
+
+.party-badge.is-mini {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+}
+
+.party-badge.is-mini svg {
+  width: 15px;
+  height: 15px;
+}
+
+.party-hint {
+  margin: -8px 0 0;
+  color: rgb(255 255 255 / 0.55);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* Same phone / Over chat. */
+.party-segment {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 4px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.05);
+}
+
+.party-segment button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgb(255 255 255 / 0.7);
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background 180ms ease,
+    color 180ms ease;
+}
+
+.party-segment button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.party-segment button.is-active {
+  background: #fff;
+  color: #0a0a0a;
+}
+
+/* The four games. */
+.party-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.party-modes legend {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+  padding: 0;
+  color: rgb(255 255 255 / 0.5);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.party-modes button {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  min-height: 68px;
+  padding: 11px 13px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 0.04);
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.party-modes button strong {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.party-modes button small {
+  color: rgb(255 255 255 / 0.55);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.party-modes button.is-active {
+  border-color: #fff;
+  background: rgb(255 255 255 / 0.12);
+}
+
+.party-options {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: end;
+  gap: 16px;
+}
+
+.party-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 12px 8px 14px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 0.04);
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.party-switch span {
+  display: grid;
+  gap: 1px;
+}
+
+.party-switch strong {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.party-switch small {
+  color: rgb(255 255 255 / 0.55);
+  font-size: 11.5px;
+}
+
+.party-switch i {
+  position: relative;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.2);
+  transition: background 180ms ease;
+}
+
+.party-switch i::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #fff;
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.party-switch.is-on i {
+  background: #34d399;
+}
+
+.party-switch.is-on i::after {
+  transform: translateX(16px);
+}
+
+.party-start:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.party-start.is-danger {
+  background: #ff6b6b;
+  color: #1a0505;
+}
+
+.party-ghost.is-icon {
+  gap: 8px;
+  padding: 0 20px;
+}
+
+.party-ghost svg,
+.party-start svg {
+  width: 17px;
+  height: 17px;
+}
+
+.party-actions.is-stack {
+  grid-template-columns: 1fr;
+}
+
+/* Quiet text buttons at the foot of a card. */
+.party-quit {
+  justify-self: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: rgb(255 255 255 / 0.5);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.party-quit:hover,
+.party-quit:focus-visible {
+  outline: none;
+  color: #fff;
+}
+
+.party-quit.is-armed {
+  color: #ff8a8a;
+}
+
+.party-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 8px;
+  margin-top: -6px;
+}
+
+.party-link {
+  width: 100%;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.05);
+  color: rgb(255 255 255 / 0.78);
+  font: inherit;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ---------------------------------------------------------------- sheets */
+
+.party-layer.is-sheet {
+  place-items: end center;
+  padding: 0;
+}
+
+.party-backdrop.is-soft {
+  background: rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.party-sheet {
+  width: min(520px, 100vw);
+  max-height: 92dvh;
+  gap: 16px;
+  padding: 10px 20px calc(18px + env(safe-area-inset-bottom));
+  border-radius: 28px 28px 0 0;
+  border-bottom: 0;
+  animation: party-sheet-in 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes party-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+}
+
+.party-grip {
+  justify-self: center;
+  width: 38px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.22);
+}
+
+@media (min-width: 700px) {
+  .party-layer.is-sheet {
+    place-items: center;
+    padding: 24px;
+  }
+
+  .party-sheet {
+    padding: 26px;
+    border-radius: 28px;
+    border-bottom: 1px solid rgb(255 255 255 / 0.14);
+  }
+
+  .party-grip {
+    display: none;
+  }
+}
+
+.party-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: rgb(255 255 255 / 0.62);
+  font-size: 11.5px;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.party-eyebrow i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.party-eyebrow.is-gold {
+  color: #ffd23f;
+}
+
+.party-eyebrow svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* A poster tile with its title behind it while the image loads. */
+.party-poster {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  aspect-ratio: 2 / 3;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 14px;
+  background: linear-gradient(160deg, #2a2a30, #151518);
+  box-shadow: 0 14px 34px rgb(0 0 0 / 0.5);
+}
+
+.party-poster img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.party-poster-title {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  color: rgb(255 255 255 / 0.45);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.party-poster img + .party-poster-title {
+  display: none;
+}
+
+.party-poster.is-small {
+  width: 56px;
+  border-radius: 10px;
+}
+
+.party-poster.is-small .party-poster-title {
+  font-size: 0;
+}
+
+.party-poster.is-large {
+  width: min(190px, 50vw);
+  justify-self: center;
+  border-radius: 18px;
+  box-shadow:
+    0 24px 60px rgb(0 0 0 / 0.65),
+    0 0 0 1px rgb(255 255 255 / 0.08);
+}
+
+.party-landed,
+.party-vote-film,
+.party-reveal-film {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.party-landed > div,
+.party-reveal-film > div,
+.party-vote-film > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.party-landed h2,
+.party-reveal-film h2,
+.party-vote-head h2 {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.party-landed p,
+.party-reveal-film p,
+.party-vote-head p {
+  margin: 0;
+  color: rgb(255 255 255 / 0.62);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------ year guess */
+
+.party-year,
+.party-rating {
+  display: grid;
+  gap: 14px;
+}
+
+.party-stepper {
+  display: grid;
+  grid-template-columns: 52px 1fr 52px;
+  align-items: center;
+  gap: 8px;
+}
+
+.party-stepper button {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.06);
+  color: #fff;
+  cursor: pointer;
+}
+
+.party-stepper button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.party-stepper button:not(:disabled):active {
+  transform: scale(0.94);
+}
+
+.party-stepper svg {
+  width: 20px;
+  height: 20px;
+}
+
+.party-stepper output,
+.party-rating output {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 56px;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.party-rating output svg {
+  width: 30px;
+  height: 30px;
+  color: #ffd23f;
+  fill: #ffd23f;
+}
+
+.party-decades {
+  display: flex;
+  gap: 6px;
+  margin: 0 -20px;
+  padding: 2px 20px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.party-decades::-webkit-scrollbar {
+  display: none;
+}
+
+.party-decades button,
+.party-years button {
+  flex: 0 0 auto;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.05);
+  color: rgb(255 255 255 / 0.84);
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.party-years {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.party-years button {
+  padding: 0;
+  border-radius: 14px;
+}
+
+.party-years button:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.party-decades button.is-active,
+.party-years button.is-active {
+  border-color: #fff;
+  background: #fff;
+  color: #0a0a0a;
+}
+
+/* The rating slider, with its fill drawn in the track. */
+.party-rating input[type="range"] {
+  width: 100%;
+  height: 44px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  touch-action: pan-y;
+}
+
+.party-rating input[type="range"]::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    #ffd23f var(--fill, 50%),
+    rgb(255 255 255 / 0.16) var(--fill, 50%)
+  );
+}
+
+.party-rating input[type="range"]::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.16);
+}
+
+.party-rating input[type="range"]::-moz-range-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: #ffd23f;
+}
+
+.party-rating input[type="range"]::-webkit-slider-thumb {
+  width: 30px;
+  height: 30px;
+  margin-top: -11px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.5);
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.party-rating input[type="range"]::-moz-range-thumb {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.5);
+}
+
+.party-rating input[type="range"]:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 4px;
+  border-radius: 999px;
+}
+
+.party-rating-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: -8px;
+  color: rgb(255 255 255 / 0.45);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+/* ------------------------------------------------------------------ vote */
+
+.party-vote-head {
+  display: grid;
+  gap: 5px;
+}
+
+.party-vote-list {
+  display: grid;
+  gap: 12px;
+  max-height: 46dvh;
+  margin: 0 -4px;
+  padding: 0 4px;
+  overflow-y: auto;
+}
+
+.party-vote {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 20px;
+  background: rgb(255 255 255 / 0.04);
+}
+
+.party-vote-film strong {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.party-vote-film small {
+  color: rgb(255 255 255 / 0.55);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.party-vote-film small:empty {
+  display: none;
+}
+
+.party-ballot {
+  display: grid;
+  gap: 8px;
+}
+
+.party-ballot-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+.party-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.party-choice button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 52px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 0.05);
+  color: rgb(255 255 255 / 0.84);
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    transform 140ms ease;
+}
+
+.party-choice button:active {
+  transform: scale(0.97);
+}
+
+.party-choice svg {
+  width: 17px;
+  height: 17px;
+}
+
+.party-choice button.is-yes {
+  border-color: #34d399;
+  background: #34d399;
+  color: #052e1c;
+}
+
+.party-choice button.is-no {
+  border-color: #ff8a8a;
+  background: #ff8a8a;
+  color: #2c0808;
+}
+
+/* ---------------------------------------------------------------- reveal */
+
+.party-score {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 6px 0 2px;
+}
+
+.party-score b {
+  font-size: 84px;
+  font-weight: 800;
+  letter-spacing: -0.06em;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+  animation: party-pop 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes party-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+}
+
+.party-score.is-bullseye b {
+  background: linear-gradient(135deg, #ffe58a, #f5a623);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.party-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+  color: rgb(255 255 255 / 0.86);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.party-verdict svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
+
+.party-verdict.is-bullseye {
+  background: linear-gradient(135deg, #ffe58a, #f5a623);
+  color: #2a1a00;
+  animation: party-pop 700ms 250ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.party-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+}
+
+.party-compare div {
+  display: grid;
+  gap: 2px;
+  padding: 11px 14px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 0.04);
+}
+
+.party-compare dt {
+  color: rgb(255 255 255 / 0.5);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.party-compare dd {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.party-compare div:last-child {
+  border-color: rgb(255 255 255 / 0.28);
+  background: rgb(255 255 255 / 0.09);
+}
+
+.party-copy small.is-notice {
+  color: #ffd23f;
+}
+
+/* --------------------------------------------------------------- finale */
+
+.party-board.is-compact li {
+  padding: 8px 14px 8px 10px;
+}
+
+.party-board.is-compact li.is-up {
+  border-color: var(--player);
+}
+
+.party-board.is-compact .party-total {
+  font-size: 20px;
+}
+
+.party-shortlist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.party-shortlist.is-many {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.party-shortlist button {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  padding: 8px;
+  border: 2px solid transparent;
+  border-radius: 18px;
+  background: rgb(255 255 255 / 0.04);
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.party-shortlist button:active {
+  transform: scale(0.98);
+}
+
+.party-shortlist button strong {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.party-shortlist button small {
+  color: rgb(255 255 255 / 0.55);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.party-shortlist button.is-chosen {
+  border-color: #fff;
+  background: rgb(255 255 255 / 0.12);
+}
+
+.party-settle {
+  overflow-y: auto;
+}
+
+/* --------------------------------------------------------------- tonight */
+
+.party-tonight {
+  justify-items: center;
+  gap: 14px;
+  text-align: center;
+  background:
+    radial-gradient(120% 60% at 50% 0%, rgb(255 210 63 / 0.16), transparent 70%),
+    rgb(12 12 14 / 0.97);
+}
+
+.party-tonight h2 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+
+.party-meta {
+  margin: -6px 0 0;
+  color: rgb(255 255 255 / 0.62);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.party-tonight .party-actions {
+  width: 100%;
+}
+
+.party-tonight .party-poster {
+  animation: party-pop 700ms 120ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.party-shortlist button:focus-visible,
+.party-choice button:focus-visible,
+.party-decades button:focus-visible,
+.party-years button:focus-visible,
+.party-modes button:focus-visible,
+.party-switch:focus-visible,
+.party-segment button:focus-visible,
+.party-stepper button:focus-visible,
+.party-quit:focus-visible,
+.party-remove:focus-visible,
+.party-end:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+  .party-options {
+    grid-template-columns: 1fr;
+  }
+
+  .party-stepper output,
+  .party-rating output {
+    font-size: 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .party-sheet,
+  .party-score b,
+  .party-verdict.is-bullseye,
+  .party-tonight .party-poster {
+    animation: none;
+  }
+
+  .party-switch i::after {
+    transition: none;
+  }
+}
+
+/* Fieldsets used as plain groups. */
+fieldset.party-segment,
+fieldset.party-decades,
+fieldset.party-years,
+fieldset.party-choice {
+  min-width: 0;
+  margin-inline: 0;
+}
+
+fieldset.party-decades,
+fieldset.party-years,
+fieldset.party-choice {
+  border: 0;
+}
+
+fieldset.party-years,
+fieldset.party-choice {
+  padding: 0;
+}
+
+fieldset.party-decades {
+  margin-inline: -20px;
+}
