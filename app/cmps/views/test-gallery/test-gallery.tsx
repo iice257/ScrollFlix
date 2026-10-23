@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ChevronsDown,
   ChevronsUp,
+  Clapperboard,
   Dices,
   Hand,
   Heart,
@@ -181,6 +182,11 @@ import {
 } from './shuffle-pro/use-shuffle-pro'
 import './session-path.css'
 import { stopsFromPath } from './share/path-art'
+import {
+  readDeadTrailers,
+  trailerButtonFor,
+  youtubeSearchUrl,
+} from './trailer/trailer-logic'
 import { useTitleTranslation } from './use-title-translation'
 import { WeatherLayer, type WeatherStorm } from './weather-layer'
 
@@ -244,6 +250,8 @@ const EXIT_ANIMATION_MS = 220
 // Loaded when someone first shares, so the artwork code stays out of the
 // initial bundle.
 const ShareSheet = lazy(() => import('./share/share-sheet'))
+// Same for the trailer player and the YouTube script behind it.
+const TrailerSheet = lazy(() => import('./trailer/trailer-sheet'))
 // The mood page and its eight illustrated scenes load on the first visit or
 // when the browser is idle after the globe is up.
 const loadMoodPage = () => import('./moods/mood-page')
@@ -5646,6 +5654,16 @@ const MovieDetailsCard = ({
   // A different film means a different card: close the sheet.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the id is the trigger
   useEffect(() => setShareOpen(false), [movie.id])
+  const [trailerOpen, setTrailerOpen] = useState(false)
+  // Trailer keys that failed before on this device; read again whenever the
+  // player closes, since it may have found more.
+  const [deadTrailers, setDeadTrailers] = useState(readDeadTrailers)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the id is the trigger
+  useEffect(() => setTrailerOpen(false), [movie.id])
+  const closeTrailer = useCallback(() => {
+    setTrailerOpen(false)
+    setDeadTrailers(readDeadTrailers())
+  }, [])
   const [reducedMotion] = useState(() => readReducedMotion(null))
   // Wide screens get a centred panel with everything visible; small screens
   // keep the draggable bottom sheet with a More/Less toggle.
@@ -5808,7 +5826,14 @@ const MovieDetailsCard = ({
     )})`,
   } as CSSProperties
   const movieText = useMovieText(movie)
-  const titleTranslation = useTitleTranslation(movie.title)
+  const originalTitle = movieText?.originalTitle || movie.originalTitle || ''
+  const titleTranslation = useTitleTranslation(movie.title, {
+    hasOriginalTitle: Boolean(originalTitle),
+  })
+  const trailerKeys = movieText?.trailerKeys?.length
+    ? movieText.trailerKeys
+    : (movie.trailerKeys ?? [])
+  const trailerButton = trailerButtonFor(trailerKeys, deadTrailers)
   const shareFound = useSyncExternalStore(
     shuffleProStore.subscribe,
     shuffleProStore.get,
@@ -5960,10 +5985,24 @@ const MovieDetailsCard = ({
                   </button>
                 ) : null}
               </div>
-              {titleTranslation.enabled && titleTranslation.english ? (
+              {originalTitle ? (
                 <p className='warp-details-original-title'>
-                  Original title: {movie.title}
+                  Original title · {originalTitle}
                 </p>
+              ) : titleTranslation.enabled && titleTranslation.english ? (
+                <p className='warp-details-original-title'>
+                  Original title · {movie.title}
+                </p>
+              ) : titleTranslation.failed ? (
+                <output className='warp-details-original-title is-note'>
+                  Couldn't translate this title here
+                </output>
+              ) : titleTranslation.busy ? (
+                <output className='warp-details-original-title is-note'>
+                  {titleTranslation.progress === null
+                    ? 'Translating…'
+                    : `Getting the translator ${Math.round(titleTranslation.progress * 100)}%`}
+                </output>
               ) : null}
               {movieText?.tagline ? (
                 <p className='warp-details-tagline'>{movieText.tagline}</p>
@@ -5995,6 +6034,38 @@ const MovieDetailsCard = ({
                   <Play aria-hidden='true' size={15} strokeWidth={2.6} />
                   Where to watch
                 </button>
+                {trailerButton.kind === 'play' ? (
+                  <button
+                    type='button'
+                    className='warp-details-trailer'
+                    aria-haspopup='dialog'
+                    onClick={() => setTrailerOpen(true)}
+                  >
+                    <Clapperboard
+                      aria-hidden='true'
+                      size={15}
+                      strokeWidth={2.4}
+                    />
+                    Play trailer
+                  </button>
+                ) : trailerButton.kind === 'youtube' ? (
+                  <a
+                    className='warp-details-trailer'
+                    href={youtubeSearchUrl(
+                      movie.title,
+                      hasYear ? movie.year : undefined,
+                    )}
+                    target='_blank'
+                    rel='noopener noreferrer'
+                  >
+                    <Clapperboard
+                      aria-hidden='true'
+                      size={15}
+                      strokeWidth={2.4}
+                    />
+                    Watch trailer on YouTube
+                  </a>
+                ) : null}
                 <button
                   type='button'
                   className={cn('warp-details-heart', saved && 'is-saved')}
@@ -6060,6 +6131,19 @@ const MovieDetailsCard = ({
                     input={shareInput}
                     link={shareLink(movie.id)}
                     onClose={() => setShareOpen(false)}
+                  />
+                </Suspense>,
+                document.querySelector('.warp-shell') ?? document.body,
+              )
+            : null}
+          {trailerOpen && trailerKeys.length
+            ? createPortal(
+                <Suspense fallback={null}>
+                  <TrailerSheet
+                    keys={trailerKeys}
+                    title={movie.title}
+                    year={hasYear ? movie.year : undefined}
+                    onClose={closeTrailer}
                   />
                 </Suspense>,
                 document.querySelector('.warp-shell') ?? document.body,

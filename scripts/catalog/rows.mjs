@@ -7,8 +7,10 @@
 //
 // Genre and country names live once in the manifest. Paths have no leading
 // slash and no ".jpg". A missing value is '' (a missing runtime is 0).
-// Overviews, taglines and IMDb ids live in separate text chunks:
-// [overview, tagline, imdbId].
+// Text lives in separate chunks:
+// [overview, tagline, imdbId, originalTitle, originalLanguage, trailerKeys].
+// The last three are newer. trailerKeys is one string, keys separated by
+// spaces. Older chunks have only the first three and still decode.
 import { createHash } from 'node:crypto'
 
 const cleanText = (value) => String(value ?? '').trim()
@@ -20,7 +22,46 @@ const stripPath = (path) => {
   return match ? match[1] : ''
 }
 
-// TMDB movie details (with external_ids appended) -> a film, or null when it
+// The plain form of a title, for telling "Amélie" from "Amelie".
+const plainTitle = (value) =>
+  cleanText(value)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+
+// Up to `limit` YouTube keys, best first: trailers before teasers, then
+// official, then English, then newest. Other sites, other video types and
+// repeated keys are dropped.
+export const rankTrailers = (videos, limit = 3) => {
+  const seen = new Set()
+  const usable = []
+  for (const video of Array.isArray(videos) ? videos : []) {
+    const key = cleanText(video?.key)
+    if (video?.site !== 'YouTube' || !/^[\w-]{6,20}$/.test(key)) continue
+    if (video.type !== 'Trailer' && video.type !== 'Teaser') continue
+    if (seen.has(key)) continue
+    seen.add(key)
+    usable.push({
+      key,
+      trailer: video.type === 'Trailer' ? 1 : 0,
+      official: video.official ? 1 : 0,
+      english: video.iso_639_1 === 'en' ? 1 : 0,
+      published: Date.parse(video.published_at) || 0,
+    })
+  }
+  return usable
+    .sort(
+      (a, b) =>
+        b.trailer - a.trailer ||
+        b.official - a.official ||
+        b.english - a.english ||
+        b.published - a.published,
+    )
+    .slice(0, limit)
+    .map((video) => video.key)
+}
+
+// TMDB movie details (with external_ids and videos appended) -> a film, or null when it
 // cannot be shown: no poster, no release year, no title.
 export const normaliseFilm = (details) => {
   if (!details || !Number.isFinite(Number(details.id))) return null
@@ -46,6 +87,12 @@ export const normaliseFilm = (details) => {
     overview: cleanText(details.overview),
     tagline: cleanText(details.tagline),
     imdbId: cleanText(details.external_ids?.imdb_id ?? details.imdb_id),
+    originalTitle:
+      plainTitle(details.original_title) === plainTitle(title)
+        ? ''
+        : cleanText(details.original_title),
+    originalLanguage: cleanText(details.original_language),
+    trailers: rankTrailers(details.videos?.results),
   }
 }
 
@@ -103,7 +150,14 @@ export const encodeChunks = (
     film.popularity10,
     film.runtime || 0,
   ]
-  const toText = (film) => [film.overview, film.tagline, film.imdbId]
+  const toText = (film) => [
+    film.overview,
+    film.tagline,
+    film.imdbId,
+    film.originalTitle ?? '',
+    film.originalLanguage ?? '',
+    (film.trailers ?? []).join(' '),
+  ]
 
   const files = new Map()
   const addFiles = (prefix, rows) =>
@@ -119,7 +173,7 @@ export const encodeChunks = (
   const chunks = addFiles('films', sorted.map(toRow))
   const texts = addFiles('text', sorted.map(toText))
   const manifest = {
-    version: 2,
+    version: 3,
     count: sorted.length,
     chunks,
     texts,
@@ -163,8 +217,18 @@ export const decodeRow = (row, manifest) => {
   }
 }
 
-export const decodeText = ([overview, tagline, imdbId]) => ({
+export const decodeText = ([
   overview,
   tagline,
   imdbId,
+  originalTitle = '',
+  originalLanguage = '',
+  trailerKeys = '',
+]) => ({
+  overview,
+  tagline,
+  imdbId,
+  originalTitle,
+  originalLanguage,
+  trailers: trailerKeys ? trailerKeys.split(' ') : [],
 })

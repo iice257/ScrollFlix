@@ -43,7 +43,8 @@ const rowOf = (id: number): CatalogRow => [
 ]
 
 // A fetch that serves a manifest, `chunkCount` chunks of 2,000 rows, and text.
-const serve = (chunkCount: number) => {
+// `newText` serves the version 3 text rows, with the three extra fields.
+const serve = (chunkCount: number, newText = false) => {
   const manifest = manifestOf(chunkCount)
   const requested: string[] = []
   const impl = vi.fn(async (input: RequestInfo | URL) => {
@@ -66,6 +67,9 @@ const serve = (chunkCount: number) => {
           `Overview ${start + i + 1}`,
           `Tagline ${start + i + 1}`,
           `tt${start + i + 1}`,
+          ...(newText
+            ? [`Titre ${start + i + 1}`, 'fr', 'abc12345 def67890']
+            : []),
         ]),
       )
     }
@@ -234,9 +238,26 @@ describe('catalog loader', () => {
       overview: 'Overview 1204',
       tagline: 'Tagline 1204',
       imdbId: 'tt1204',
+      originalTitle: '',
+      originalLanguage: '',
+      trailerKeys: [],
     })
     expect(requested).toContain('/json/catalog/text-2.abcd1234.json')
     expect(getCachedMovieText(movie)?.overview).toBe('Overview 1204')
+  })
+
+  it('reads the original title and trailer keys from version 3 text rows', async () => {
+    serve(2, true)
+    const { loadFirstChunk, loadMovieText } = await freshLoader()
+    const movies = await loadFirstChunk()
+    expect(await loadMovieText(movies[1203])).toEqual({
+      overview: 'Overview 1204',
+      tagline: 'Tagline 1204',
+      imdbId: 'tt1204',
+      originalTitle: 'Titre 1204',
+      originalLanguage: 'fr',
+      trailerKeys: ['abc12345', 'def67890'],
+    })
   })
 
   it('classifies lightweight devices', async () => {
