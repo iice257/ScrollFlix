@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { pickWeighted } from '../moods/taste'
 import { sessionPathStore } from '../session-path'
+import { devModeStore } from './dev-mode'
 import { goldenHourStore } from './golden-hour'
 import { createWhoosh, playLandingThud } from './shuffle-pro-audio'
 import {
@@ -76,11 +77,18 @@ export const useShuffleProController = (context: Context) => {
         isImmersive: () => contextRef.current.immersive,
         isReducedMotion: () => readReducedMotion(reducedMotionOverride.current),
         getFound: () => shuffleProStore.get().found,
-        getRepeatFound: () => shuffleProStore.get().repeatFound,
-        getDemoMode: () => shuffleProStore.get().demoMode,
+        ...(import.meta.env.DEV
+          ? {
+              getDemoMode: devModeStore.get,
+              getDemoFound: devModeStore.getSeen,
+            }
+          : {}),
         isGoldenHour: () => goldenHourStore.get(),
         recordRun: (tier, movieId) => {
-          shuffleProStore.recordRun(tier)
+          // Dev runs only feed the dev session's own set, never the collection.
+          if (import.meta.env.DEV && devModeStore.get()) {
+            devModeStore.recordRun(tier)
+          } else shuffleProStore.recordRun(tier)
           if (movieId) sessionPathStore.add(movieId, tier)
         },
         recordMoodRun: (path, movieId) => {

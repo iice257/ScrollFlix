@@ -183,6 +183,18 @@ export const mapCatalogRow = (
   }
 }
 
+// The blurred card backdrop is a CSS image, which is fetched without CORS. A
+// response cached from such a request carries no CORS headers, so the same URL
+// then fails for WebGL and for the CORS-enabled index tiles (blank posters).
+// It therefore uses a catalogue size nothing else requests.
+export const POSTER_BACKDROP_SIZE = 'w185'
+export const posterBackdropUrl = (
+  movie: Pick<TestMovie, 'posterUrl' | 'posterDetailUrl'>,
+) =>
+  movie.posterDetailUrl
+    ? movie.posterUrl.replace('/w154/', `/${POSTER_BACKDROP_SIZE}/`)
+    : movie.posterUrl
+
 export type DeviceSignals = {
   coarsePointer: boolean
   narrowViewport: boolean

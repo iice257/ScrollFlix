@@ -145,6 +145,22 @@ describe('catalog loader', () => {
     )
   })
 
+  it('gives the no-CORS card backdrop a size nothing else requests', async () => {
+    const { mapCatalogRow, posterBackdropUrl } = await freshLoader()
+    const mapped = mapCatalogRow(rowOf(1), 0, 1, tables)
+    const backdrop = posterBackdropUrl(mapped)
+    // A CSS image fetch without CORS would poison the cached copy of any URL
+    // that the globe (w154), index (w92) or card (w342) also asks for.
+    for (const used of [
+      mapped.posterUrl,
+      mapped.posterListUrl,
+      mapped.posterDetailUrl,
+    ]) {
+      expect(backdrop).not.toBe(used)
+    }
+    expect(backdrop).toBe('https://image.tmdb.org/t/p/w185/poster1.jpg')
+  })
+
   it('treats a zero rating, no backdrop and no runtime as missing', async () => {
     const { mapCatalogRow } = await freshLoader()
     const mapped = mapCatalogRow(
