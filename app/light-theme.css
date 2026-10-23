@@ -1519,6 +1519,97 @@
   color: rgb(255 107 138);
 }
 
+.warp-shell[data-theme="light"] .warp-details-trailer {
+  border: 1px solid rgb(33 26 16 / 0.2);
+  background: rgb(33 26 16 / 0.08);
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-details-trailer-pill {
+  border: 1px solid rgb(33 26 16 / 0.26);
+  background: rgb(239 232 217 / 0.46);
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-details-trailer-pill:hover {
+  border-color: rgb(33 26 16 / 0.5);
+  background: rgb(239 232 217 / 0.62);
+}
+
+.warp-shell[data-theme="light"] .warp-details-trailer-pill:focus-visible {
+  outline: 2px solid rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-details-trailer:hover,
+.warp-shell[data-theme="light"] .warp-details-trailer:focus-visible {
+  border-color: rgb(33 26 16 / 0.4);
+  background: rgb(33 26 16 / 0.18);
+}
+
+.warp-shell[data-theme="light"] .warp-details-trailer:focus-visible {
+  outline: 2px solid rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-trailer-backdrop {
+  background: rgb(247 240 225 / 0.78);
+}
+
+.warp-shell[data-theme="light"] .warp-trailer-card {
+  border: 1px solid rgb(33 26 16 / 0.16);
+  background: rgb(239 232 218 / 0.98);
+  box-shadow: 0 42px 130px rgb(110 78 34 / 0.302);
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-trailer-heading p {
+  color: rgb(33 26 16 / 0.56);
+}
+
+.warp-shell[data-theme="light"] .warp-trailer-stage {
+  background: rgb(247 240 225);
+}
+
+.warp-shell[data-theme="light"] .warp-trailer-loading {
+  border: 2px solid rgb(33 26 16 / 0.18);
+  border-top-color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-trailer-wrong {
+  color: rgb(33 26 16 / 0.5);
+}
+
+.warp-shell[data-theme="light"] .warp-trailer-wrong a {
+  color: rgb(33 26 16 / 0.78);
+}
+
+.warp-shell[data-theme="light"] .warp-trailer-wrong a:hover,
+.warp-shell[data-theme="light"] .warp-trailer-wrong a:focus-visible {
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-trailer-stage.is-failed {
+  background: rgb(33 26 16 / 0.05);
+}
+
+.warp-shell[data-theme="light"] .warp-trailer-stage.is-failed p {
+  color: rgb(33 26 16 / 0.78);
+}
+
+.warp-shell[data-theme="light"] .warp-trailer-youtube {
+  background: rgb(33 26 16);
+  color: rgb(243 236 221);
+}
+
+.warp-shell[data-theme="light"] .warp-trailer-youtube:focus-visible {
+  outline: 2px solid rgb(33 26 16);
+}
+
+@media (max-width: 720px) {
+  .warp-shell[data-theme="light"] .warp-trailer-handle {
+    background: rgb(33 26 16 / 0.32);
+  }
+}
+
 /* Stage: tan beige with a cream centre glow and a faint gold edge. */
 .warp-shell[data-theme="light"],
 .phantom-test-shell[data-theme="light"] {
