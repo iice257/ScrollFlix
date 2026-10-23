@@ -213,7 +213,7 @@ const filmCard = (film: Film, poster: string, mark: string | null): El => {
             film.title,
           ),
           h('div', { display: 'flex', alignItems: 'center' }, facts),
-          film.overview
+          film.overview && film.title.length <= 24
             ? h(
                 'div',
                 {
@@ -281,18 +281,20 @@ const defaultCard = (posters: string[], mark: string | null): El => {
       )
     : null
   return frame([
-    glow('-160px', '120px', 820, 0.18),
+    glow('-160px', '120px', 900, posters.length ? 0.18 : 0.3),
     wall,
     // Keeps the pitch readable over the wall.
-    h('div', {
-      position: 'absolute',
-      left: 0,
-      top: 0,
-      width: 1200,
-      height: 630,
-      background:
-        'linear-gradient(90deg, rgba(8,9,11,1) 0%, rgba(8,9,11,0.96) 38%, rgba(8,9,11,0.35) 70%, rgba(8,9,11,0.1) 100%)',
-    }),
+    wall
+      ? h('div', {
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: 1200,
+          height: 630,
+          background:
+            'linear-gradient(90deg, rgba(8,9,11,1) 0%, rgba(8,9,11,0.96) 38%, rgba(8,9,11,0.35) 70%, rgba(8,9,11,0.1) 100%)',
+        })
+      : null,
     h(
       'div',
       {
