@@ -7,8 +7,9 @@ import {
   fetchPopularPosters,
 } from './_lib/tmdb'
 
-// 1200x630 share cards, drawn with @vercel/og (Satori) on the edge runtime:
-// the 1.0.x Node build looks for an hb.wasm that the package does not ship.
+// 1200x630 share cards, drawn with @vercel/og (Satori) on the Node runtime.
+// Pinned to 0.8.x: 1.0.x looks for an hb.wasm its package does not ship (Node),
+// and its edge build fails the Vercel bundler.
 // Elements are plain objects instead of JSX so no JSX transform is needed.
 // Palette is the app's: near-black ground, one teal accent.
 const INK = '#08090b'
@@ -147,10 +148,10 @@ const filmCard = (film: Film, poster: string, mark: string | null): El => {
         )
       : null,
   ]
-  const long = film.title.length > 28
+  const size = film.title.length <= 12 ? 116 : film.title.length <= 24 ? 88 : 68
   return frame([
-    glow('-120px', '-60px', 760, 0.2),
-    glow('640px', '300px', 700, 0.07),
+    glow('-100px', '-80px', 820, 0.3),
+    glow('600px', '260px', 760, 0.12),
     h(
       'div',
       {
@@ -202,7 +203,7 @@ const filmCard = (film: Film, poster: string, mark: string | null): El => {
             'div',
             {
               display: 'block',
-              fontSize: long ? 68 : 84,
+              fontSize: size,
               lineHeight: 1.04,
               fontWeight: 800,
               letterSpacing: -2,
@@ -212,6 +213,21 @@ const filmCard = (film: Film, poster: string, mark: string | null): El => {
             film.title,
           ),
           h('div', { display: 'flex', alignItems: 'center' }, facts),
+          film.overview
+            ? h(
+                'div',
+                {
+                  display: 'block',
+                  fontSize: 28,
+                  lineHeight: 1.4,
+                  fontWeight: 500,
+                  color: MUTED,
+                  lineClamp: 3,
+                  marginTop: 34,
+                },
+                film.overview,
+              )
+            : null,
         ]),
         brand(mark),
       ],
@@ -335,37 +351,37 @@ const render = async (card: El, cache: string): Promise<Response> => {
   return res
 }
 
-export const config = { runtime: 'edge' }
+export default {
+  async fetch(request: Request) {
+    const url = new URL(request.url)
+    const kind = url.searchParams.get('kind')
+    const mark = await toDataUri(`${SITE}/icon-512.png`)
 
-export default async function handler(request: Request) {
-  const url = new URL(request.url)
-  const kind = url.searchParams.get('kind')
-  const mark = await toDataUri(`${SITE}/icon-512.png`)
-
-  if (kind === 'film') {
-    const id = url.searchParams.get('id') ?? ''
-    const film = await fetchFilm(id)
-    const poster =
-      film?.posterPath && (await toDataUri(POSTER_BASE + film.posterPath))
-    if (film && poster) {
-      return render(filmCard(film, poster, mark), IMMUTABLE)
+    if (kind === 'film') {
+      const id = url.searchParams.get('id') ?? ''
+      const film = await fetchFilm(id)
+      const poster =
+        film?.posterPath && (await toDataUri(POSTER_BASE + film.posterPath))
+      if (film && poster) {
+        return render(filmCard(film, poster, mark), IMMUTABLE)
+      }
+      // Unknown film or TMDB unreachable: the home card, cached briefly so a
+      // later request can recover.
+      return render(
+        defaultCard([], mark),
+        'public, no-transform, s-maxage=300, stale-while-revalidate=600',
+      )
     }
-    // Unknown film or TMDB unreachable: the home card, cached briefly so a
-    // later request can recover.
-    return render(
-      defaultCard([], mark),
-      'public, no-transform, s-maxage=300, stale-while-revalidate=600',
-    )
-  }
 
-  const paths = await fetchPopularPosters(12)
-  const posters = (
-    await Promise.all(paths.map((p) => toDataUri(POSTER_BASE + p)))
-  ).filter((p): p is string => !!p)
-  return render(
-    defaultCard(posters, mark),
-    posters.length
-      ? DEFAULT_CACHE
-      : 'public, no-transform, s-maxage=300, stale-while-revalidate=600',
-  )
+    const paths = await fetchPopularPosters(12)
+    const posters = (
+      await Promise.all(paths.map((p) => toDataUri(POSTER_BASE + p)))
+    ).filter((p): p is string => !!p)
+    return render(
+      defaultCard(posters, mark),
+      posters.length
+        ? DEFAULT_CACHE
+        : 'public, no-transform, s-maxage=300, stale-while-revalidate=600',
+    )
+  },
 }
