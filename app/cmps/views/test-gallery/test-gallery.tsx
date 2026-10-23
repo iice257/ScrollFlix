@@ -11,6 +11,7 @@ import {
   ChevronsUp,
   Clapperboard,
   Dices,
+  ExternalLink,
   Hand,
   Heart,
   Info,
@@ -5796,23 +5797,6 @@ const MovieDetailsCard = ({
       Re-shuffle
     </button>
   )
-  const posterImage = (
-    <div className='warp-details-poster'>
-      <MoviePoster loading='eager' movie={movie} size='detail' />
-    </div>
-  )
-  // A premium pick shows its poster as a collectible; the rest stay plain.
-  const poster = premiumTier ? (
-    <PosterStage
-      tier={premiumTier}
-      mood={premiumMood}
-      reducedMotion={reducedMotion}
-    >
-      {posterImage}
-    </PosterStage>
-  ) : (
-    posterImage
-  )
   const detailsStyle = {
     '--details-drag-y': `${dragOffset}px`,
     // A mood run dresses the card in the colours of the worlds it was made from.
@@ -5834,6 +5818,48 @@ const MovieDetailsCard = ({
     ? movieText.trailerKeys
     : (movie.trailerKeys ?? [])
   const trailerButton = trailerButtonFor(trailerKeys, deadTrailers)
+  // On phones the trailer entry sits on the poster as a frosted pill, so the
+  // action row keeps its three buttons. Wide screens use the row button.
+  const trailerPill =
+    trailerButton.kind === 'play' ? (
+      <button
+        type='button'
+        className='warp-details-trailer-pill'
+        aria-haspopup='dialog'
+        onClick={() => setTrailerOpen(true)}
+      >
+        <Play aria-hidden='true' size={14} strokeWidth={2.6} />
+        Trailer
+      </button>
+    ) : trailerButton.kind === 'youtube' ? (
+      <a
+        className='warp-details-trailer-pill'
+        href={youtubeSearchUrl(movie.title, hasYear ? movie.year : undefined)}
+        target='_blank'
+        rel='noopener noreferrer'
+      >
+        YouTube
+        <ExternalLink aria-hidden='true' size={13} strokeWidth={2.6} />
+      </a>
+    ) : null
+  const posterImage = (
+    <div className='warp-details-poster'>
+      <MoviePoster loading='eager' movie={movie} size='detail' />
+      {isWide ? null : trailerPill}
+    </div>
+  )
+  // A premium pick shows its poster as a collectible; the rest stay plain.
+  const poster = premiumTier ? (
+    <PosterStage
+      tier={premiumTier}
+      mood={premiumMood}
+      reducedMotion={reducedMotion}
+    >
+      {posterImage}
+    </PosterStage>
+  ) : (
+    posterImage
+  )
   const shareFound = useSyncExternalStore(
     shuffleProStore.subscribe,
     shuffleProStore.get,
@@ -6034,7 +6060,7 @@ const MovieDetailsCard = ({
                   <Play aria-hidden='true' size={15} strokeWidth={2.6} />
                   Where to watch
                 </button>
-                {trailerButton.kind === 'play' ? (
+                {!isWide ? null : trailerButton.kind === 'play' ? (
                   <button
                     type='button'
                     className='warp-details-trailer'

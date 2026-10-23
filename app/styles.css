@@ -6472,6 +6472,55 @@
       transform 160ms ease;
   }
 
+  /* On phones the trailer entry is a frosted pill on the poster. */
+  .warp-details-poster {
+    position: relative;
+  }
+
+  .warp-details-trailer-pill {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    z-index: 2;
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border: 1px solid rgb(255 255 255 / 0.26);
+    border-radius: 999px;
+    background: rgb(10 10 10 / 0.46);
+    backdrop-filter: blur(14px) saturate(1.4);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    padding: 0 18px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 850;
+    letter-spacing: -0.02em;
+    text-decoration: none;
+    white-space: nowrap;
+    transform: translateX(-50%);
+    transition:
+      background 160ms ease,
+      border-color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .warp-details-trailer-pill:hover {
+    border-color: rgb(255 255 255 / 0.5);
+    background: rgb(10 10 10 / 0.62);
+  }
+
+  .warp-details-trailer-pill:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 3px;
+  }
+
+  .warp-details-trailer-pill:active {
+    transform: translateX(-50%) scale(0.97);
+  }
+
   .warp-details-trailer:hover,
   .warp-details-trailer:focus-visible {
     outline: none;
@@ -6617,6 +6666,28 @@
     }
   }
 
+  /* A quiet way out under the player when it is the wrong film. */
+  .warp-trailer-wrong {
+    margin: -4px 0 0;
+    color: rgb(255 255 255 / 0.5);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    text-align: center;
+  }
+
+  .warp-trailer-wrong a {
+    color: rgb(255 255 255 / 0.78);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .warp-trailer-wrong a:hover,
+  .warp-trailer-wrong a:focus-visible {
+    outline: none;
+    color: #fff;
+  }
+
   .warp-trailer-stage.is-failed {
     display: grid;
     align-content: center;
@@ -6669,9 +6740,8 @@
 
     .warp-trailer-card {
       width: 100%;
-      height: calc(100dvh - 12px);
-      max-height: none;
-      grid-template-rows: auto auto minmax(0, 1fr);
+      max-height: calc(100dvh - 12px);
+      align-content: start;
       border-radius: 26px 26px 0 0;
       padding: 8px 16px max(20px, env(safe-area-inset-bottom));
       animation: warp-trailer-sheet-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -6696,10 +6766,7 @@
       background: rgb(255 255 255 / 0.32);
     }
 
-    /* The video sits a little above the middle of the sheet. */
     .warp-trailer-stage {
-      align-self: center;
-      margin-bottom: 14dvh;
       border-radius: 14px;
     }
 

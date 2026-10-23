@@ -1539,6 +1539,21 @@
   color: rgb(33 26 16);
 }
 
+.warp-shell[data-theme="light"] .warp-details-trailer-pill {
+  border: 1px solid rgb(33 26 16 / 0.26);
+  background: rgb(239 232 217 / 0.46);
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-details-trailer-pill:hover {
+  border-color: rgb(33 26 16 / 0.5);
+  background: rgb(239 232 217 / 0.62);
+}
+
+.warp-shell[data-theme="light"] .warp-details-trailer-pill:focus-visible {
+  outline: 2px solid rgb(33 26 16);
+}
+
 .warp-shell[data-theme="light"] .warp-details-trailer:hover,
 .warp-shell[data-theme="light"] .warp-details-trailer:focus-visible {
   border-color: rgb(33 26 16 / 0.4);
@@ -1571,6 +1586,19 @@
 .warp-shell[data-theme="light"] .warp-trailer-loading {
   border: 2px solid rgb(33 26 16 / 0.18);
   border-top-color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-trailer-wrong {
+  color: rgb(33 26 16 / 0.5);
+}
+
+.warp-shell[data-theme="light"] .warp-trailer-wrong a {
+  color: rgb(33 26 16 / 0.78);
+}
+
+.warp-shell[data-theme="light"] .warp-trailer-wrong a:hover,
+.warp-shell[data-theme="light"] .warp-trailer-wrong a:focus-visible {
+  color: rgb(33 26 16);
 }
 
 .warp-shell[data-theme="light"] .warp-trailer-stage.is-failed {

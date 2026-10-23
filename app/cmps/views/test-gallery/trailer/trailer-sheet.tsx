@@ -273,10 +273,22 @@ const TrailerSheet = ({ keys, title, year, onClose }: TrailerSheetProps) => {
           </button>
         </header>
         {key ? (
-          <div className={`warp-trailer-stage${ready ? ' is-ready' : ''}`}>
-            <div ref={stageRef} className='warp-trailer-player' />
-            <span className='warp-trailer-loading' aria-hidden='true' />
-          </div>
+          <>
+            <div className={`warp-trailer-stage${ready ? ' is-ready' : ''}`}>
+              <div ref={stageRef} className='warp-trailer-player' />
+              <span className='warp-trailer-loading' aria-hidden='true' />
+            </div>
+            <p className='warp-trailer-wrong'>
+              Not the right trailer?{' '}
+              <a
+                href={youtubeSearchUrl(title, year)}
+                target='_blank'
+                rel='noopener noreferrer'
+              >
+                Watch on YouTube
+              </a>
+            </p>
+          </>
         ) : (
           <div className='warp-trailer-stage is-failed' role='alert'>
             <p>This trailer can't play here.</p>
