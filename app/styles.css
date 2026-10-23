@@ -572,17 +572,23 @@
     height: 100%;
     object-fit: cover;
     opacity: 0;
-    filter: blur(var(--warp-poster-blur, 10px));
-    /* A poster comes in soft and sharpens as it is decoded. */
-    transition:
-      opacity 220ms ease-out,
-      filter 220ms ease-out;
+    /* One plain fade from the empty slot, once the pixels are decoded. */
+    transition: opacity 240ms ease-out;
   }
 
   .warp-poster-frame[data-poster-state="loaded"] img,
   .warp-poster-frame[data-poster-state="fallback"] img {
     opacity: 1;
-    filter: blur(0);
+  }
+
+  /* The card's poster sits on the thumbnail already on screen from the globe;
+     the sharper image fades in over it. */
+  .warp-poster-frame img.warp-poster-base {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    opacity: 1;
+    transition: none;
   }
 
   .warp-poster-frame[data-poster-state="loaded"] .warp-poster-placeholder,
@@ -3981,10 +3987,6 @@
     isolation: auto;
   }
 
-  .warp-list-row-poster .warp-poster-frame {
-    --warp-poster-blur: 5px;
-  }
-
   .warp-list-row-poster .warp-poster-placeholder {
     min-height: 0;
     place-items: center;
@@ -6093,10 +6095,9 @@
       animation: none;
     }
 
-    /* Posters still fade in, without the blur. */
+    /* Posters still fade in, a little quicker. */
     .warp-poster-frame img {
-      filter: none;
-      transition: opacity 200ms ease-out;
+      transition: opacity 160ms ease-out;
     }
   }
 
