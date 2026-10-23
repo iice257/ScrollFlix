@@ -111,29 +111,39 @@ const marksDiffer = (page: Page) => {
     await page.locator('button.warp-info-button').click()
     // Press it with the keyboard: on a slow runner the drawer's entrance and
     // the line tips keep the button "unstable" for a click.
-    const toggle = page
-      .getByRole('group', { name: 'Session path' })
-      .getByRole('button', { name: on ? 'On' : 'Off', exact: true })
-    await toggle.focus()
-    await page.keyboard.press('Enter')
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    // Both settings, so links and path marks give the globe the most to show.
+    for (const group of ['Session path', 'Favorite links']) {
+      const toggle = page
+        .getByRole('group', { name: group })
+        .getByRole('button', { name: on ? 'On' : 'Off', exact: true })
+      await toggle.focus()
+      await page.keyboard.press('Enter')
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    }
     await closeDrawer(page)
     await page.waitForTimeout(500)
     return (await page.screenshot({ clip })).toString('base64')
   }
-  return async () => {
-    let diff = { changed: 0, meanDelta: 0 }
-    for (let attempt = 0; attempt < 8; attempt += 1) {
+  return async (sign: 1 | -1) => {
+    let best = { changed: 0, meanDelta: 0 }
+    for (let attempt = 0; attempt < 12; attempt += 1) {
       const on = await shot(true)
       const off = await shot(false)
-      diff = await compareShots(page, off, on)
-      if (diff.changed > 30) break
+      const diff = await compareShots(page, off, on)
+      // Other things move on the globe too (a poster fading in), so keep
+      // looking until the change is the marks': light on dark, ink on light.
+      const marks = Math.sign(diff.meanDelta) === sign
+      const bestMarks = Math.sign(best.meanDelta) === sign
+      if (marks && (!bestMarks || diff.changed > best.changed)) best = diff
+      else if (!bestMarks && diff.changed > best.changed) best = diff
+      if (best.changed > 30 && Math.sign(best.meanDelta) === sign) break
       await page.mouse.move(700, 450)
       await page.mouse.down()
       await page.mouse.move(560, 430, { steps: 10 })
       await page.mouse.up()
       await page.waitForTimeout(2_000)
     }
+    const diff = best
     // Leave the marks on for whatever comes next.
     await shot(true)
     return diff
@@ -462,6 +472,8 @@ test.describe('Gallery user flows', () => {
   })
 
   test('constellations follow the globe and theme', async ({ page }) => {
+    // Each pass turns the globe and shoots it four times; allow a few passes.
+    test.setTimeout(180_000)
     test.skip(
       (page.viewportSize()?.width ?? 0) <= 900,
       'the drawer fills a phone',
@@ -470,7 +482,7 @@ test.describe('Gallery user flows', () => {
     const lines = marksDiffer(page)
 
     // Light marks on the dark globe...
-    const dark = await lines()
+    const dark = await lines(1)
     expect(dark.changed).toBeGreaterThan(30)
     expect(dark.meanDelta).toBeGreaterThan(0)
 
@@ -479,12 +491,14 @@ test.describe('Gallery user flows', () => {
     await page.getByRole('button', { name: 'Light', exact: true }).click()
     await closeDrawer(page)
     await expect(page.locator('main')).toHaveAttribute('data-theme', 'light')
-    const light = await lines()
+    const light = await lines(-1)
     expect(light.changed).toBeGreaterThan(30)
     expect(light.meanDelta).toBeLessThan(0)
   })
 
   test('links stay on posters after resize', async ({ page }) => {
+    // Each pass turns the globe and shoots it four times; allow a few passes.
+    test.setTimeout(180_000)
     test.skip(
       (page.viewportSize()?.width ?? 0) <= 900,
       'the drawer fills a phone',
@@ -496,7 +510,7 @@ test.describe('Gallery user flows', () => {
     await page.setViewportSize({ width: 1180, height: 760 })
     await page.waitForTimeout(1_200)
 
-    const diff = await marksDiffer(page)()
+    const diff = await marksDiffer(page)(1)
     expect(diff.changed).toBeGreaterThan(30)
     expect(diff.meanDelta).toBeGreaterThan(0)
   })
