@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '../../../utils/tw'
+import { detectLightweightDevice } from './catalog-loader'
 import {
   type ConstellationInput,
   DRAW_IN_MS,
@@ -24,9 +25,17 @@ import {
   hasHoneycombLayout,
   prewarmHoneycombLayout,
 } from './honeycomb-layout'
+import { createLayerPool } from './layer-pool'
+import { type LodPoster, planLod } from './lod-scheduler'
 import { perfProbe } from './perf-probe'
-import { loadPosterBlob } from './poster-cache'
 import { buildPosterIndex } from './poster-index'
+import {
+  type CellSpec,
+  type PosterImage,
+  type PosterLoader,
+  createPosterLoader,
+} from './poster-loader'
+import { posterUrl } from './poster-sizes'
 import { HoldRing } from './shuffle-pro/hold-ring'
 import { unlockAudio } from './shuffle-pro/shuffle-pro-audio'
 import type {
@@ -43,14 +52,26 @@ import {
   type SkyState,
   type SkyView,
 } from './shuffle-pro/sky-pass'
+import {
+  type AtlasLayout,
+  DESKTOP_GLOBE_COUNT,
+  PHONE_GLOBE_COUNT,
+  type TierConfig,
+  atlasLayout,
+  estimateTextureBytes,
+  fitTierConfig,
+  tierConfig,
+} from './texture-tiers'
 import { createTwinkleClock } from './twinkle-clock'
 
 export type InfiniteMovieMenuItem<T> = {
   id: string
   image: string
   fallbackImage?: string
-  // Shown until the poster loads when it has no cell in the poster sprite.
+  // The film's average colour, shown for a poster that could not load.
   placeholderColor?: string
+  // The TMDB poster path (no slash, no extension); sizes are built from it.
+  posterPath?: string
   title: string
   description: string
   meta: string
@@ -126,16 +147,18 @@ const TARGET_FRAME_DURATION = 1000 / 60
 const SLEEP_AFTER_STILL_FRAMES = 3
 // While asleep, a slow timer double-checks that nothing was missed.
 const WATCHDOG_MS = 500
-const ICON_TEXTURE_CELL_SIZE = 128
-const ICON_TEXTURE_PADDING = 12
 // Globe density: up to ICON_INSTANCE_COUNT posters. Smaller sets shrink the
 // sphere (radius scales with sqrt(count / ICON_INSTANCE_COUNT), clamped to
 // MIN_RADIUS_RATIO) so poster spacing stays as tight as the full globe. The
 // camera only follows part of the way (sqrt of the radius ratio), so small
 // sets read as a smaller, denser globe rather than a magnified sparse one.
 // Below MIN_INSTANCE_COUNT, items repeat to fill the smallest sphere.
-const ICON_INSTANCE_COUNT = 900
-const REFERENCE_INSTANCE_COUNT = ICON_INSTANCE_COUNT
+// The density reference stays at the original 900: the sphere grows with
+// sqrt(count / 900) so spacing stays as tight as it always was, and the camera
+// follows part of the way. Phones and lightweight devices lay out fewer.
+const REFERENCE_INSTANCE_COUNT = 900
+export const globeCapacity = (lightweight = detectLightweightDevice()) =>
+  lightweight ? PHONE_GLOBE_COUNT : DESKTOP_GLOBE_COUNT
 const MIN_RADIUS_RATIO = 0.62
 const MIN_INSTANCE_COUNT = Math.round(
   REFERENCE_INSTANCE_COUNT * MIN_RADIUS_RATIO ** 2,
@@ -341,15 +364,12 @@ const yieldToMain = () =>
 // How many posters the globe lays out, and how large it is, for a film count.
 const getGlobeShape = (itemCount: number) => {
   const instanceCount = Math.min(
-    ICON_INSTANCE_COUNT,
+    globeCapacity(),
     Math.max(MIN_INSTANCE_COUNT, itemCount),
   )
-  const radiusRatio = Math.min(
-    1,
-    Math.max(
-      MIN_RADIUS_RATIO,
-      Math.sqrt(instanceCount / REFERENCE_INSTANCE_COUNT),
-    ),
+  const radiusRatio = Math.max(
+    MIN_RADIUS_RATIO,
+    Math.sqrt(instanceCount / REFERENCE_INSTANCE_COUNT),
   )
   return {
     instanceCount,
@@ -358,65 +378,62 @@ const getGlobeShape = (itemCount: number) => {
   }
 }
 
-const PRIMARY_IMAGE_TIMEOUT_MS = 20000
-
 type DetailMotion = 'fast' | 'slow' | 'close'
 
-// One tiny sprite of every poster: drawn pixelated into each atlas cell so the
-// globe is populated almost instantly while full thumbnails stream in.
-const POSTER_SPRITE_URL = '/media/poster-sprite.jpg'
-const POSTER_SPRITE_MANIFEST_URL = '/media/poster-sprite.json'
 const POSTER_RETRY_DELAYS_MS = [4000, 12000, 30000]
 // Then once a minute for this many more tries.
 const POSTER_RETRY_TAIL_MS = 60000
 const POSTER_RETRY_TAIL_ATTEMPTS = 10
 // How soon the not-yet-loaded posters are put back in facing order.
 const POSTER_REPRIORITISE_MS = 300
+// The posters' LOD is re-planned at most this often while the globe moves,
+// and once more when it settles.
+const LOD_PLAN_INTERVAL_MS = 120
+// Mip chains are rebuilt at most this often while posters land.
+const MIP_BATCH_MS = 150
+// A tier image that failed is not asked for again for this long.
+const LOD_RETRY_MS = 30000
+const LOADER_CONCURRENCY = 12
+// A tier upgrade cross-fades over this long.
+const LOD_FADE_MS = 150
+// What the shader's poster mapping shows of a poster: the whole poster spans
+// this share of the quad's width, and the visible rounded rectangle covers it
+// from 0.11 to 0.89 of the quad's height.
+const POSTER_WIDTH_OF_QUAD = 0.766
+// Loader priorities: the base tier first, then the opened poster's detail,
+// then whatever the LOD plan ranks.
+const PRIORITY_OPENED = -1
+const PRIORITY_DETAIL = 5000
+const PRIORITY_MID = 10000
 
-type PosterSprite = {
-  cellHeight: number
-  cellWidth: number
-  columns: number
-  image: HTMLImageElement
-  indexById: Map<string, number>
-}
+// A poster's TMDB path, from the item or from its thumbnail url.
+const posterPathOf = (item: { posterPath?: string; image: string }) =>
+  item.posterPath ?? /\/t\/p\/\w+\/([^/?#]+)\.jpg/.exec(item.image)?.[1] ?? null
 
-let posterSpritePromise: Promise<PosterSprite | null> | null = null
-const posterImageCache = new Map<string, Promise<HTMLImageElement>>()
-const POSTER_IMAGE_CACHE_LIMIT = 1800
-
-const loadPosterSprite = () => {
-  posterSpritePromise ??= (async () => {
-    try {
-      const response = await fetch(POSTER_SPRITE_MANIFEST_URL)
-      if (!response.ok) throw new Error(`Sprite manifest ${response.status}`)
-      const manifest = (await response.json()) as {
-        cellHeight: number
-        cellWidth: number
-        columns: number
-        ids: string[]
-      }
-      const image = new Image()
-      image.decoding = 'async'
-      image.src = POSTER_SPRITE_URL
-      await image.decode()
-      return {
-        cellHeight: manifest.cellHeight,
-        cellWidth: manifest.cellWidth,
-        columns: manifest.columns,
-        image,
-        indexById: new Map(manifest.ids.map((id, index) => [id, index])),
-      }
-    } catch {
-      posterSpritePromise = null
-      return null
+declare global {
+  interface Window {
+    // Dev and test hook: live GPU textures, tiers and LOD state.
+    __scrollflixDebug?: {
+      textures: number
+      engines: number
+      lod?: () => unknown
     }
-  })()
-  return posterSpritePromise
+  }
 }
-
-const posterIdFromUrl = (url: string) =>
-  url.match(/\/posters\/([^/?#]+)\.jpg/)?.[1] ?? null
+const debugStats = { textures: 0, engines: 0 }
+if (typeof window !== 'undefined') {
+  window.__scrollflixDebug = Object.assign(
+    window.__scrollflixDebug ?? { textures: 0, engines: 0 },
+    {
+      get textures() {
+        return debugStats.textures
+      },
+      get engines() {
+        return debugStats.engines
+      },
+    },
+  )
+}
 
 export type PosterHit<T> = {
   index: number
@@ -579,11 +596,14 @@ uniform float uMotionBlurMax;
 in vec3 aModelPosition;
 in vec2 aModelUvs;
 in mat4 aInstanceMatrix;
+// Per poster: mid layer, detail layer, and when each one's fade-in began.
+in vec4 aLod;
 
 out vec2 vUvs;
 out vec2 vSmear;
 out float vAlpha;
 flat out int vInstanceId;
+flat out vec4 vLod;
 
 void main() {
   vec4 worldPosition = uWorldMatrix * aInstanceMatrix * vec4(aModelPosition, 1.0);
@@ -625,18 +645,28 @@ void main() {
   vAlpha = smoothstep(-0.2, 0.95, face) * 0.84 + 0.16;
   vUvs = aModelUvs;
   vInstanceId = gl_InstanceID;
+  vLod = aLod;
 }
 `
 
 const fragmentShaderSource = `#version 300 es
 precision highp float;
 
+// Base tier: every poster in one mipmapped atlas of 2:3 cells.
 uniform sampler2D uTex;
+// Mid and detail tiers: pools of layers for the posters near the viewer.
+uniform highp sampler2DArray uMidTex;
+uniform highp sampler2DArray uDetailTex;
 uniform int uItemCount;
-uniform int uAtlasSize;
-uniform float uAtlasPadding;
+uniform int uAtlasColumns;
+// One cell's size in atlas UV, the gutter's size, and the poster's size.
+uniform vec2 uAtlasCell;
+uniform vec2 uAtlasGutter;
+uniform vec2 uAtlasSpan;
+uniform int uRevealSize;
 uniform float uExposure;
 uniform vec4 uTint;
+uniform float uLodFade;
 // Per-poster reveal clock: the time each cell's full poster arrived (0 = none).
 uniform sampler2D uRevealTex;
 uniform float uRevealActive;
@@ -649,6 +679,7 @@ in vec2 vUvs;
 in vec2 vSmear;
 in float vAlpha;
 flat in int vInstanceId;
+flat in vec4 vLod;
 
 float roundedRectMask(vec2 uv) {
   vec2 q = abs(uv - vec2(0.5)) - vec2(0.34, 0.39);
@@ -656,18 +687,19 @@ float roundedRectMask(vec2 uv) {
   return 1.0 - smoothstep(0.0, 0.024, dist);
 }
 
+// Where the whole 2:3 poster sits on the quad: the rounded rectangle shows it
+// from 0.056 to 0.944 of its width and all of its height.
+vec2 posterUv(vec2 uv) {
+  return vec2(0.5 + (uv.x - 0.5) * 1.306, (uv.y - 0.11) / 0.78);
+}
+
 void main() {
   int itemIndex = vInstanceId % max(1, uItemCount);
-  int cellX = itemIndex % uAtlasSize;
-  int cellY = itemIndex / uAtlasSize;
-  vec2 cellSize = vec2(1.0) / vec2(float(uAtlasSize));
-  vec2 cellOffset = vec2(float(cellX), float(cellY)) * cellSize;
-  vec2 cellPadding = cellSize * uAtlasPadding;
-
-  vec2 tileSpan = cellSize - cellPadding * 2.0;
-  vec2 tileOrigin = cellOffset + cellPadding;
+  ivec2 cell = ivec2(itemIndex % uAtlasColumns, itemIndex / uAtlasColumns);
+  vec2 tileOrigin = vec2(cell) * uAtlasCell + uAtlasGutter;
 
   vec4 color;
+  vec2 poster = posterUv(vUvs);
   if (dot(vSmear, vSmear) > 0.0) {
     // Six taps along the smear, clamped to this poster's own tile so
     // neighbouring posters never bleed in.
@@ -675,15 +707,27 @@ void main() {
     for (int i = 0; i < 6; i++) {
       float t = (float(i) + 0.5) / 6.0 - 0.5;
       vec2 tapUv = clamp(vUvs + vSmear * t, 0.0, 1.0);
-      color += texture(uTex, tapUv * tileSpan + tileOrigin);
+      color += texture(uTex, clamp(posterUv(tapUv), 0.0, 1.0) * uAtlasSpan + tileOrigin);
     }
     color /= 6.0;
+    color = mix(vec4(0.0196, 0.0196, 0.0196, 1.0), color, color.a);
   } else {
-    color = texture(uTex, vUvs * tileSpan + tileOrigin);
+    color = texture(uTex, poster * uAtlasSpan + tileOrigin);
+    // A cell that has not arrived is empty (alpha 0): it shows as the dark slot.
+    color = mix(vec4(0.0196, 0.0196, 0.0196, 1.0), color, color.a);
+    // The sharper tiers fade in over the one below them.
+    if (vLod.x >= 0.0) {
+      float fade = clamp((uNow - vLod.z) / uLodFade, 0.0, 1.0);
+      color = mix(color, texture(uMidTex, vec3(poster, vLod.x)), fade);
+    }
+    if (vLod.y >= 0.0) {
+      float fade = clamp((uNow - vLod.w) / uLodFade, 0.0, 1.0);
+      color = mix(color, texture(uDetailTex, vec3(poster, vLod.y)), fade);
+    }
     if (uRevealActive > 0.5) {
       // One plain fade from the empty slot to the poster. A start time still
       // in the future (the arrival stagger) keeps the slot empty until then.
-      float arrived = texelFetch(uRevealTex, ivec2(cellX, cellY), 0).r;
+      float arrived = texelFetch(uRevealTex, ivec2(itemIndex % uRevealSize, itemIndex / uRevealSize), 0).r;
       if (arrived > 0.0) {
         float progress = clamp((uNow - arrived) / uRevealSeconds, 0.0, 1.0);
         float eased = 1.0 - pow(1.0 - progress, 3.0);
@@ -1030,6 +1074,7 @@ const createProgram = (
   gl.bindAttribLocation(program, 0, 'aModelPosition')
   gl.bindAttribLocation(program, 1, 'aModelUvs')
   gl.bindAttribLocation(program, 2, 'aInstanceMatrix')
+  gl.bindAttribLocation(program, 6, 'aLod')
   gl.linkProgram(program)
   const linked = Boolean(gl.getProgramParameter(program, gl.LINK_STATUS))
   if (!linked) console.error(gl.getProgramInfoLog(program))
@@ -1466,8 +1511,35 @@ class InfiniteMovieEngine<T> {
   private readonly instanceBuffer: WebGLBuffer | null
   private readonly geometryBuffers: WebGLBuffer[] = []
   private readonly locations: Record<string, WebGLUniformLocation | null>
-  private atlasSize = 1
-  private atlasCellSize = ICON_TEXTURE_CELL_SIZE
+  // Poster tiers: see initTexture.
+  private tiers!: TierConfig
+  private atlas!: AtlasLayout
+  private revealSize = 1
+  private midTexture: WebGLTexture | null = null
+  private detailTexture: WebGLTexture | null = null
+  private loader: PosterLoader | null = null
+  private midPool = createLayerPool(0)
+  private detailPool = createLayerPool(0)
+  // Per item: the layer its sharper image sits in (-1 when it has none).
+  private midLayerOf = new Int32Array(0)
+  private detailLayerOf = new Int32Array(0)
+  private itemKeys: string[] = []
+  private lodWidth = new Float32Array(0)
+  private lodFocus = new Float32Array(0)
+  // Per instance: mid layer, detail layer, and when each one began fading in.
+  private readonly lodData: Float32Array
+  private lodBuffer: WebGLBuffer | null = null
+  private lodDirty = false
+  private lodStale = true
+  private lodEnabled = false
+  private lastLodAt = 0
+  private openedItem: number | null = null
+  private readonly lodInflight = new Set<string>()
+  private readonly lodFailedAt = new Map<string, number>()
+  private mipTimer: number | null = null
+  private baseMipsDirty = false
+  private midMipsDirty = false
+  private detailMipsDirty = false
   private lastReportedProgress = -1
   private readonly sphereRadius: number
   private cameraRestZ: number
@@ -1587,9 +1659,15 @@ class InfiniteMovieEngine<T> {
       uExposure: gl.getUniformLocation(program, 'uExposure'),
       uTint: gl.getUniformLocation(program, 'uTint'),
       uTex: gl.getUniformLocation(program, 'uTex'),
+      uMidTex: gl.getUniformLocation(program, 'uMidTex'),
+      uDetailTex: gl.getUniformLocation(program, 'uDetailTex'),
       uItemCount: gl.getUniformLocation(program, 'uItemCount'),
-      uAtlasSize: gl.getUniformLocation(program, 'uAtlasSize'),
-      uAtlasPadding: gl.getUniformLocation(program, 'uAtlasPadding'),
+      uAtlasColumns: gl.getUniformLocation(program, 'uAtlasColumns'),
+      uAtlasCell: gl.getUniformLocation(program, 'uAtlasCell'),
+      uAtlasGutter: gl.getUniformLocation(program, 'uAtlasGutter'),
+      uAtlasSpan: gl.getUniformLocation(program, 'uAtlasSpan'),
+      uRevealSize: gl.getUniformLocation(program, 'uRevealSize'),
+      uLodFade: gl.getUniformLocation(program, 'uLodFade'),
       uRevealTex: gl.getUniformLocation(program, 'uRevealTex'),
       uRevealActive: gl.getUniformLocation(program, 'uRevealActive'),
       uRevealSeconds: gl.getUniformLocation(program, 'uRevealSeconds'),
@@ -1618,6 +1696,11 @@ class InfiniteMovieEngine<T> {
       return matrix
     })
 
+    this.lodData = new Float32Array(this.instancePositions.length * 4)
+    for (let at = 0; at < this.lodData.length; at += 4) {
+      this.lodData[at] = -1
+      this.lodData[at + 1] = -1
+    }
     this.instanceBuffer = gl.createBuffer()
     if (this.instanceBuffer) this.geometryBuffers.push(this.instanceBuffer)
     this.initGeometry()
@@ -1834,6 +1917,9 @@ class InfiniteMovieEngine<T> {
     window.cancelAnimationFrame(this.frameId)
     if (this.watchdog !== null) window.clearTimeout(this.watchdog)
     this.twinkle.dispose()
+    this.loader?.dispose()
+    this.loader = null
+    if (this.mipTimer !== null) window.clearTimeout(this.mipTimer)
     if (this.nudgeTimer) window.clearTimeout(this.nudgeTimer)
     this.cleanupCallbacks.forEach((cleanup) => cleanup())
     this.control.dispose()
@@ -1842,12 +1928,20 @@ class InfiniteMovieEngine<T> {
     this.canvas.removeEventListener('webglcontextlost', this.handleContextLost)
     if (!this.gl.isContextLost()) {
       if (this.texture) this.gl.deleteTexture(this.texture)
+      if (this.midTexture) this.gl.deleteTexture(this.midTexture)
+      if (this.detailTexture) this.gl.deleteTexture(this.detailTexture)
       if (this.revealTexture) this.gl.deleteTexture(this.revealTexture)
       this.geometryBuffers.forEach((buffer) => this.gl.deleteBuffer(buffer))
       if (this.vao) this.gl.deleteVertexArray(this.vao)
       // The program stays cached with the context for the next engine.
     }
+    if (this.texture) {
+      debugStats.textures -= 4
+      debugStats.engines -= 1
+    }
     this.texture = null
+    this.midTexture = null
+    this.detailTexture = null
     this.revealTexture = null
     this.vao = null
     this.canvas.dataset.webglState = 'disposed'
@@ -2317,71 +2411,127 @@ class InfiniteMovieEngine<T> {
       gl.vertexAttribDivisor(loc, 1)
     }
 
+    this.lodBuffer = gl.createBuffer()
+    if (this.lodBuffer) this.geometryBuffers.push(this.lodBuffer)
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.lodBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, this.lodData, gl.DYNAMIC_DRAW)
+    gl.enableVertexAttribArray(6)
+    gl.vertexAttribPointer(6, 4, gl.FLOAT, false, 0, 0)
+    gl.vertexAttribDivisor(6, 1)
+
     gl.bindVertexArray(null)
     gl.bindBuffer(gl.ARRAY_BUFFER, null)
   }
 
+  // The three poster tiers (see texture-tiers.ts): a mipmapped base atlas of
+  // every poster, and two pools of array layers for the posters being looked at.
   private initTexture() {
     const gl = this.gl
-    this.texture = gl.createTexture()
-    gl.bindTexture(gl.TEXTURE_2D, this.texture)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.RGBA,
-      1,
-      1,
-      0,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      new Uint8Array([10, 10, 10, 255]),
-    )
-
-    const itemCount = Math.max(1, this.items.length)
-    this.atlasSize = Math.ceil(Math.sqrt(itemCount))
     const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
-    this.atlasCellSize = Math.max(
-      1,
-      Math.min(
-        ICON_TEXTURE_CELL_SIZE,
-        Math.floor(maxTextureSize / Math.max(1, this.atlasSize)),
-      ),
+    const maxArrayLayers = gl.getParameter(
+      gl.MAX_ARRAY_TEXTURE_LAYERS,
+    ) as number
+    const itemCount = Math.max(1, this.items.length)
+    this.tiers = fitTierConfig(
+      tierConfig(!detectLightweightDevice()),
+      itemCount,
+      { maxTextureSize, maxArrayLayers },
     )
-    this.initRevealTexture()
-    this.canvas.dataset.atlasSize = String(this.atlasSize)
-    this.canvas.dataset.atlasCellSize = String(this.atlasCellSize)
-    this.canvas.dataset.atlasTextureSize = String(
-      this.atlasSize * this.atlasCellSize,
-    )
-    this.canvas.dataset.maxTextureSize = String(maxTextureSize)
-    const atlas = document.createElement('canvas')
-    const context = atlas.getContext('2d')
-    if (!context) return
-    atlas.width = this.atlasSize * this.atlasCellSize
-    atlas.height = this.atlasSize * this.atlasCellSize
-    context.fillStyle = '#050505'
-    context.fillRect(0, 0, atlas.width, atlas.height)
-    context.imageSmoothingEnabled = true
-    context.imageSmoothingQuality = 'high'
-
-    this.reportProgress(3)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas)
-    this.reportProgress(8)
-
-    const uploadCanvas = document.createElement('canvas')
-    uploadCanvas.width = this.atlasCellSize
-    uploadCanvas.height = this.atlasCellSize
-    const uploadContext = uploadCanvas.getContext('2d')
-    if (!uploadContext) {
-      this.reportProgress(100)
-      return
+    this.atlas = atlasLayout(itemCount, this.tiers, maxTextureSize)
+    this.revealSize = Math.ceil(Math.sqrt(itemCount))
+    const aniso = gl.getExtension('EXT_texture_filter_anisotropic')
+    const anisotropy = aniso
+      ? Math.min(
+          4,
+          gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT) as number,
+        )
+      : 0
+    const configure = (
+      target: number,
+      texture: WebGLTexture | null,
+      levels: number,
+    ) => {
+      gl.bindTexture(target, texture)
+      gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+      gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+      gl.texParameteri(target, gl.TEXTURE_MAX_LEVEL, levels - 1)
+      if (aniso && anisotropy > 1)
+        gl.texParameterf(target, aniso.TEXTURE_MAX_ANISOTROPY_EXT, anisotropy)
     }
 
-    void this.loadTextureImages(uploadCanvas, uploadContext).catch((error) => {
+    this.texture = gl.createTexture()
+    configure(gl.TEXTURE_2D, this.texture, this.tiers.baseMipLevels)
+    gl.texStorage2D(
+      gl.TEXTURE_2D,
+      this.tiers.baseMipLevels,
+      gl.RGBA8,
+      this.atlas.width,
+      this.atlas.height,
+    )
+
+    this.midTexture = gl.createTexture()
+    configure(gl.TEXTURE_2D_ARRAY, this.midTexture, this.tiers.midMipLevels)
+    gl.texStorage3D(
+      gl.TEXTURE_2D_ARRAY,
+      this.tiers.midMipLevels,
+      gl.RGBA8,
+      this.tiers.midWidth,
+      this.tiers.midHeight,
+      Math.max(1, this.tiers.midLayers),
+    )
+    this.detailTexture = gl.createTexture()
+    configure(
+      gl.TEXTURE_2D_ARRAY,
+      this.detailTexture,
+      this.tiers.detailMipLevels,
+    )
+    gl.texStorage3D(
+      gl.TEXTURE_2D_ARRAY,
+      this.tiers.detailMipLevels,
+      gl.RGBA8,
+      this.tiers.detailWidth,
+      this.tiers.detailHeight,
+      Math.max(1, this.tiers.detailLayers),
+    )
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, null)
+
+    this.midPool = createLayerPool(this.tiers.midLayers)
+    this.detailPool = createLayerPool(this.tiers.detailLayers)
+    this.midLayerOf = new Int32Array(itemCount).fill(-1)
+    this.detailLayerOf = new Int32Array(itemCount).fill(-1)
+    this.itemKeys = Array.from({ length: itemCount }, (_, at) => String(at))
+    this.lodWidth = new Float32Array(itemCount)
+    this.lodFocus = new Float32Array(itemCount)
+    this.loader = createPosterLoader({ concurrency: LOADER_CONCURRENCY })
+
+    this.initRevealTexture()
+    // Four live textures per engine: base, mid, detail and the reveal clock.
+    debugStats.textures += 4
+    debugStats.engines += 1
+    const bytes = estimateTextureBytes(this.tiers, itemCount)
+    this.canvas.dataset.atlasColumns = String(this.atlas.columns)
+    this.canvas.dataset.atlasTextureSize = `${this.atlas.width}x${this.atlas.height}`
+    this.canvas.dataset.maxTextureSize = String(maxTextureSize)
+    this.canvas.dataset.textureBytes = String(bytes)
+    this.canvas.dataset.midLayers = String(this.tiers.midLayers)
+    this.canvas.dataset.detailLayers = String(this.tiers.detailLayers)
+    if (import.meta.env.DEV)
+      console.info('[atlas]', {
+        items: itemCount,
+        instances: this.instancePositions.length,
+        atlas: `${this.atlas.width}x${this.atlas.height}`,
+        midLayers: this.tiers.midLayers,
+        detailLayers: this.tiers.detailLayers,
+        megabytes: Math.round((bytes / 1048576) * 10) / 10,
+      })
+    if (window.__scrollflixDebug)
+      window.__scrollflixDebug.lod = () => this.lodStats()
+
+    this.reportProgress(3)
+    this.reportProgress(8)
+    void this.loadTextureImages().catch((error) => {
       if (this.disposed || this.contextLost) return
       this.onFatalError(
         error instanceof Error ? error.message : 'Poster loading failed',
@@ -2402,12 +2552,12 @@ class InfiniteMovieEngine<T> {
       gl.TEXTURE_2D,
       0,
       gl.R32F,
-      this.atlasSize,
-      this.atlasSize,
+      this.revealSize,
+      this.revealSize,
       0,
       gl.RED,
       gl.FLOAT,
-      new Float32Array(this.atlasSize * this.atlasSize),
+      new Float32Array(this.revealSize * this.revealSize),
     )
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
   }
@@ -2497,8 +2647,8 @@ class InfiniteMovieEngine<T> {
     gl.texSubImage2D(
       gl.TEXTURE_2D,
       0,
-      index % this.atlasSize,
-      Math.floor(index / this.atlasSize),
+      index % this.revealSize,
+      Math.floor(index / this.revealSize),
       1,
       1,
       gl.RED,
@@ -2508,10 +2658,7 @@ class InfiniteMovieEngine<T> {
     gl.activeTexture(gl.TEXTURE0)
   }
 
-  private async loadTextureImages(
-    uploadCanvas: HTMLCanvasElement,
-    uploadContext: CanvasRenderingContext2D,
-  ) {
+  private async loadTextureImages() {
     // Load the posters that face the viewer first, so the initial batch below
     // is the visible one. Orientation is still identity at this point, and the
     // snap direction (0, 0, -1) marks the front, as in findNearestVertexIndex.
@@ -2527,16 +2674,11 @@ class InfiniteMovieEngine<T> {
     const loaded = new Set<number>()
     this.watchWallVisible()
 
-    // A poster that could not be fetched falls back to its tiny sprite (or its
-    // colour) so the slot is not left empty. Posters that load never show a
-    // sprite stage: each cell goes from empty to its thumbnail in one fade.
+    // A poster that could not be fetched keeps its slot as its average colour.
     const paintFallback = (index: number) => {
-      void loadPosterSprite().then((sprite) => {
-        if (this.disposed || this.contextLost || !this.texture) return
-        if (loaded.has(index)) return
-        this.uploadPlaceholderCell(index, sprite, uploadCanvas, uploadContext)
-        this.markPosterArrived(index)
-      })
+      if (this.disposed || this.contextLost || !this.texture) return
+      if (loaded.has(index)) return
+      this.paintPlaceholderCell(index)
     }
 
     // Show the wall once every poster has settled; progress is settled / total.
@@ -2546,6 +2688,8 @@ class InfiniteMovieEngine<T> {
     const markReady = () => {
       if (ready || this.disposed || this.contextLost) return
       ready = true
+      this.lodEnabled = true
+      this.lodStale = true
       window.clearTimeout(safetyNet)
       this.canvas.dataset.webglState = 'ready'
       this.reportProgress(100)
@@ -2581,9 +2725,9 @@ class InfiniteMovieEngine<T> {
       }
       this.reportProgress(8 + (settled / total) * 91)
     }
-    const onLoaded = (index: number, image: HTMLImageElement) => {
+    const onLoaded = (index: number, image: PosterImage) => {
       loaded.add(index)
-      this.uploadPosterCell(index, image, uploadCanvas, uploadContext)
+      this.uploadPosterCell(index, image)
     }
 
     // A poster that fails is retried quickly (800ms, then 2.4s) before it
@@ -2613,7 +2757,7 @@ class InfiniteMovieEngine<T> {
 
   private retryFailedPosters(
     initialFailed: number[],
-    onLoaded: (index: number, image: HTMLImageElement) => void,
+    onLoaded: (index: number, image: PosterImage) => void,
   ) {
     let failed = initialFailed
     let attempt = 0
@@ -2661,7 +2805,7 @@ class InfiniteMovieEngine<T> {
   private async loadPosterIndices(
     indices: number[],
     concurrency: number,
-    onLoaded: (index: number, image: HTMLImageElement) => void,
+    onLoaded: (index: number, image: PosterImage) => void,
     onFailed?: (index: number) => void,
     retryDelaysMs: number[] = [],
   ) {
@@ -2683,10 +2827,10 @@ class InfiniteMovieEngine<T> {
         if (index === undefined) return
         const item = this.items[index]
         if (!item) continue
-        let image: HTMLImageElement | null = null
+        let image: PosterImage | null = null
         for (let attempt = 0; ; attempt += 1) {
           try {
-            image = await this.loadImage(item.image, item.fallbackImage)
+            image = await this.requestBase(index, cursor)
             break
           } catch {
             const delay = retryDelaysMs[attempt]
@@ -2740,79 +2884,90 @@ class InfiniteMovieEngine<T> {
     queue.push(...rest)
   }
 
-  private uploadPlaceholderCell(
-    index: number,
-    sprite: PosterSprite | null,
-    uploadCanvas: HTMLCanvasElement,
-    uploadContext: CanvasRenderingContext2D,
-  ) {
+  // The globe's base tier for one poster: its small 2:3 cell, with the
+  // best size first and smaller ones as fallbacks for a 404.
+  private requestBase(index: number, priority: number): Promise<PosterImage> {
     const item = this.items[index]
-    if (!item || !this.texture) return
-    const id = posterIdFromUrl(item.image)
-    const spriteIndex = id ? sprite?.indexById.get(id) : undefined
-    if (sprite && spriteIndex !== undefined) {
-      uploadContext.imageSmoothingEnabled = false
-      uploadContext.drawImage(
-        sprite.image,
-        (spriteIndex % sprite.columns) * sprite.cellWidth,
-        Math.floor(spriteIndex / sprite.columns) * sprite.cellHeight,
-        sprite.cellWidth,
-        sprite.cellHeight,
-        0,
-        0,
-        this.atlasCellSize,
-        this.atlasCellSize,
-      )
-      uploadContext.imageSmoothingEnabled = true
-    } else if (item.placeholderColor) {
-      uploadContext.fillStyle = item.placeholderColor
-      uploadContext.fillRect(0, 0, this.atlasCellSize, this.atlasCellSize)
-    } else {
-      return
+    const path = posterPathOf(item)
+    const urls = path
+      ? [
+          posterUrl(path, 'w92'),
+          posterUrl(path, 'w154'),
+          posterUrl(path, 'w185'),
+        ]
+      : [item.image]
+    if (item.fallbackImage) urls.push(item.fallbackImage)
+    const cell: CellSpec = {
+      width: this.tiers.baseWidth,
+      height: this.tiers.baseHeight,
+      gutter: this.tiers.gutter,
     }
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture)
-    this.gl.texSubImage2D(
-      this.gl.TEXTURE_2D,
-      0,
-      (index % this.atlasSize) * this.atlasCellSize,
-      Math.floor(index / this.atlasSize) * this.atlasCellSize,
-      this.gl.RGBA,
-      this.gl.UNSIGNED_BYTE,
-      uploadCanvas,
+    return (this.loader as PosterLoader).request(
+      `b:${index}`,
+      urls,
+      priority,
+      cell,
     )
+  }
+
+  // A poster that could not be fetched keeps its slot as its average colour.
+  private paintPlaceholderCell(index: number) {
+    const item = this.items[index]
+    const colour = item?.placeholderColor
+    if (!colour || !this.texture) return
+    const match = /^#?([0-9a-f]{6})$/i.exec(colour)
+    if (!match) return
+    const rgb = Number.parseInt(match[1], 16)
+    const { cellWidth, cellHeight, columns } = this.atlas
+    const data = new Uint8Array(cellWidth * cellHeight * 4)
+    for (let at = 0; at < data.length; at += 4) {
+      data[at] = (rgb >> 16) & 255
+      data[at + 1] = (rgb >> 8) & 255
+      data[at + 2] = rgb & 255
+      data[at + 3] = 255
+    }
+    const gl = this.gl
+    gl.bindTexture(gl.TEXTURE_2D, this.texture)
+    gl.texSubImage2D(
+      gl.TEXTURE_2D,
+      0,
+      (index % columns) * cellWidth,
+      Math.floor(index / columns) * cellHeight,
+      cellWidth,
+      cellHeight,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      data,
+    )
+    this.baseMipsDirty = true
+    this.scheduleMips()
+    this.markPosterArrived(index)
     this.renderDirty = true
   }
 
-  private uploadPosterCell(
-    index: number,
-    image: HTMLImageElement,
-    uploadCanvas: HTMLCanvasElement,
-    uploadContext: CanvasRenderingContext2D,
-  ) {
-    const item = this.items[index]
-    if (!item || !this.texture) return
-    uploadContext.clearRect(0, 0, this.atlasCellSize, this.atlasCellSize)
-    this.drawImageCover(
-      uploadContext,
+  private uploadPosterCell(index: number, image: PosterImage) {
+    const closeImage = () => {
+      if ('close' in image) image.close()
+    }
+    if (!this.items[index] || !this.texture) {
+      closeImage()
+      return
+    }
+    const gl = this.gl
+    const { cellWidth, cellHeight, columns } = this.atlas
+    gl.bindTexture(gl.TEXTURE_2D, this.texture)
+    gl.texSubImage2D(
+      gl.TEXTURE_2D,
+      0,
+      (index % columns) * cellWidth,
+      Math.floor(index / columns) * cellHeight,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
       image,
-      0,
-      0,
-      this.atlasCellSize,
-      this.atlasCellSize,
     )
-
-    const x = (index % this.atlasSize) * this.atlasCellSize
-    const y = Math.floor(index / this.atlasSize) * this.atlasCellSize
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture)
-    this.gl.texSubImage2D(
-      this.gl.TEXTURE_2D,
-      0,
-      x,
-      y,
-      this.gl.RGBA,
-      this.gl.UNSIGNED_BYTE,
-      uploadCanvas,
-    )
+    closeImage()
+    this.baseMipsDirty = true
+    this.scheduleMips()
     this.markPosterArrived(index)
     this.renderDirty = true
   }
@@ -2825,117 +2980,303 @@ class InfiniteMovieEngine<T> {
     this.onLoadProgress(nextPercent)
   }
 
-  private loadImage(src: string, fallbackSrc?: string) {
-    const cached = posterImageCache.get(src)
-    if (cached) {
-      // Re-insert so the cache evicts least recently used posters first.
-      posterImageCache.delete(src)
-      posterImageCache.set(src, cached)
-      return cached
-    }
-    const pending = this.fetchImage(src, fallbackSrc)
-    posterImageCache.set(src, pending)
-    pending.catch(() => posterImageCache.delete(src))
-    // Filters can walk through thousands of catalogue posters; cap what stays
-    // referenced so decoded images can be freed, mostly on phones.
-    while (posterImageCache.size > POSTER_IMAGE_CACHE_LIMIT) {
-      const oldest = posterImageCache.keys().next().value
-      if (oldest === undefined) break
-      posterImageCache.delete(oldest)
-    }
-    return pending
+  // Mip chains are rebuilt in batches: one generateMipmap per tier covers
+  // every upload that landed meanwhile.
+  private scheduleMips() {
+    if (this.mipTimer !== null) return
+    this.mipTimer = window.setTimeout(() => {
+      this.mipTimer = null
+      this.flushMips()
+    }, MIP_BATCH_MS)
   }
 
-  // The device cache first, then the network (kept for the next visit); the
-  // plain image request below is the fallback when neither route works.
-  private async fetchImage(src: string, fallbackSrc?: string) {
-    const abort = new AbortController()
-    const timer = window.setTimeout(
-      () => abort.abort(),
-      PRIMARY_IMAGE_TIMEOUT_MS,
+  private flushMips() {
+    if (this.disposed || this.contextLost) return
+    const gl = this.gl
+    if (this.baseMipsDirty && this.texture) {
+      gl.bindTexture(gl.TEXTURE_2D, this.texture)
+      gl.generateMipmap(gl.TEXTURE_2D)
+    }
+    if (this.midMipsDirty && this.midTexture) {
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.midTexture)
+      gl.generateMipmap(gl.TEXTURE_2D_ARRAY)
+    }
+    if (this.detailMipsDirty && this.detailTexture) {
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.detailTexture)
+      gl.generateMipmap(gl.TEXTURE_2D_ARRAY)
+    }
+    this.baseMipsDirty = false
+    this.midMipsDirty = false
+    this.detailMipsDirty = false
+    this.renderDirty = true
+  }
+
+  // Measures how big every poster is on screen right now (device pixels,
+  // from the same matrices the shader draws with), then lets the LOD planner
+  // hand mid and detail layers to the posters that can use them.
+  private runLod(now: number) {
+    this.lodStale = false
+    this.lastLodAt = now
+    const loader = this.loader
+    const count = this.items.length
+    if (
+      !this.lodEnabled ||
+      !loader ||
+      !count ||
+      this.disposed ||
+      this.contextLost
     )
-    const blob = await loadPosterBlob(src, { signal: abort.signal })
-    window.clearTimeout(timer)
-    if (blob) {
-      const decoded = await this.decodeBlob(blob)
-      if (decoded) return decoded
+      return
+    const gl = this.gl
+    multiplyMat4(this.viewProjection, this.projectionMatrix, this.viewMatrix)
+    const vp = this.viewProjection
+    const halfW = gl.drawingBufferWidth / 2
+    const halfH = gl.drawingBufferHeight / 2
+    const widths = this.lodWidth
+    const focus = this.lodFocus
+    widths.fill(0)
+    focus.fill(2)
+    const minZ = this.sphereRadius * 0.15
+    const matrices = this.instanceMatrices
+    for (let instance = 0; instance < matrices.length; instance += 1) {
+      const m = matrices[instance]
+      if (m[14] < minZ) continue
+      const px = m[12]
+      const py = m[13]
+      const pz = m[14]
+      const pw = m[15]
+      const cw = vp[3] * px + vp[7] * py + vp[11] * pz + vp[15] * pw
+      if (cw <= 0.0001) continue
+      const cx = (vp[0] * px + vp[4] * py + vp[8] * pz + vp[12] * pw) / cw
+      const cy = (vp[1] * px + vp[5] * py + vp[9] * pz + vp[13] * pw) / cw
+      if (Math.abs(cx) > 1.1 || Math.abs(cy) > 1.1) continue
+      const rx = px + m[0] * POSTER_HALF_WIDTH
+      const ry = py + m[1] * POSTER_HALF_WIDTH
+      const rz = pz + m[2] * POSTER_HALF_WIDTH
+      const rw = vp[3] * rx + vp[7] * ry + vp[11] * rz + vp[15] * pw
+      if (rw <= 0.0001) continue
+      const rcx = (vp[0] * rx + vp[4] * ry + vp[8] * rz + vp[12] * pw) / rw
+      const rcy = (vp[1] * rx + vp[5] * ry + vp[9] * rz + vp[13] * pw) / rw
+      const quadPx = 2 * Math.hypot((rcx - cx) * halfW, (rcy - cy) * halfH)
+      const item = instance % count
+      const deviceWidth = quadPx * POSTER_WIDTH_OF_QUAD
+      if (deviceWidth > widths[item]) widths[item] = deviceWidth
+      const distance = Math.min(1, Math.hypot(cx, cy))
+      if (distance < focus[item]) focus[item] = distance
     }
-    return this.fetchImageDirect(src, fallbackSrc)
-  }
-
-  private decodeBlob(blob: Blob) {
-    return new Promise<HTMLImageElement | null>((resolve) => {
-      const image = new Image()
-      const url = URL.createObjectURL(blob)
-      const done = (result: HTMLImageElement | null) => {
-        URL.revokeObjectURL(url)
-        resolve(result)
-      }
-      image.onload = () => done(image)
-      image.onerror = () => done(null)
-      image.src = url
+    const posters: LodPoster[] = []
+    for (let item = 0; item < count; item += 1) {
+      if (widths[item] <= 0) continue
+      posters.push({
+        index: item,
+        key: this.itemKeys[item],
+        visible: true,
+        deviceWidthPx: widths[item],
+        focusDistance: focus[item],
+      })
+    }
+    const opened =
+      this.detailVertexIndex !== null && this.detailTargetProgress > 0
+        ? this.detailVertexIndex % count
+        : null
+    this.openedItem = opened
+    const plan = planLod({
+      posters,
+      angularSpeed: this.angularSpeed(),
+      openedKey: opened === null ? null : this.itemKeys[opened],
+      midCapacity: this.tiers.midLayers,
+      detailCapacity: this.tiers.detailLayers,
+      baseWidth: this.tiers.baseWidth,
+      midWidth: this.tiers.midWidth,
     })
+    this.applyTier('m', plan.mid, now)
+    this.applyTier('d', plan.detail, now)
   }
 
-  private fetchImageDirect(src: string, fallbackSrc?: string) {
-    return new Promise<HTMLImageElement>((resolve, reject) => {
-      const image = new Image()
-      let triedFallback = false
-      let timeoutId = 0
-      let settled = false
-      const finish = () => {
-        if (settled) return
-        settled = true
-        window.clearTimeout(timeoutId)
-        resolve(image)
+  private tierUrls(tier: 'm' | 'd', item: number) {
+    const path = posterPathOf(this.items[item])
+    if (!path) return null
+    if (tier === 'm')
+      return [
+        posterUrl(path, 'w185'),
+        posterUrl(path, 'w154'),
+        posterUrl(path, 'w92'),
+      ]
+    // The opened poster is fetched sharper still on a dense screen, and
+    // scaled into its layer.
+    return item === this.openedItem && this.pxScale >= 1.5
+      ? [
+          posterUrl(path, 'w500'),
+          posterUrl(path, 'w342'),
+          posterUrl(path, 'w185'),
+        ]
+      : [
+          posterUrl(path, 'w342'),
+          posterUrl(path, 'w185'),
+          posterUrl(path, 'w154'),
+        ]
+  }
+
+  private applyTier(tier: 'm' | 'd', keys: string[], now: number) {
+    const loader = this.loader
+    if (!loader) return
+    const pool = tier === 'm' ? this.midPool : this.detailPool
+    const layerOf = tier === 'm' ? this.midLayerOf : this.detailLayerOf
+    const width = tier === 'm' ? this.tiers.midWidth : this.tiers.detailWidth
+    const height = tier === 'm' ? this.tiers.midHeight : this.tiers.detailHeight
+    const base = tier === 'm' ? PRIORITY_MID : PRIORITY_DETAIL
+    const wanted = new Set(keys)
+    // What the plan still wants keeps its layer through this pass.
+    for (const key of keys) pool.touch(key, now)
+
+    keys.forEach((key, rank) => {
+      const item = Number(key)
+      const { layer, evicted } = pool.acquire(key, now)
+      if (layer < 0) return
+      if (evicted !== null) this.dropTierLayer(tier, Number(evicted))
+      if (layerOf[item] === layer) return
+      const runId = `${tier}:${key}`
+      const priority = item === this.openedItem ? PRIORITY_OPENED : base + rank
+      if (this.lodInflight.has(runId)) {
+        loader.reprioritise(runId, priority)
+        return
       }
-      const tryFallbackOrFail = () => {
-        if (fallbackSrc && fallbackSrc !== image.src && !triedFallback) {
-          triedFallback = true
-          window.clearTimeout(timeoutId)
-          image.src = fallbackSrc
-          timeoutId = window.setTimeout(
-            () => reject(new Error(`Poster timed out: ${src}`)),
-            PRIMARY_IMAGE_TIMEOUT_MS,
-          )
-          return
-        }
-        window.clearTimeout(timeoutId)
-        reject(new Error(`Poster could not load: ${src}`))
+      const failedAt = this.lodFailedAt.get(runId)
+      if (failedAt !== undefined && now - failedAt < LOD_RETRY_MS) {
+        pool.release(key)
+        return
       }
-      image.crossOrigin = 'anonymous'
-      image.onload = finish
-      image.onerror = tryFallbackOrFail
-      timeoutId = window.setTimeout(tryFallbackOrFail, PRIMARY_IMAGE_TIMEOUT_MS)
-      image.src = src
+      const urls = this.tierUrls(tier, item)
+      if (!urls) {
+        pool.release(key)
+        return
+      }
+      this.lodInflight.add(runId)
+      loader.request(runId, urls, priority, { width, height, gutter: 0 }).then(
+        (image) => this.onTierImage(tier, item, layer, image),
+        (error) => {
+          this.lodInflight.delete(runId)
+          if (error instanceof DOMException && error.name === 'AbortError')
+            return
+          this.lodFailedAt.set(runId, performance.now())
+          if (pool.layerOf(key) === layer && layerOf[item] !== layer)
+            pool.release(key)
+        },
+      )
     })
+
+    // Requests for posters that left the plan before they landed are dropped,
+    // and give their layer back.
+    for (const runId of [...this.lodInflight]) {
+      if (runId[0] !== tier) continue
+      const key = runId.slice(2)
+      if (wanted.has(key)) continue
+      loader.cancel(runId)
+      this.lodInflight.delete(runId)
+      if (layerOf[Number(key)] === -1) pool.release(key)
+    }
   }
 
-  private drawImageCover(
-    context: CanvasRenderingContext2D,
-    image: HTMLImageElement,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
+  private onTierImage(
+    tier: 'm' | 'd',
+    item: number,
+    layer: number,
+    image: PosterImage,
   ) {
-    if (!image.naturalWidth || !image.naturalHeight) {
-      context.fillStyle = '#111'
-      context.fillRect(x, y, width, height)
+    this.lodInflight.delete(`${tier}:${item}`)
+    const pool = tier === 'm' ? this.midPool : this.detailPool
+    const texture = tier === 'm' ? this.midTexture : this.detailTexture
+    const close = () => {
+      if ('close' in image) image.close()
+    }
+    if (
+      this.disposed ||
+      this.contextLost ||
+      !texture ||
+      pool.layerOf(this.itemKeys[item]) !== layer
+    ) {
+      close()
       return
     }
-
-    context.drawImage(
-      image,
+    const gl = this.gl
+    const width = tier === 'm' ? this.tiers.midWidth : this.tiers.detailWidth
+    const height = tier === 'm' ? this.tiers.midHeight : this.tiers.detailHeight
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture)
+    gl.texSubImage3D(
+      gl.TEXTURE_2D_ARRAY,
       0,
       0,
-      image.naturalWidth,
-      image.naturalHeight,
-      x,
-      y,
+      0,
+      layer,
       width,
       height,
+      1,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      image,
     )
+    close()
+    if (tier === 'm') {
+      this.midLayerOf[item] = layer
+      this.midMipsDirty = true
+    } else {
+      this.detailLayerOf[item] = layer
+      this.detailMipsDirty = true
+    }
+    this.scheduleMips()
+    // The new tier fades in over the one below; the clock is the reveal's.
+    const start = this.reducedMotion()
+      ? this.revealNow() - 10
+      : this.revealNow()
+    this.setLodEntry(tier, item, layer, start)
+    this.revealUntil = Math.max(
+      this.revealUntil,
+      performance.now() + LOD_FADE_MS + 120,
+    )
+    this.renderDirty = true
+  }
+
+  private dropTierLayer(tier: 'm' | 'd', item: number) {
+    const layerOf = tier === 'm' ? this.midLayerOf : this.detailLayerOf
+    layerOf[item] = -1
+    this.setLodEntry(tier, item, -1, 0)
+    const runId = `${tier}:${item}`
+    if (this.lodInflight.delete(runId)) this.loader?.cancel(runId)
+  }
+
+  // Writes one poster's layer (and fade start) for every instance showing it.
+  private setLodEntry(
+    tier: 'm' | 'd',
+    item: number,
+    layer: number,
+    start: number,
+  ) {
+    const count = Math.max(1, this.items.length)
+    const slot = tier === 'm' ? 0 : 1
+    for (
+      let instance = item;
+      instance < this.instancePositions.length;
+      instance += count
+    ) {
+      this.lodData[instance * 4 + slot] = layer
+      this.lodData[instance * 4 + 2 + slot] = start
+    }
+    this.lodDirty = true
+  }
+
+  private lodStats() {
+    return {
+      mid: this.midPool.size,
+      detail: this.detailPool.size,
+      midResident: this.midLayerOf.filter((layer) => layer >= 0).length,
+      detailResident: this.detailLayerOf.filter((layer) => layer >= 0).length,
+      inflight: this.lodInflight.size,
+      tiers: this.tiers,
+      atlas: this.atlas,
+      textureBytes: estimateTextureBytes(this.tiers, this.items.length),
+      pxScale: this.pxScale,
+      widths: Array.from(this.lodWidth).filter((width) => width > 0),
+    }
   }
 
   // Returns whether the frame needs drawing.
@@ -2970,7 +3311,7 @@ class InfiniteMovieEngine<T> {
       this.renderDirty = true
       this.revealPending = false
     }
-    const isStill =
+    let isStill =
       !skyUp &&
       !this.renderDirty &&
       !this.control.isPointerDown &&
@@ -2978,6 +3319,14 @@ class InfiniteMovieEngine<T> {
       Math.abs(this.control.rotationVelocity) < 1e-6 &&
       Math.abs(this.detailTargetProgress - this.detailProgress) < 1e-5 &&
       Math.abs(this.cameraPosition[2] - this.lastRenderedCameraZ) < 1e-6
+    // At rest, one last LOD pass so the posters in view get their sharp tiers.
+    if (isStill && this.lodStale) {
+      this.runLod(now)
+      if (this.lodDirty) {
+        this.renderDirty = true
+        isStill = false
+      }
+    }
     if (isStill) return false
     this.renderDirty = false
     this.lastRenderedOrientation = [...orientation]
@@ -3016,6 +3365,8 @@ class InfiniteMovieEngine<T> {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer)
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.instanceMatricesArray)
     gl.bindBuffer(gl.ARRAY_BUFFER, null)
+    this.lodStale = true
+    if (now - this.lastLodAt >= LOD_PLAN_INTERVAL_MS) this.runLod(now)
     this.smoothRotationVelocity = this.control.rotationVelocity
     return true
   }
@@ -3097,13 +3448,29 @@ class InfiniteMovieEngine<T> {
       sky ? sky.color * sky.intensity * GRADE_STRENGTH : 0,
     )
     gl.uniform1i(this.locations.uItemCount, Math.max(1, this.items.length))
-    gl.uniform1i(this.locations.uAtlasSize, this.atlasSize)
-    gl.uniform1f(
-      this.locations.uAtlasPadding,
-      Math.min(0.12, ICON_TEXTURE_PADDING / this.atlasCellSize),
+    const { cellWidth, cellHeight, columns, width, height } = this.atlas
+    gl.uniform1i(this.locations.uAtlasColumns, columns)
+    gl.uniform2f(
+      this.locations.uAtlasCell,
+      cellWidth / width,
+      cellHeight / height,
     )
+    gl.uniform2f(
+      this.locations.uAtlasGutter,
+      this.tiers.gutter / width,
+      this.tiers.gutter / height,
+    )
+    gl.uniform2f(
+      this.locations.uAtlasSpan,
+      this.tiers.baseWidth / width,
+      this.tiers.baseHeight / height,
+    )
+    gl.uniform1i(this.locations.uRevealSize, this.revealSize)
+    gl.uniform1f(this.locations.uLodFade, LOD_FADE_MS / 1000)
     gl.uniform1i(this.locations.uTex, 0)
     gl.uniform1i(this.locations.uRevealTex, 1)
+    gl.uniform1i(this.locations.uMidTex, 2)
+    gl.uniform1i(this.locations.uDetailTex, 3)
     gl.uniform1f(
       this.locations.uRevealActive,
       performance.now() < this.revealUntil || this.heldReveals.size ? 1 : 0,
@@ -3116,8 +3483,18 @@ class InfiniteMovieEngine<T> {
     gl.uniform1f(this.locations.uNow, this.revealNow())
     gl.activeTexture(gl.TEXTURE1)
     gl.bindTexture(gl.TEXTURE_2D, this.revealTexture)
+    gl.activeTexture(gl.TEXTURE2)
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.midTexture)
+    gl.activeTexture(gl.TEXTURE3)
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.detailTexture)
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
+    if (this.lodDirty) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.lodBuffer)
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.lodData)
+      gl.bindBuffer(gl.ARRAY_BUFFER, null)
+      this.lodDirty = false
+    }
     gl.bindVertexArray(this.vao)
     gl.drawElementsInstanced(
       gl.TRIANGLES,

@@ -101,6 +101,7 @@ import {
   InfiniteMovieMenu,
   type InfiniteMovieMenuControl,
   type InfiniteMovieMenuItem,
+  globeCapacity,
 } from './infinite-movie-menu'
 import { matchesFilmLink, pickLandingMovie } from './landing'
 import {
@@ -195,6 +196,7 @@ import {
   readReducedMotion,
   useShuffleProController,
 } from './shuffle-pro/use-shuffle-pro'
+import { DESKTOP_GLOBE_COUNT } from './texture-tiers'
 import './session-path.css'
 import { perfFlag } from './perf-probe'
 import { stopsFromPath } from './share/path-art'
@@ -253,7 +255,15 @@ type DecisionFilterResult = {
 type PosterLoadState = 'loading' | 'loaded' | 'error'
 type MotionPhase = 'enter' | 'exit'
 
-const GALLERY_WINDOW_SIZE = 900
+// How many films the globe shows: more on desktop than on a phone or other
+// lightweight device (the engine sizes its textures for the same counts).
+const galleryWindowSize = () => {
+  try {
+    return globeCapacity()
+  } catch {
+    return DESKTOP_GLOBE_COUNT
+  }
+}
 // Posters now come from the TMDB CDN, so the first-load screen can no longer
 // wait for all of them. Once chunk 0 is in and the placeholders are up, the
 // screen lets go after this long and the posters fill in behind it.
@@ -884,7 +894,7 @@ export const filterMoviesByDecisionFilters = (
 export const getGalleryWindow = (
   movies: TestMovie[],
   selectedGenres: string[],
-  limit = GALLERY_WINDOW_SIZE,
+  limit = galleryWindowSize(),
 ) =>
   [...movies]
     .map((movie, index) => ({
@@ -1387,7 +1397,7 @@ export const TestGalleryApp = () => {
       })
       seedStarterSet(
         firstByKey(movies, getTitleKey, STARTER_ALPHA_COUNT).map(toFilm),
-        movies.slice(0, GALLERY_WINDOW_SIZE).map(toFilm),
+        movies.slice(0, galleryWindowSize()).map(toFilm),
       )
     }, 3000)
     return () => window.clearTimeout(timer)
@@ -3518,6 +3528,7 @@ const WarpWall = ({
       movies.map((movie) => ({
         id: movie.id,
         image: movie.posterUrl,
+        posterPath: movie.posterPath,
         placeholderColor: movie.placeholderColor,
         title: movie.title,
         description:

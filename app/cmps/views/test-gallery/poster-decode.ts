@@ -132,6 +132,8 @@ const decodeOne = async (
   }
 }
 
+const URL_TIMEOUT_MS = 20000
+
 // Tries the urls in order (best first); rejects only when every one fails.
 export const decodeFirst = async (
   urls: readonly string[],
@@ -142,11 +144,19 @@ export const decodeFirst = async (
   let lastError: unknown = new Error('no poster urls')
   for (const url of urls) {
     if (signal?.aborted) throw new DOMException('cancelled', 'AbortError')
+    // One url gets this long before the next size is tried.
+    const attempt = new AbortController()
+    const forward = () => attempt.abort()
+    signal?.addEventListener('abort', forward, { once: true })
+    const timer = setTimeout(forward, URL_TIMEOUT_MS)
     try {
-      return await decodeOne(url, cell, deps, signal)
+      return await decodeOne(url, cell, deps, attempt.signal)
     } catch (error) {
       if (signal?.aborted) throw error
       lastError = error
+    } finally {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', forward)
     }
   }
   throw lastError
