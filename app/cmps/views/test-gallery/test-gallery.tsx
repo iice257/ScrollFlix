@@ -52,7 +52,6 @@ import {
   useId,
   useLayoutEffect,
   useMemo,
-  useReducer,
   useRef,
   useState,
   useSyncExternalStore,
@@ -131,8 +130,9 @@ import {
   usesNowPlayingBar,
 } from './now-playing'
 import { NowPlayingBar, type NowPlayingFilm } from './now-playing-bar'
-import { PARTY_OFF, partyReducer, weirdnessScore } from './party/party-logic'
-import { PartyFinal, PartyHud, PartySetup } from './party/party-ui'
+import { PartyLayer } from './party/party-layer'
+import type { PartyMovieInfo } from './party/party-parts'
+import { toPartyFilm, usePartyGame } from './party/use-party'
 import {
   STARTER_ALPHA_COUNT,
   firstByKey,
@@ -1358,8 +1358,6 @@ export const TestGalleryApp = () => {
   const [aboutOpen, setAboutOpen] = useState(false)
   const [savedOpen, setSavedOpen] = useState(false)
   const [moodsOpen, setMoodsOpen] = useState(false)
-  // Pass the globe: a party game of turns and weirdness scores.
-  const [party, partyDispatch] = useReducer(partyReducer, PARTY_OFF)
   // The run recap's share sheet, opened from the Easter egg shelf.
   const [recapOpen, setRecapOpen] = useState(false)
   // The session path's drawer and its share sheet.
@@ -1556,6 +1554,50 @@ export const TestGalleryApp = () => {
   // that is not loaded yet also asks for everything.
   const [linkedNeedsCatalog, setLinkedNeedsCatalog] = useState(false)
   const [catalogComplete, setCatalogComplete] = useState(false)
+
+  // Pass the globe: turns, guesses and a veto to pick tonight's film. A game
+  // passed by link waits for the whole catalogue so it can name its films.
+  const partyLookup = useCallback(
+    (tmdbId: number) => {
+      const found = movies.find((movie) => movie.id === `c${tmdbId}`)
+      return found
+        ? {
+            title: found.title,
+            year: toPartyFilm(found).year,
+            rating: found.ratingValue,
+          }
+        : undefined
+    },
+    [movies],
+  )
+  const game = usePartyGame(
+    partyLookup,
+    loadState === 'ready' && catalogComplete,
+  )
+  const { party, dispatch: partyDispatch } = game
+  useEffect(() => {
+    if (game.pendingLink) setLinkedNeedsCatalog(true)
+  }, [game.pendingLink])
+  const partyOff = party.phase === 'off'
+  const partyMovieIndex = useMemo(
+    () => (partyOff ? null : new Map(movies.map((movie) => [movie.id, movie]))),
+    [movies, partyOff],
+  )
+  const partyMovieOf = useCallback(
+    (movieId: string): PartyMovieInfo | undefined => {
+      const movie = partyMovieIndex?.get(movieId)
+      if (!movie) return undefined
+      return {
+        id: movie.id,
+        title: movie.title,
+        posterUrl: movie.posterUrl,
+        posterDetailUrl: movie.posterDetailUrl,
+        year: movie.year === '----' ? '' : movie.year,
+        rating: movie.ratingValue === null ? null : movie.rating,
+      }
+    },
+    [partyMovieIndex],
+  )
   const browsingCatalog = mode !== 'wall' || filterOpen
   const catalogWanted =
     !prefersSavedData() || browsingCatalog || linkedNeedsCatalog
@@ -2189,24 +2231,19 @@ export const TestGalleryApp = () => {
         setNowPlayingId(movie.id)
         return
       }
+      // In the party game a landing is the player's pick. The film's card
+      // stays shut until they have guessed, so it can't give the answer away.
+      if (source === 'shuffle' && game.canLand) {
+        sessionPathStore.add(movie.id)
+        game.land(toPartyFilm(movie))
+        return
+      }
       startPosterFlight(movie)
       sessionPathStore.add(movie.id)
-      if (source === 'shuffle') {
-        // In the party game a landing is the player's pick.
-        if (party.phase === 'turn') {
-          partyDispatch({
-            type: 'land',
-            pick: {
-              movieId: movie.id,
-              title: movie.title,
-              score: weirdnessScore(movie),
-            },
-          })
-        }
-        openMovie(movie)
-      } else handleOpenMovie(movie)
+      if (source === 'shuffle') openMovie(movie)
+      else handleOpenMovie(movie)
     },
-    [handleOpenMovie, openMovie, party.phase, startPosterFlight],
+    [game, handleOpenMovie, openMovie, startPosterFlight],
   )
 
   const handleOpenWatchLinks = useCallback((movie: TestMovie) => {
@@ -2391,18 +2428,9 @@ export const TestGalleryApp = () => {
     (totalRad: number) => {
       if (totalRad > 0.5) playCue('settle', Math.min(1, totalRad / 6))
       // A real flick that comes to rest is a party player's turn.
-      if (party.phase === 'turn' && totalRad > 1.6) {
+      if (game.canLand && totalRad > 1.6) {
         const landed = visibleMovies.find((movie) => movie.id === activeMovieId)
-        if (landed) {
-          partyDispatch({
-            type: 'land',
-            pick: {
-              movieId: landed.id,
-              title: landed.title,
-              score: weirdnessScore(landed),
-            },
-          })
-        }
+        if (landed) game.land(toPartyFilm(landed))
       }
       const trigger = shuffleProController.noteAction(
         isBigSpin(totalRad) ? { type: 'bigSpin' } : { type: 'neutral' },
@@ -2416,7 +2444,7 @@ export const TestGalleryApp = () => {
       )
       if (movieId) shuffleProController.startAutomatic(trigger, movieId)
     },
-    [activeMovieId, party.phase, shuffleProController, visibleMovies, weightOf],
+    [activeMovieId, game, shuffleProController, visibleMovies, weightOf],
   )
 
   // Anything that isn't a shuffle ends the streak: filters, sort, search,
@@ -3015,7 +3043,8 @@ export const TestGalleryApp = () => {
                   </button>
                 </div>
               ) : null}
-              {initialGalleryReady && activeMovie ? (
+              {/* In a party game the centred film's year and rating stay hidden. */}
+              {initialGalleryReady && activeMovie && partyOff ? (
                 <button
                   type='button'
                   className={cn(
@@ -3033,7 +3062,9 @@ export const TestGalleryApp = () => {
                   </span>
                 </button>
               ) : null}
-              {initialGalleryReady ? <MoodLine onOpen={openMoods} /> : null}
+              {initialGalleryReady && partyOff ? (
+                <MoodLine onOpen={openMoods} />
+              ) : null}
             </>
           ) : null
         }
@@ -3250,32 +3281,16 @@ export const TestGalleryApp = () => {
         </>
       ) : null}
 
-      {party.phase === 'setup' ? (
-        <PartySetup
-          onStart={(names, rounds) => {
-            setDetailsMovieId(null)
-            partyDispatch({ type: 'start', names, rounds })
-          }}
-          onClose={() => partyDispatch({ type: 'close' })}
-        />
-      ) : null}
-      {party.phase === 'turn' || party.phase === 'result' ? (
-        <PartyHud
-          state={party}
-          onNext={() => {
-            setDetailsMovieId(null)
-            partyDispatch({ type: 'next' })
-          }}
-          onEnd={() => partyDispatch({ type: 'close' })}
-        />
-      ) : null}
-      {party.phase === 'final' ? (
-        <PartyFinal
-          state={party}
-          onAgain={() => partyDispatch({ type: 'again' })}
-          onDone={() => partyDispatch({ type: 'close' })}
-        />
-      ) : null}
+      <PartyLayer
+        game={game}
+        movieOf={partyMovieOf}
+        detailsOpen={Boolean(detailsMovieId)}
+        onCloseDetails={() => setDetailsMovieId(null)}
+        onOpenFilm={(movieId) => {
+          const movie = partyMovieIndex?.get(movieId)
+          if (movie) openMovie(movie)
+        }}
+      />
 
       {recapOpen
         ? createPortal(
@@ -5384,8 +5399,9 @@ const AboutDrawer = ({
         <section className='warp-about-section'>
           <h3>Play together</h3>
           <p>
-            Pass the globe: take turns flicking it. Whatever it lands on gets a
-            weirdness score, and the highest total wins.
+            Pass the globe: take turns flicking it and guess the year, the
+            rating, or what the room thinks. The night ends with one film to
+            watch.
           </p>
           <button
             type='button'
