@@ -183,8 +183,6 @@ cp .env.local.example .env.local
 Useful environment values include:
 
 ```bash
-VITE_TEXTURES_BASE_URL=/media
-VITE_FILM_INFO_BASE_URL=/json
 VITE_TELEMETRY_ENABLED=false
 VITE_TELEMETRY_ENDPOINT=
 VITE_APP_VERSION=

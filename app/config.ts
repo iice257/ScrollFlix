@@ -5,8 +5,6 @@ const env = import.meta.env as unknown as {
 }
 
 export default {
-  backdropBaseUrl: 'https://image.tmdb.org/t/p/w1280',
-  posterBaseUrl: 'https://image.tmdb.org/t/p/w500',
   sourceCodeUrl: 'https://github.com/iice257/ScrollFlix',
   tmdbUrl: 'https://themoviedb.org',
   tmdbFilmBaseUrl: 'https://www.themoviedb.org/movie/',

@@ -140,6 +140,13 @@ import {
   seedStarterSet,
 } from './poster-cache'
 import { PosterFlight, type ViewRect } from './poster-flight'
+import {
+  backdropUrl,
+  pickBackdropSize,
+  pickPosterSize,
+  posterSrcSet,
+  posterUrl,
+} from './poster-sizes'
 import { savedStore } from './saved-store'
 import {
   type FacetCatalog,
@@ -617,6 +624,27 @@ type MoviePosterProps = {
 // as the connection returns), instead of staying blank for the whole visit.
 const POSTER_TILE_RETRY_MS = [1500, 6000, 20000]
 
+const LIST_POSTER_CSS_WIDTH = 46
+// The real TMDB backdrop sits behind the card (a distinct URL from every
+// poster, so its no-CORS CSS fetch cannot poison a cached poster copy). Films
+// without one keep the blurred poster.
+const detailsBackdropUrl = (movie: TestMovie) =>
+  movie.backdropPath
+    ? backdropUrl(
+        movie.backdropPath,
+        pickBackdropSize(
+          (typeof window === 'undefined' ? 1280 : window.innerWidth) *
+            readDpr(),
+        ),
+      )
+    : posterBackdropUrl(movie)
+// The card's poster column: clamp(240px, 25vw, 330px) on desktop, and about
+// two thirds of min(30dvh, 250px) on phones.
+const DETAIL_POSTER_SIZES =
+  '(max-width: 720px) min(20dvh, 167px), clamp(240px, 25vw, 330px)'
+const readDpr = () =>
+  typeof window === 'undefined' ? 1 : Math.min(3, window.devicePixelRatio || 1)
+
 const MoviePoster = ({
   movie,
   loading = 'lazy',
@@ -627,12 +655,18 @@ const MoviePoster = ({
   const [attempt, setAttempt] = useState(0)
   // A copy fetched around the HTTP cache, used after a failed first try.
   const [recovered, setRecovered] = useState<string | null>(null)
+  const path = movie.posterPath
   const src =
     size === 'detail'
-      ? (movie.posterDetailUrl ?? movie.posterUrl)
+      ? path
+        ? posterUrl(path, 'w500')
+        : (movie.posterDetailUrl ?? movie.posterUrl)
       : size === 'list'
-        ? (movie.posterListUrl ?? movie.posterUrl)
+        ? path
+          ? posterUrl(path, pickPosterSize(LIST_POSTER_CSS_WIDTH * readDpr()))
+          : (movie.posterListUrl ?? movie.posterUrl)
         : movie.posterUrl
+  const srcSet = size === 'detail' && path ? posterSrcSet(path) : undefined
   // The detail card sits on the thumbnail the globe already loaded, and the
   // sharper image fades in over it, so opening a poster never flashes empty.
   const baseSrc =
@@ -691,6 +725,8 @@ const MoviePoster = ({
       <img
         key={attempt}
         src={recovered ?? getWarmPosterUrl(src) ?? src}
+        srcSet={recovered ? undefined : srcSet}
+        sizes={srcSet ? DETAIL_POSTER_SIZES : undefined}
         alt=''
         decoding='async'
         fetchPriority={priority ? 'high' : undefined}
@@ -5896,7 +5932,7 @@ const MovieDetailsCard = ({
     // has no CORS headers and breaks the same URL for the globe and index
     // tiles, so catalogue films use a size nothing else requests (w92 is the
     // index, w154 the globe, w342 the card); see posterBackdropUrl.
-    '--details-backdrop': `url(${JSON.stringify(posterBackdropUrl(movie))})`,
+    '--details-backdrop': `url(${JSON.stringify(detailsBackdropUrl(movie))})`,
   } as CSSProperties
   const movieText = useMovieText(movie)
   const originalTitle = movieText?.originalTitle || movie.originalTitle || ''
@@ -5967,7 +6003,9 @@ const MovieDetailsCard = ({
         .join('  ·  '),
       // The share card is drawn per path; a mood run has none of its own.
       tier: premiumMood ? null : premiumTier,
-      posterUrl: movie.posterDetailUrl ?? movie.posterUrl,
+      posterUrl: movie.posterPath
+        ? posterUrl(movie.posterPath, 'w780')
+        : (movie.posterDetailUrl ?? movie.posterUrl),
       foundTiers: (Object.keys(shareFound.found) as Tier[]).filter(Boolean),
     }),
     [
