@@ -508,8 +508,31 @@
   gap: 6px;
   margin: 0 -20px;
   padding: 2px 20px;
+  position: relative;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 20px;
   scrollbar-width: none;
+  /* Soft fade at both edges so it reads as a scroller, not a clipped row. */
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 20px,
+    #000 calc(100% - 20px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 20px,
+    #000 calc(100% - 20px),
+    transparent 100%
+  );
+}
+
+.party-decades button {
+  scroll-snap-align: center;
 }
 
 .party-decades::-webkit-scrollbar {

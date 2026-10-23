@@ -89,13 +89,21 @@ const YearPicker = ({
   onChange: (year: number) => void
 }) => {
   const decade = Math.floor(value / 10) * 10
+  const railRef = useRef<HTMLFieldSetElement | null>(null)
   const activeRef = useRef<HTMLButtonElement | null>(null)
+  const first = useRef(true)
+  // Keep the chosen decade centred in the rail. Setting scrollLeft by hand
+  // (not scrollIntoView) so the sheet itself never scrolls with it. The
+  // rail jumps on open and glides after that.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-centre when the decade changes
   useEffect(() => {
-    activeRef.current?.scrollIntoView({
-      inline: 'center',
-      block: 'nearest',
-    })
-  }, [])
+    const rail = railRef.current
+    const chip = activeRef.current
+    if (!rail || !chip) return
+    const left = chip.offsetLeft - (rail.clientWidth - chip.offsetWidth) / 2
+    rail.scrollTo({ left, behavior: first.current ? 'auto' : 'smooth' })
+    first.current = false
+  }, [decade])
   return (
     <div className='party-year'>
       <div className='party-stepper'>
@@ -119,7 +127,7 @@ const YearPicker = ({
           <Plus aria-hidden='true' />
         </button>
       </div>
-      <fieldset className='party-decades' aria-label='Decade'>
+      <fieldset className='party-decades' aria-label='Decade' ref={railRef}>
         {DECADES.filter((item) => item <= THIS_YEAR).map((item) => (
           <button
             type='button'
