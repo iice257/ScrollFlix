@@ -107,7 +107,12 @@ export const useTitleTranslation = (
       setProgress(null)
       if (result.status === 'translated') setEnglish(result.text)
       else if (result.status === 'english') setAvailable(false)
-      else setFailed(true)
+      else {
+        // Back to off, so the button does not look switched on.
+        setEnabled(false)
+        writeTranslatePreference(false)
+        setFailed(true)
+      }
     })
   }, [enabled, english, language, title])
 

@@ -113,6 +113,7 @@ describe('useTitleTranslation', () => {
       await waitFor(() => expect(result.current.failed).toBe(true))
       expect(result.current.english).toBeNull()
       expect(result.current.busy).toBe(false)
+      expect(result.current.enabled).toBe(false)
       expect(clear).not.toBeNull()
       act(() => clear?.())
       expect(result.current.failed).toBe(false)
