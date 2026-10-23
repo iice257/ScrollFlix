@@ -77,7 +77,10 @@ export const createTmdbClient = ({
     movie: (id) =>
       request(
         `/movie/${id}`,
-        { append_to_response: 'external_ids' },
+        {
+          append_to_response: 'external_ids,videos',
+          include_video_language: 'en,null',
+        },
         { allowNotFound: true },
       ),
     changes: (startDate, endDate, page = 1) =>
