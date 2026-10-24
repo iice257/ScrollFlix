@@ -125,13 +125,9 @@ export const writeStoredSky = (sky: Sky, now: number = Date.now()) => {
   }
 }
 
-// Copy. The neutral line is the tooltip; the privacy line says where the
-// location comes from; the contextual line follows the sky.
+// Copy. The neutral line is the tooltip; the contextual line follows the sky.
 export const DYNAMIC_TIP =
   'Follows your daylight and weather. Light by day, dark by night, with rain or snow when it is happening near you.'
-
-export const DYNAMIC_PRIVACY =
-  'Location comes from your IP, rounded to your city, and is never stored.'
 
 export const skyLine = (sky: Sky) => {
   if (sky.weather === 'rain') return 'is it raining outside?'

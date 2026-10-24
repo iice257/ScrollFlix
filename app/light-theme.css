@@ -1218,17 +1218,12 @@
   color: rgb(33 26 16 / 0.9);
 }
 
-.warp-shell[data-theme="light"] .warp-setting-note-close {
-  background: rgb(33 26 16 / 0.08);
-  color: rgb(33 26 16 / 0.8);
-}
-
-.warp-shell[data-theme="light"] .warp-setting-note-close:hover {
+.warp-shell[data-theme="light"] .warp-theme-tip-close {
   background: rgb(33 26 16 / 0.16);
 }
 
-.warp-shell[data-theme="light"] .warp-setting-note-close:focus-visible {
-  outline: 2px solid rgb(33 26 16);
+.warp-shell[data-theme="light"] .warp-theme-tip-close:hover {
+  background: rgb(33 26 16 / 0.28);
 }
 
 .warp-shell[data-theme="light"] .warp-nudge-card {

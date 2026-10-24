@@ -35,6 +35,22 @@ const load = async (page: Page, query = '') => {
 
 const shell = (page: Page) => page.locator('main.warp-shell')
 
+// The globe-line tips would sit over the switch on a first open.
+const skipLineNudges = (page: Page) =>
+  page.addInitScript(() => {
+    for (const kind of ['path', 'links'])
+      window.localStorage.setItem(`wtw:globe-lines-nudge:${kind}:v1`, '1')
+  })
+
+const openMenu = async (page: Page) => {
+  await page.getByRole('button', { name: 'About ScrollFlix' }).click()
+  const menu = page.getByRole('complementary', { name: 'About ScrollFlix' })
+  await expect(menu).toBeVisible()
+  return menu
+}
+
+const tip = (page: Page) => page.locator('.warp-theme-tip')
+
 test.describe('Dynamic theme', () => {
   test('night snow is the dark theme with a snow overlay', async ({ page }) => {
     await stubSky(page, { isDay: false, weather: 'snow' })
@@ -94,52 +110,90 @@ test.describe('Dynamic theme', () => {
     await expect(page.locator('canvas.warp-ambient-weather')).toHaveCount(0)
   })
 
-  test('choosing Dynamic in the menu applies it and says where location comes from', async ({
+  test('choosing Dynamic in the menu applies it and names the sky', async ({
     page,
   }) => {
     await stubSky(page, { isDay: false, weather: 'rain' })
-    // The globe-line tips would sit over the switch on a first open.
-    await page.addInitScript(() => {
-      for (const kind of ['path', 'links'])
-        window.localStorage.setItem(`wtw:globe-lines-nudge:${kind}:v1`, '1')
-    })
+    await skipLineNudges(page)
     await load(page)
     await expect(shell(page)).toHaveAttribute('data-theme-pref', 'dark')
-    await page.getByRole('button', { name: 'About ScrollFlix' }).click()
-    const menu = page.getByRole('complementary', { name: 'About ScrollFlix' })
-    await expect(menu).toBeVisible()
-    // First open: a one-time hint says what Dynamic is, and where location
-    // comes from.
-    await expect(
-      menu.getByText(/Follows your daylight and weather/),
-    ).toBeVisible()
-    await expect(menu.getByText(/Location comes from your IP/)).toBeVisible()
+    const menu = await openMenu(page)
     await menu.getByRole('button', { name: 'Dynamic', exact: true }).click()
     await expect(shell(page)).toHaveAttribute('data-theme-pref', 'dynamic')
     await expect(shell(page)).toHaveAttribute('data-theme', 'dark')
     await expect(shell(page)).toHaveAttribute('data-weather', 'rain')
     await expect(menu.getByText('is it raining outside?')).toBeVisible()
-    await expect(menu.getByText(/Location comes from your IP/)).toBeVisible()
     await expect(page.locator('canvas.warp-ambient-weather')).toBeAttached()
+    // Choosing it answers the first-open tip.
+    await expect(tip(page)).toHaveCount(0)
     // Going back to Light drops the overlay.
     await menu.getByRole('button', { name: 'Light', exact: true }).click()
     await expect(shell(page)).toHaveAttribute('data-theme', 'light')
     await expect(page.locator('canvas.warp-ambient-weather')).toHaveCount(0)
   })
 
-  test('the first-open hint never gets in the way of Esc closing the menu', async ({
+  test('the one tip shows on the first open, with only the one line', async ({
     page,
   }) => {
-    await page.addInitScript(() => {
-      for (const kind of ['path', 'links'])
-        window.localStorage.setItem(`wtw:globe-lines-nudge:${kind}:v1`, '1')
-    })
+    await skipLineNudges(page)
     await load(page)
-    await page.getByRole('button', { name: 'About ScrollFlix' }).click()
-    const menu = page.getByRole('complementary', { name: 'About ScrollFlix' })
-    await expect(
-      menu.getByText(/Follows your daylight and weather/),
-    ).toBeVisible()
+    await openMenu(page)
+    await expect(tip(page)).toBeVisible()
+    await expect(tip(page)).toContainText('Follows your daylight and weather')
+    await expect(page.getByText(/Location comes from your IP/)).toHaveCount(0)
+    // One tip, not two.
+    await expect(page.locator('.warp-theme-tip')).toHaveCount(1)
+    await expect(page.locator('.warp-setting-note')).toHaveCount(0)
+  })
+
+  test('the close button dismisses the tip and it stays dismissed', async ({
+    page,
+  }) => {
+    await skipLineNudges(page)
+    await load(page)
+    const menu = await openMenu(page)
+    await expect(tip(page)).toBeVisible()
+    await tip(page).getByRole('button', { name: 'Close' }).click()
+    await expect(tip(page)).toHaveCount(0)
+    expect(
+      await page.evaluate(() =>
+        window.localStorage.getItem('wtw:dynamic-theme-hint:v1'),
+      ),
+    ).toBe('1')
+    // Hovering the option still shows it...
+    await menu.getByRole('button', { name: 'Dynamic', exact: true }).hover()
+    await expect(tip(page)).toBeVisible()
+    // ...but the first-open one does not come back after a reload.
+    await page.reload()
+    await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
+    await openMenu(page)
+    await page.waitForTimeout(900)
+    await expect(tip(page)).toHaveCount(0)
+  })
+
+  test('tapping outside dismisses the first-open tip for good', async ({
+    page,
+  }) => {
+    await skipLineNudges(page)
+    await load(page)
+    await openMenu(page)
+    await expect(tip(page)).toBeVisible()
+    await page.mouse.click(5, 5)
+    await expect(tip(page)).toHaveCount(0)
+    expect(
+      await page.evaluate(() =>
+        window.localStorage.getItem('wtw:dynamic-theme-hint:v1'),
+      ),
+    ).toBe('1')
+  })
+
+  test('the tip never gets in the way of Esc closing the menu', async ({
+    page,
+  }) => {
+    await skipLineNudges(page)
+    await load(page)
+    const menu = await openMenu(page)
+    await expect(tip(page)).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(menu).toHaveCount(0)
   })
