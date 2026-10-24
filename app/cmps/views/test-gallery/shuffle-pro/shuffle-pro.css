@@ -159,12 +159,6 @@
   initial-value: 0deg;
 }
 
-@property --sp-idle {
-  syntax: "<percentage>";
-  inherits: false;
-  initial-value: 0%;
-}
-
 .warp-details-card[data-premium] {
   --sp-angle: 0deg;
   --sp-c0: #e8fbff;
@@ -352,36 +346,6 @@
   animation-duration: 1400ms, 14s;
 }
 
-/* One foil sweep across the whole card on open (twice for Gold). */
-.sp-sheen {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  overflow: hidden;
-  border-radius: inherit;
-  pointer-events: none;
-}
-
-.sp-sheen::before {
-  content: "";
-  position: absolute;
-  inset: -20% auto -20% -45%;
-  width: 40%;
-  background: linear-gradient(
-    100deg,
-    transparent,
-    rgb(255 255 255 / 0.2) 45%,
-    rgb(255 255 255 / 0.05) 55%,
-    transparent
-  );
-  transform: skewX(-18deg) translateX(0);
-  animation: sp-sheen 1000ms 900ms cubic-bezier(0.4, 0, 0.2, 1) both;
-}
-
-.warp-details-card[data-premium="gold"] .sp-sheen::before {
-  animation-iteration-count: 2;
-}
-
 .sp-edge-particles {
   position: absolute;
   inset: 0;
@@ -520,6 +484,7 @@
 /* ------------------------------------------------------- the poster stage */
 
 .sp-stage {
+  position: relative;
   perspective: 900px;
 }
 
@@ -527,8 +492,7 @@
   position: relative;
   border-radius: 18px;
   transform-style: preserve-3d;
-  transform: rotateX(var(--sp-rx, 0deg)) rotateY(var(--sp-ry, 0deg));
-  transition: transform 200ms ease-out;
+  transform: rotateX(var(--ts-rx, 0deg)) rotateY(var(--ts-ry, 0deg));
   box-shadow:
     0 0 0 1px rgb(var(--sp-glow) / 0.35),
     0 0 36px rgb(var(--sp-glow) / 0.28),
@@ -538,59 +502,6 @@
 
 .sp-stage-card .warp-details-poster {
   box-shadow: none;
-}
-
-.sp-stage-card[data-active="true"] {
-  transition-duration: 90ms;
-}
-
-/* Holographic foil: a banded gradient that slides with the pointer (and
-   drifts by itself when there is none), blended into the artwork. */
-.sp-foil {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border-radius: inherit;
-  mix-blend-mode: color-dodge;
-  opacity: 0.34;
-  pointer-events: none;
-  background:
-    linear-gradient(
-      115deg,
-      transparent 20%,
-      rgb(var(--sp-glow) / 0.6) 36%,
-      rgb(255 255 255 / 0.55) 46%,
-      rgb(var(--sp-glow2) / 0.6) 56%,
-      transparent 72%
-    )
-    0 0 / 260% 260%;
-  background-position: calc(var(--sp-mx, 50%) + var(--sp-idle)) var(--sp-my, 50%);
-  transition: opacity 200ms ease;
-  animation: sp-foil-idle 6s ease-in-out infinite alternate;
-}
-
-.sp-stage-card[data-active="true"] .sp-foil {
-  opacity: 0.62;
-}
-
-.sp-glare {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border-radius: inherit;
-  mix-blend-mode: overlay;
-  opacity: 0;
-  pointer-events: none;
-  background: radial-gradient(
-    circle at var(--sp-mx, 50%) var(--sp-my, 50%),
-    rgb(255 255 255 / 0.5),
-    transparent 46%
-  );
-  transition: opacity 200ms ease;
-}
-
-.sp-stage-card[data-active="true"] .sp-glare {
-  opacity: 0.85;
 }
 
 .sp-badge {
@@ -723,15 +634,6 @@
   }
 }
 
-@keyframes sp-sheen {
-  from {
-    transform: skewX(-18deg) translateX(0);
-  }
-  to {
-    transform: skewX(-18deg) translateX(420%);
-  }
-}
-
 @keyframes sp-aurora {
   from {
     transform: translate3d(-3%, -2%, 0) rotate(0deg) scale(1);
@@ -787,15 +689,6 @@
 @keyframes sp-foil-text {
   to {
     background-position: -220% 0;
-  }
-}
-
-@keyframes sp-foil-idle {
-  from {
-    --sp-idle: -12%;
-  }
-  to {
-    --sp-idle: 12%;
   }
 }
 
@@ -887,7 +780,6 @@
 
   .warp-details-card[data-premium] .warp-details-copy-scroll > *,
   .sp-stage-card,
-  .sp-foil,
   .sp-aurora,
   .sp-corner,
   .sp-badge,

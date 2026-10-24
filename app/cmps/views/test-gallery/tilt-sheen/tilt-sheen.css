@@ -1,0 +1,244 @@
+/* The tilt sheen: a foil band and a soft glare that follow the pointer on
+   desktop and the phone's tilt on touch devices.
+
+   Every moving part is a transform or an opacity read from the --ts-* variables
+   that use-tilt-sheen.ts writes (x and y from -1 to 1, o from 0 to 1, and the
+   card's tilt as --ts-rx / --ts-ry). Nothing here animates by itself, so a card
+   at rest costs nothing. Colours come from the Shuffle Pro tier variables when
+   there are any, and fall back to a soft champagne and ice pair. */
+
+.ts-root {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.ts-sheen {
+  --ts-g1: var(--sp-glow, 255 236 200);
+  --ts-g2: var(--sp-glow2, 168 204 255);
+  --ts-core: 255 255 255;
+  --ts-gain: 1;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  contain: paint;
+  mix-blend-mode: plus-lighter;
+}
+
+.ts-foil,
+.ts-glare {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* The foil: a wide diagonal band with a prismatic echo, twice the card in each
+   direction so it can slide a long way without an edge showing. The stops are
+   eased, so there is no visible banding. */
+.ts-foil {
+  inset: -50%;
+  background:
+    linear-gradient(
+      112deg,
+      transparent 37%,
+      rgb(var(--ts-g1) / 0.06) 40%,
+      rgb(var(--ts-g1) / 0.2) 43.5%,
+      rgb(var(--ts-g1) / 0.38) 46.5%,
+      rgb(var(--ts-core) / 0.62) 49.5%,
+      rgb(var(--ts-g2) / 0.4) 52.5%,
+      rgb(var(--ts-g2) / 0.2) 55.5%,
+      rgb(var(--ts-g2) / 0.06) 59%,
+      transparent 62%
+    ),
+    linear-gradient(
+      112deg,
+      transparent 20%,
+      rgb(var(--ts-g2) / 0.07) 26%,
+      rgb(var(--ts-g2) / 0.12) 29%,
+      rgb(var(--ts-g1) / 0.07) 32%,
+      transparent 38%
+    );
+  opacity: calc(var(--ts-o, 0.34) * 0.8 * var(--ts-gain));
+  transform: translate3d(
+    calc(var(--ts-x, 0) * 21%),
+    calc(var(--ts-y, 0) * 21%),
+    0
+  );
+}
+
+/* The glare: a soft spot under the pointer. It only appears as the card is
+   engaged, so a card at rest carries just the foil. */
+.ts-glare {
+  inset: -25%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgb(var(--ts-core) / 0.5),
+    rgb(var(--ts-core) / 0.34) 12%,
+    rgb(var(--ts-g1) / 0.16) 30%,
+    rgb(var(--ts-g1) / 0.05) 48%,
+    transparent 66%
+  );
+  opacity: calc((var(--ts-o, 0.34) - 0.34) * 0.9 * var(--ts-gain));
+  transform: translate3d(
+    calc(var(--ts-x, 0) * 33%),
+    calc(var(--ts-y, 0) * 33%),
+    0
+  );
+}
+
+/* A foil laid over a whole card carries copy, so it stays quiet: foil only. */
+.ts-sheen[data-variant="card"] {
+  --ts-gain: 0.55;
+}
+
+.ts-sheen[data-variant="card"] .ts-glare {
+  display: none;
+}
+
+/* The share preview is dark, cinematic art: a cooler core and a touch less. */
+.ts-sheen[data-variant="share"] {
+  --ts-g1: 255 232 190;
+  --ts-g2: 150 190 255;
+  --ts-gain: 1.15;
+}
+
+/* Per-tier character. Frost is cool and glassy, Amethyst warmer and violet,
+   Jade deep and mineral, Gold wide, warm and brighter than the rest. */
+.warp-details-card[data-premium="frost"] .ts-sheen {
+  --ts-core: 240 251 255;
+  --ts-gain: 0.95;
+}
+
+.warp-details-card[data-premium="amethyst"] .ts-sheen {
+  --ts-core: 250 238 255;
+  --ts-gain: 1.05;
+}
+
+.warp-details-card[data-premium="jade"] .ts-sheen {
+  --ts-core: 226 255 246;
+}
+
+.warp-details-card[data-premium="gold"] .ts-sheen {
+  --ts-core: 255 246 220;
+  --ts-gain: 1.3;
+}
+
+.warp-details-card[data-premium="gold"] .ts-sheen[data-variant="card"] {
+  --ts-gain: 0.75;
+}
+
+/* Parallax: the rarity badge rides a little above the artwork, so it shifts
+   against it as the card turns. */
+.sp-badge {
+  transform: translate3d(
+    calc(var(--ts-x, 0) * -4px),
+    calc(var(--ts-y, 0) * -4px),
+    14px
+  );
+}
+
+/* The preview of a share card, tilted in a little depth. */
+.warp-share-tilt {
+  position: relative;
+  perspective: 900px;
+}
+
+.warp-share-tilt > .warp-share-stage {
+  transform: rotateX(var(--ts-rx, 0deg)) rotateY(var(--ts-ry, 0deg));
+  will-change: transform;
+}
+
+/* ----------------------------------------------------------- the hint */
+
+.ts-hint {
+  position: absolute;
+  right: 0;
+  bottom: 12px;
+  left: 0;
+  z-index: 7;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: max-content;
+  margin-inline: auto;
+  border: 1px solid rgb(255 255 255 / 0.22);
+  border-radius: 999px;
+  background: rgb(8 8 8 / 0.66);
+  padding: 8px 14px 8px 11px;
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+  animation: ts-hint-in 420ms cubic-bezier(0.2, 0.9, 0.25, 1) 600ms both;
+}
+
+button.ts-hint {
+  min-height: 34px;
+  cursor: pointer;
+}
+
+.ts-hint[data-phase="out"] {
+  animation: ts-hint-out 300ms ease both;
+  pointer-events: none;
+}
+
+.ts-hint-icon {
+  flex: none;
+  transform-origin: 50% 70%;
+  animation: ts-hint-rock 1.8s ease-in-out infinite;
+}
+
+@keyframes ts-hint-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes ts-hint-out {
+  from {
+    opacity: 1;
+    translate: 0 0;
+  }
+  to {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+@keyframes ts-hint-rock {
+  0%,
+  100% {
+    transform: rotate(-16deg);
+  }
+  50% {
+    transform: rotate(16deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ts-hint,
+  .ts-hint-icon {
+    animation: none;
+  }
+
+  .warp-share-tilt > .warp-share-stage {
+    transform: none;
+  }
+}

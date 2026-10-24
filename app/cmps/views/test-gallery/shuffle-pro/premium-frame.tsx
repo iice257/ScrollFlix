@@ -1,11 +1,13 @@
 import {
   type ReactNode,
-  type RefObject,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
 } from 'react'
+import { SheenLayers, TiltHint, TiltSheen } from '../tilt-sheen/tilt-sheen'
+import { useTiltSheen } from '../tilt-sheen/use-tilt-sheen'
 import type { MoodPresentation } from './mood-run'
 import {
   MOOD_PATHS,
@@ -345,79 +347,13 @@ export const PremiumFrame = ({
         <span className='sp-draw-ring' />
       </span>
     )}
-    {reducedMotion ? null : <span className='sp-sheen' aria-hidden='true' />}
+    <TiltSheen variant='card' areaSelector='.warp-details-card' />
     {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
       <Corner key={corner} tier={tier} corner={corner} />
     ))}
     {reducedMotion ? null : <EdgeParticles tier={tier} palette={palette} />}
   </>
 )
-
-// Tilts the poster toward the pointer and moves the foil's highlight with it.
-// Only on devices with a hover pointer, and never for reduced motion; one
-// listener, throttled to animation frames, removed on unmount.
-const usePosterTilt = (
-  stageRef: RefObject<HTMLDivElement | null>,
-  enabled: boolean,
-) => {
-  useEffect(() => {
-    const stage = stageRef.current
-    const card = stage?.closest<HTMLElement>('.warp-details-card')
-    const target = stage?.querySelector<HTMLElement>('.sp-stage-card')
-    if (!enabled || !stage || !card || !target) return
-    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
-
-    let frame = 0
-    let nextX = 0
-    let nextY = 0
-    let inside = false
-    const apply = () => {
-      frame = 0
-      if (!inside) {
-        target.style.removeProperty('--sp-rx')
-        target.style.removeProperty('--sp-ry')
-        target.style.setProperty('--sp-mx', '50%')
-        target.style.setProperty('--sp-my', '50%')
-        target.dataset.active = 'false'
-        return
-      }
-      const rect = stage.getBoundingClientRect()
-      const nx = Math.max(
-        -1,
-        Math.min(1, ((nextX - rect.left) / rect.width) * 2 - 1),
-      )
-      const ny = Math.max(
-        -1,
-        Math.min(1, ((nextY - rect.top) / rect.height) * 2 - 1),
-      )
-      target.style.setProperty('--sp-ry', `${nx * 8}deg`)
-      target.style.setProperty('--sp-rx', `${-ny * 8}deg`)
-      target.style.setProperty('--sp-mx', `${50 + nx * 50}%`)
-      target.style.setProperty('--sp-my', `${50 + ny * 50}%`)
-      target.dataset.active = 'true'
-    }
-    const schedule = () => {
-      if (!frame) frame = window.requestAnimationFrame(apply)
-    }
-    const onMove = (event: PointerEvent) => {
-      nextX = event.clientX
-      nextY = event.clientY
-      inside = true
-      schedule()
-    }
-    const onLeave = () => {
-      inside = false
-      schedule()
-    }
-    card.addEventListener('pointermove', onMove)
-    card.addEventListener('pointerleave', onLeave)
-    return () => {
-      card.removeEventListener('pointermove', onMove)
-      card.removeEventListener('pointerleave', onLeave)
-      if (frame) window.cancelAnimationFrame(frame)
-    }
-  }, [enabled, stageRef])
-}
 
 // The poster as a collectible: it flips over from a card back, then carries a
 // holographic foil and a glare that follow the pointer, with the path's badge.
@@ -433,13 +369,18 @@ export const PosterStage = ({
   children: ReactNode
 }) => {
   const stageRef = useRef<HTMLDivElement | null>(null)
-  usePosterTilt(stageRef, !reducedMotion)
+  const cardRef = useRef<HTMLDivElement | null>(null)
+  const areaRef = useRef<HTMLElement | null>(null)
+  useLayoutEffect(() => {
+    areaRef.current =
+      stageRef.current?.closest<HTMLElement>('.warp-details-card') ?? null
+  }, [])
+  useTiltSheen({ areaRef, targetRef: cardRef })
   return (
     <div className='sp-stage' ref={stageRef} data-tier={tier}>
-      <div className='sp-stage-card'>
+      <div className='sp-stage-card' ref={cardRef}>
         {children}
-        <span className='sp-foil' aria-hidden='true' />
-        <span className='sp-glare' aria-hidden='true' />
+        <SheenLayers variant='poster' />
         <span className='sp-badge' aria-hidden='true'>
           <Gem tier={tier} palette={mood?.palette} found />
           {mood ? MOOD_PATH_LABELS[mood.path] : TIER_LABELS[tier]}
@@ -450,6 +391,7 @@ export const PosterStage = ({
           </span>
         )}
       </div>
+      <TiltHint />
     </div>
   )
 }
