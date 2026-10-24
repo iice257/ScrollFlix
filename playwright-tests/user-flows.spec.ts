@@ -178,6 +178,40 @@ test.describe('Gallery user flows', () => {
     ).toBeVisible()
   })
 
+  test('opened film is sharp and has a backdrop', async ({ page }) => {
+    // A tiny image keeps the test off the TMDB CDN; the urls are what matter.
+    const requested: string[] = []
+    await page.route(/image\.tmdb\.org/, (route) => {
+      requested.push(route.request().url())
+      return route.fulfill({
+        contentType: 'image/jpeg',
+        body: Buffer.from(
+          '/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAGAAQDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAT/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AKwAf//Z',
+          'base64',
+        ),
+      })
+    })
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    const list = page.getByRole('region', { name: 'Movie list view' })
+    await expect(list).toBeVisible()
+    await list
+      .locator('.warp-list-row')
+      .filter({ visible: true })
+      .first()
+      .click()
+    const card = page.locator('.warp-details-card')
+    await expect(card).toBeVisible()
+
+    // The card asks for the sharp size (srcset picks w500 to w780).
+    await expect
+      .poll(() => requested.some((url) => /\/(w500|w780)\//.test(url)))
+      .toBe(true)
+    const backdrop = await card
+      .locator('.warp-details-ambient')
+      .evaluate((el) => getComputedStyle(el).backgroundImage)
+    expect(backdrop).toMatch(/\/(w780|w1280)\//)
+  })
+
   test('searches the movie index by title and offers filters', async ({
     page,
   }) => {

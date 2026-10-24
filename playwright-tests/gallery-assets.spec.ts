@@ -24,7 +24,7 @@ test('reveals the full poster gallery from the TMDB CDN', async ({ page }) => {
   test.skip(!hasWebgl2, 'WebGL2 is unavailable in this browser')
 
   const canvas = page.getByLabel('Infinite movie poster menu')
-  await expect(canvas).toHaveAttribute('data-item-count', '900', {
+  await expect(canvas).toHaveAttribute('data-item-count', /^(2160|1260)$/, {
     timeout: 30_000,
   })
   await expect(canvas).toHaveAttribute('data-texture-progress', '100', {
@@ -36,9 +36,9 @@ test('reveals the full poster gallery from the TMDB CDN', async ({ page }) => {
     'ready',
   )
   expect(posterRequests.length).toBeGreaterThan(0)
-  // The globe asks for w154; the on-device starter set also keeps the index's
-  // w92 thumbnails. Nothing larger is ever requested up front.
-  expect(posterRequests.every((url) => /\/t\/p\/w(154|92)\//.test(url))).toBe(
-    true,
-  )
+  // The globe's base tier asks for w154 (falling back to smaller sizes); the
+  // index keeps its w92 thumbnails. Larger sizes only come from the LOD pools.
+  expect(
+    posterRequests.every((url) => /\/t\/p\/w(92|154|185|342)\//.test(url)),
+  ).toBe(true)
 })
