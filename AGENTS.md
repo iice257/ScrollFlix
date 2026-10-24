@@ -58,3 +58,7 @@ The project uses Biome for formatting and linting with these key conventions:
 - 2-space indentation
 - Semicolons only when needed
 - Tailwind CSS class sorting enabled
+
+## Deployment environments
+
+Local dev (`npm run dev`), per-PR previews, staging (`staging` branch, https://staging.scrollflix.app) and production (`main`, https://scrollflix.app). **Open pull requests against `staging`; never push to `main`.** Production is reached only by promoting `staging` (the `Promote staging to production` workflow, or `ship release`). After each staging and production deploy an automated smoke check runs (`npm run smoke` with `BASE_URL`), and a failing production check opens a `prod-down` issue. Environments, the day-to-day flow, alerts and rollback are in `docs/deployment.md`.

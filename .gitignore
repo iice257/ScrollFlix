@@ -44,3 +44,6 @@ public/json/catalog/
 # Python bytecode from scripts/sound
 __pycache__/
 *.pyc
+
+# Smoke check output
+smoke-report/

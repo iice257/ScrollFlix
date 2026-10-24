@@ -1,0 +1,161 @@
+name: Smoke (deployed)
+
+# Vercel reports each finished deployment to GitHub as a `deployment_status`
+# event. When that deployment is production, or the new head of the `staging`
+# branch, wait for its URL to serve the new commit (/version.json), then run the
+# smoke checks against it. A failing production check opens a `prod-down` issue
+# (GitHub notifies the owner); a passing one closes it again.
+#
+# GitHub runs deployment_status workflows from the default branch, so this file
+# has to exist there. See docs/deployment.md.
+
+on:
+  deployment_status:
+
+permissions:
+  contents: read
+
+env:
+  PRODUCTION_URL: https://scrollflix.app
+  STAGING_URL: https://staging.scrollflix.app
+
+# One run per deployed commit and environment; never cancel a running check.
+concurrency:
+  group: smoke-${{ github.event.deployment.environment }}-${{ github.event.deployment.sha }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Smoke check the deployment
+    # PR previews also fire this event; they are filtered out in the first step.
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+      statuses: write
+    steps:
+      - name: Work out what was deployed
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_ENV: ${{ github.event.deployment.environment }}
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          env_lower=$(echo "$DEPLOY_ENV" | tr '[:upper:]' '[:lower:]')
+          url=""
+          name=""
+          if [[ "$env_lower" == production* ]]; then
+            url="$PRODUCTION_URL"
+            name="production"
+          else
+            # Vercel's deployment ref is a commit sha, so find staging by its head.
+            staging_head=$(gh api "repos/$REPO/git/ref/heads/staging" --jq .object.sha 2>/dev/null || true)
+            if [ -n "$staging_head" ] && [ "$staging_head" = "$DEPLOY_SHA" ]; then
+              url="$STAGING_URL"
+              name="staging"
+            fi
+          fi
+          if [ -z "$url" ]; then
+            echo "Deployment of $DEPLOY_SHA ($DEPLOY_ENV) is neither production nor the head of staging; nothing to check."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "Checking $name at $url for commit $DEPLOY_SHA"
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: steps.target.outputs.run == 'true'
+        with:
+          persist-credentials: false
+
+      - name: Wait for the URL to serve this commit
+        if: steps.target.outputs.run == 'true'
+        env:
+          URL: ${{ steps.target.outputs.url }}
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
+          BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          headers=()
+          if [ -n "$BYPASS" ]; then headers=(-H "x-vercel-protection-bypass: $BYPASS"); fi
+          deadline=$((SECONDS + 180))
+          last=""
+          while [ $SECONDS -lt $deadline ]; do
+            code=$(curl -s -o body.json -w '%{http_code}' "${headers[@]}" "$URL/version.json?t=$SECONDS" || echo 000)
+            served=$(jq -r '.sha // empty' body.json 2>/dev/null || true)
+            last="HTTP $code, serving ${served:-no version.json}"
+            if [ "$served" = "$DEPLOY_SHA" ]; then
+              echo "$URL serves $DEPLOY_SHA"
+              exit 0
+            fi
+            echo "Waiting: $last"
+            sleep 10
+          done
+          echo "::error::$URL did not serve commit $DEPLOY_SHA within 3 minutes (last: $last). A 401 means Vercel Deployment Protection is on: set the VERCEL_AUTOMATION_BYPASS_SECRET repository secret or turn protection off for this domain."
+          exit 1
+
+      - name: Run smoke checks
+        id: smoke
+        if: steps.target.outputs.run == 'true'
+        continue-on-error: true
+        uses: ./.github/actions/smoke
+        with:
+          base-url: ${{ steps.target.outputs.url }}
+          expect-sha: ${{ github.event.deployment.sha }}
+          bypass-secret: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+
+      - name: Keep the report
+        if: always() && steps.target.outputs.run == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: smoke-report-${{ steps.target.outputs.name }}
+          path: smoke-report/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # The promote workflow (and branch protection, if you want) reads this.
+      - name: Record the result on the commit
+        if: always() && steps.target.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
+          NAME: ${{ steps.target.outputs.name }}
+          OUTCOME: ${{ steps.smoke.outcome == 'success' && 'success' || 'failure' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api -X POST "repos/$REPO/statuses/$DEPLOY_SHA"             -f state="$OUTCOME"             -f context="smoke/$NAME"             -f description="Smoke checks against the $NAME deployment: $OUTCOME"             -f target_url="$RUN_URL" > /dev/null
+
+      # Production only: open or update the prod-down issue, or close it.
+      - name: Update the prod-down issue
+        if: always() && steps.target.outputs.name == 'production'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome == 'success' && 'success' || 'failure' }}
+          SMOKE_TARGET: ${{ steps.target.outputs.url }}
+          SMOKE_SOURCE: deploy of ${{ github.event.deployment.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/ci/smoke-alert.mjs
+
+      - name: Say how to roll back
+        if: always() && steps.target.outputs.name == 'production' && steps.smoke.outcome != 'success'
+        run: |
+          {
+            echo "### Production smoke check failed"
+            echo
+            echo "Roll back in the Vercel dashboard (project scrollflix, Deployments, previous production deployment, Promote to Production),"
+            echo "or run: \`npx vercel rollback\`"
+            echo
+            echo "A \`prod-down\` issue has been opened or updated."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail the run if the checks failed
+        if: steps.smoke.outcome == 'failure'
+        run: |
+          echo "::error::Smoke checks failed against ${{ steps.target.outputs.url }}"
+          exit 1
