@@ -6,8 +6,8 @@ name: Smoke (deployed)
 # smoke checks against it. A failing production check opens a `prod-down` issue
 # (GitHub notifies the owner); a passing one closes it again.
 #
-# GitHub runs deployment_status workflows from the default branch, so this file
-# has to exist there. See docs/deployment.md.
+# The run uses the files of the deployed commit, so the smoke spec that checks a
+# deploy is the one that shipped with it. See docs/deployment.md.
 
 on:
   deployment_status:
