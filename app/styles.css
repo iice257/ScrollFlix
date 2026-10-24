@@ -4690,6 +4690,83 @@
     color: #050505;
   }
 
+  /* While Dynamic is on, under the Appearance switch: the sky's one-liner. */
+  .warp-setting-note {
+    flex: 1 0 100%;
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    border-radius: 12px;
+    background: rgb(255 255 255 / 0.05);
+    padding: 10px 12px;
+  }
+
+  .warp-setting-note p {
+    margin: 0;
+    color: rgb(255 255 255 / 0.6);
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.45;
+  }
+
+  .warp-setting-note .warp-setting-note-line {
+    color: rgb(255 255 255 / 0.9);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  /* The one Dynamic tip: first open of the menu, and hover or focus. */
+  .warp-theme-tip {
+    position: relative;
+    display: grid;
+    max-width: 240px;
+    gap: 6px;
+    padding: 9px 34px 9px 12px;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .warp-theme-tip p {
+    margin: 0;
+  }
+
+  .warp-theme-tip-close {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: grid;
+    width: 22px;
+    height: 22px;
+    place-items: center;
+    border: 0;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.16);
+    padding: 0;
+    color: inherit;
+    transition: background 160ms ease;
+  }
+
+  /* A 44px tap target around the small button. */
+  .warp-theme-tip-close::before {
+    position: absolute;
+    inset: -11px;
+    content: '';
+  }
+
+  .warp-theme-tip-close svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .warp-theme-tip-close:hover {
+    background: rgb(255 255 255 / 0.28);
+  }
+
+  .warp-theme-tip-close:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 1px;
+  }
+
   .warp-sound-settings {
     display: grid;
   }
