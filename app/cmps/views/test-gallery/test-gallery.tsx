@@ -100,6 +100,7 @@ import {
   InfiniteMovieMenu,
   type InfiniteMovieMenuControl,
   type InfiniteMovieMenuItem,
+  globeCapacity,
 } from './infinite-movie-menu'
 import { matchesFilmLink, pickLandingMovie } from './landing'
 import {
@@ -140,6 +141,13 @@ import {
   seedStarterSet,
 } from './poster-cache'
 import { PosterFlight, type ViewRect } from './poster-flight'
+import {
+  backdropUrl,
+  pickBackdropSize,
+  pickPosterSize,
+  posterSrcSet,
+  posterUrl,
+} from './poster-sizes'
 import { savedStore } from './saved-store'
 import {
   type FacetCatalog,
@@ -188,6 +196,7 @@ import {
   readReducedMotion,
   useShuffleProController,
 } from './shuffle-pro/use-shuffle-pro'
+import { DESKTOP_GLOBE_COUNT } from './texture-tiers'
 import './session-path.css'
 import { perfFlag } from './perf-probe'
 import { stopsFromPath } from './share/path-art'
@@ -246,7 +255,15 @@ type DecisionFilterResult = {
 type PosterLoadState = 'loading' | 'loaded' | 'error'
 type MotionPhase = 'enter' | 'exit'
 
-const GALLERY_WINDOW_SIZE = 900
+// How many films the globe shows: more on desktop than on a phone or other
+// lightweight device (the engine sizes its textures for the same counts).
+const galleryWindowSize = () => {
+  try {
+    return globeCapacity()
+  } catch {
+    return DESKTOP_GLOBE_COUNT
+  }
+}
 // Posters now come from the TMDB CDN, so the first-load screen can no longer
 // wait for all of them. Once chunk 0 is in and the placeholders are up, the
 // screen lets go after this long and the posters fill in behind it.
@@ -617,6 +634,27 @@ type MoviePosterProps = {
 // as the connection returns), instead of staying blank for the whole visit.
 const POSTER_TILE_RETRY_MS = [1500, 6000, 20000]
 
+const LIST_POSTER_CSS_WIDTH = 46
+// The real TMDB backdrop sits behind the card (a distinct URL from every
+// poster, so its no-CORS CSS fetch cannot poison a cached poster copy). Films
+// without one keep the blurred poster.
+const detailsBackdropUrl = (movie: TestMovie) =>
+  movie.backdropPath
+    ? backdropUrl(
+        movie.backdropPath,
+        pickBackdropSize(
+          (typeof window === 'undefined' ? 1280 : window.innerWidth) *
+            readDpr(),
+        ),
+      )
+    : posterBackdropUrl(movie)
+// The card's poster column: clamp(240px, 25vw, 330px) on desktop, and about
+// two thirds of min(30dvh, 250px) on phones.
+const DETAIL_POSTER_SIZES =
+  '(max-width: 720px) min(20dvh, 167px), clamp(240px, 25vw, 330px)'
+const readDpr = () =>
+  typeof window === 'undefined' ? 1 : Math.min(3, window.devicePixelRatio || 1)
+
 const MoviePoster = ({
   movie,
   loading = 'lazy',
@@ -627,12 +665,18 @@ const MoviePoster = ({
   const [attempt, setAttempt] = useState(0)
   // A copy fetched around the HTTP cache, used after a failed first try.
   const [recovered, setRecovered] = useState<string | null>(null)
+  const path = movie.posterPath
   const src =
     size === 'detail'
-      ? (movie.posterDetailUrl ?? movie.posterUrl)
+      ? path
+        ? posterUrl(path, 'w500')
+        : (movie.posterDetailUrl ?? movie.posterUrl)
       : size === 'list'
-        ? (movie.posterListUrl ?? movie.posterUrl)
+        ? path
+          ? posterUrl(path, pickPosterSize(LIST_POSTER_CSS_WIDTH * readDpr()))
+          : (movie.posterListUrl ?? movie.posterUrl)
         : movie.posterUrl
+  const srcSet = size === 'detail' && path ? posterSrcSet(path) : undefined
   // The detail card sits on the thumbnail the globe already loaded, and the
   // sharper image fades in over it, so opening a poster never flashes empty.
   const baseSrc =
@@ -691,6 +735,8 @@ const MoviePoster = ({
       <img
         key={attempt}
         src={recovered ?? getWarmPosterUrl(src) ?? src}
+        srcSet={recovered ? undefined : srcSet}
+        sizes={srcSet ? DETAIL_POSTER_SIZES : undefined}
         alt=''
         decoding='async'
         fetchPriority={priority ? 'high' : undefined}
@@ -848,7 +894,7 @@ export const filterMoviesByDecisionFilters = (
 export const getGalleryWindow = (
   movies: TestMovie[],
   selectedGenres: string[],
-  limit = GALLERY_WINDOW_SIZE,
+  limit = galleryWindowSize(),
 ) =>
   [...movies]
     .map((movie, index) => ({
@@ -1349,7 +1395,7 @@ export const TestGalleryApp = () => {
       })
       seedStarterSet(
         firstByKey(movies, getTitleKey, STARTER_ALPHA_COUNT).map(toFilm),
-        movies.slice(0, GALLERY_WINDOW_SIZE).map(toFilm),
+        movies.slice(0, galleryWindowSize()).map(toFilm),
       )
     }, 3000)
     return () => window.clearTimeout(timer)
@@ -3497,6 +3543,7 @@ const WarpWall = ({
       movies.map((movie) => ({
         id: movie.id,
         image: movie.posterUrl,
+        posterPath: movie.posterPath,
         placeholderColor: movie.placeholderColor,
         title: movie.title,
         description:
@@ -5912,7 +5959,7 @@ const MovieDetailsCard = ({
     // has no CORS headers and breaks the same URL for the globe and index
     // tiles, so catalogue films use a size nothing else requests (w92 is the
     // index, w154 the globe, w342 the card); see posterBackdropUrl.
-    '--details-backdrop': `url(${JSON.stringify(posterBackdropUrl(movie))})`,
+    '--details-backdrop': `url(${JSON.stringify(detailsBackdropUrl(movie))})`,
   } as CSSProperties
   const movieText = useMovieText(movie)
   const originalTitle = movieText?.originalTitle || movie.originalTitle || ''
@@ -5983,7 +6030,9 @@ const MovieDetailsCard = ({
         .join('  ·  '),
       // The share card is drawn per path; a mood run has none of its own.
       tier: premiumMood ? null : premiumTier,
-      posterUrl: movie.posterDetailUrl ?? movie.posterUrl,
+      posterUrl: movie.posterPath
+        ? posterUrl(movie.posterPath, 'w780')
+        : (movie.posterDetailUrl ?? movie.posterUrl),
       foundTiers: (Object.keys(shareFound.found) as Tier[]).filter(Boolean),
     }),
     [
