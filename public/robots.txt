@@ -12,7 +12,7 @@ Allow: /api/og
 # Crawl-delay: 1
 
 # Sitemap location
-Sitemap: https://scroll-flix.vercel.app/sitemap.xml
+Sitemap: https://scrollflix.app/sitemap.xml
 
 # Block known problematic bots (optional)
 # User-agent: SemrushBot
