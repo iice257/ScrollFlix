@@ -104,6 +104,22 @@ describe('tmdb client', () => {
     expect(clock.sleeps.filter((ms) => ms >= 500)).toEqual([500, 1000, 2000])
   })
 
+  it('asks for external ids and videos with the details', async () => {
+    let url = ''
+    const client = createTmdbClient({
+      token: 't',
+      fetchImpl: async (input) => {
+        url = String(input)
+        return json({ id: 7 })
+      },
+      sleep: async () => {},
+    })
+    await client.movie(7)
+    const params = new URL(url).searchParams
+    expect(params.get('append_to_response')).toBe('external_ids,videos')
+    expect(params.get('include_video_language')).toBe('en,null')
+  })
+
   it('404 → null', async () => {
     const client = createTmdbClient({
       token: 't',

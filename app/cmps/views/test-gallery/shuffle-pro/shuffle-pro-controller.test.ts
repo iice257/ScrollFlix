@@ -320,7 +320,7 @@ describe('ShuffleProController: found paths', () => {
     expect(h.calls).toContain('prewarm')
   })
 
-  it('starts a held run with every path found and repeats off', () => {
+  it('starts a held run with every path found', () => {
     for (const immersive of [false, true]) {
       // The 10% gold-after-found roll misses, so the base tier plays.
       const h = setup(
@@ -346,12 +346,6 @@ describe('ShuffleProController: found paths', () => {
     h.advance(50)
     h.arriveLandOn()
     expect(h.recorded).toEqual(['frost'])
-  })
-
-  it('starts it for a found path when repeats are on, too', () => {
-    const h = setup({ getRepeatFound: () => true }, { found: { frost: 1 } })
-    hold(h, 3100)
-    expect(h.controller.getSnapshot().phase).toBe('windup')
   })
 
   it('starts a Space hold for a found path after 10s', () => {
@@ -390,6 +384,47 @@ describe('ShuffleProController: found paths', () => {
     expect(h.controller.getStreak().streak).toBe(0)
   })
 
+  it('guarantees Amethyst on the 15th shuffle when every roll misses', () => {
+    const h = setup({ random: () => 0.99 })
+    const triggers: (string | null)[] = []
+    for (let i = 0; i < 15; i += 1) {
+      triggers.push(h.controller.noteAction({ type: 'shuffle' }))
+    }
+    expect(triggers.slice(0, 14).every((trigger) => trigger === null)).toBe(
+      true,
+    )
+    expect(triggers[14]).toBe('amethyst')
+  })
+
+  it('does not fire the pity for a found Amethyst, and starts over', () => {
+    const h = setup({ random: () => 0.99 }, { found: { amethyst: 1 } })
+    const triggers: (string | null)[] = []
+    for (let i = 0; i < 15; i += 1) {
+      triggers.push(h.controller.noteAction({ type: 'shuffle' }))
+    }
+    expect(triggers.every((trigger) => trigger === null)).toBe(true)
+    expect(h.controller.getStreak().streak).toBe(0)
+  })
+
+  it('does not spend the pity on a released hold', () => {
+    const h = setup({ random: () => 0.99 })
+    for (let i = 0; i < 14; i += 1) h.controller.noteAction({ type: 'shuffle' })
+    hold(h, 3100)
+    h.controller.pressRelease()
+    // Released before the peak: one ordinary shuffle, never a silent run.
+    // Counted, not spent: the guarantee stays for the next shuffle.
+    expect(h.controller.getStreak().streak).toBe(15)
+  })
+
+  it('leaves immersive on its own rule: Jade at 6, no pity', () => {
+    const h = setup({ random: () => 0.99, isImmersive: () => true })
+    const triggers: (string | null)[] = []
+    for (let i = 0; i < 6; i += 1) {
+      triggers.push(h.controller.noteAction({ type: 'shuffle' }))
+    }
+    expect(triggers[5]).toBe('jade')
+  })
+
   it('still hands a streak trigger over for a path not found yet', () => {
     const h = setup({ random: () => 0 }, { found: { frost: 1 } })
     let trigger: string | null = null
@@ -422,7 +457,8 @@ describe('ShuffleProController: demo mode', () => {
     expect(triggers[9]).toBe('amethyst')
   })
 
-  it('plays the base tier: no Gold unlock, no golden hour', () => {
+  it('plays the base tier until Frost, Amethyst and Jade are seen in dev mode', () => {
+    // The real collection is irrelevant: dev mode keeps its own set.
     const h = setup(
       { ...demo, random: () => 0, isGoldenHour: () => true },
       { found: { frost: 1, amethyst: 1, jade: 1 } },
@@ -430,11 +466,32 @@ describe('ShuffleProController: demo mode', () => {
     hold(h, 3100)
     expect(h.controller.getSnapshot().tier).toBe('frost')
     const auto = setup(
-      { ...demo, random: () => 0, isGoldenHour: () => true },
+      {
+        ...demo,
+        random: () => 0,
+        isGoldenHour: () => true,
+        getDemoFound: () => ({ frost: 1, amethyst: 1 }),
+      },
       { found: ALL_FOUND },
     )
     auto.controller.startAutomatic('amethyst', 'target-1')
     expect(auto.controller.getSnapshot().tier).toBe('amethyst')
+  })
+
+  it('reaches Gold in dev mode once all three have been seen', () => {
+    const seen = { frost: 1, amethyst: 1, jade: 1 }
+    const h = setup(
+      { ...demo, random: () => 0.99, getDemoFound: () => seen },
+      { found: {} },
+    )
+    hold(h, 3100)
+    expect(h.controller.getSnapshot().tier).toBe('gold')
+    const auto = setup(
+      { ...demo, random: () => 0.99, getDemoFound: () => seen },
+      { found: {} },
+    )
+    auto.controller.startAutomatic('amethyst', 'target-1')
+    expect(auto.controller.getSnapshot().tier).toBe('gold')
   })
 
   it('does not change a release into a silent run', () => {

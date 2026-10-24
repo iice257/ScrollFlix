@@ -1,4 +1,154 @@
-import { expect, test } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { type Page, expect, test } from '@playwright/test'
+
+// Film ids are `c${tmdbId}`; these indices are all in the first catalogue chunk.
+const filmIds = (indices: number[]) => {
+  const manifest = JSON.parse(
+    readFileSync('public/json/catalog/manifest.json', 'utf8'),
+  ) as { chunks: string[] }
+  const films = JSON.parse(
+    readFileSync(`public/json/catalog/${manifest.chunks[0]}`, 'utf8'),
+  ) as Array<[number | string]>
+  return indices.map((index) => `c${films[index][0]}`)
+}
+
+// Mean brightness change and the number of pixels that differ between two
+// screenshots (PNG, base64), decoded in the page.
+const compareShots = (page: Page, before: string, after: string) =>
+  page.evaluate(
+    async ([a, b]) => {
+      const decode = async (data: string) => {
+        const blob = await (await fetch(`data:image/png;base64,${data}`)).blob()
+        const bitmap = await createImageBitmap(blob)
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+        const context = canvas.getContext('2d')
+        if (!context) throw new Error('no 2d context')
+        context.drawImage(bitmap, 0, 0)
+        return context.getImageData(0, 0, bitmap.width, bitmap.height).data
+      }
+      const [left, right] = [await decode(a), await decode(b)]
+      let changed = 0
+      let delta = 0
+      for (let at = 0; at < left.length; at += 4) {
+        const change =
+          right[at] +
+          right[at + 1] +
+          right[at + 2] -
+          (left[at] + left[at + 1] + left[at + 2])
+        if (Math.abs(change) > 60) {
+          changed += 1
+          delta += change
+        }
+      }
+      return { changed, meanDelta: changed ? delta / changed : 0 }
+    },
+    [before, after],
+  )
+
+// Opens the gallery with saved films and a session path, so links and stars
+// are drawn somewhere on the globe whichever way it faces, and turns the globe
+// a little so they are not where they started.
+const openWithConstellations = async (page: Page) => {
+  const saved = filmIds(Array.from({ length: 200 }, (_, at) => at)).map(
+    (id, at) => ({ id, savedAt: 1_700_000_000_000 - at * 1_000 }),
+  )
+  const path = filmIds([8, 33, 64, 12, 101, 140, 175, 90]).map((id, at) => ({
+    id,
+    tier: [null, 'frost', null, 'amethyst', 'jade', null, 'gold', 'frost'][at],
+  }))
+  await page.addInitScript(
+    ({ saved, path }) => {
+      try {
+        window.localStorage.setItem('wtw:saved:v1', JSON.stringify(saved))
+        window.sessionStorage.setItem(
+          'wtw:session-path:v1',
+          JSON.stringify(path),
+        )
+        window.localStorage.setItem('wtw:spin-hint-seen', '1')
+        window.localStorage.setItem('wtw:theme', 'dark')
+      } catch {}
+    },
+    { saved, path },
+  )
+  await page.reload()
+  await page
+    .getByRole('button', { name: 'Skip first time load' })
+    .click({ timeout: 3_000 })
+    .catch(() => {})
+  await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
+  const globe = page.getByLabel('Infinite movie poster menu')
+  const webgl = await expect(globe)
+    .toHaveAttribute('data-webgl-state', 'ready', { timeout: 60_000 })
+    .then(
+      () => true,
+      () => false,
+    )
+  test.skip(!webgl, 'needs WebGL')
+
+  await page.mouse.move(700, 450)
+  await page.mouse.down()
+  await page.mouse.move(520, 470, { steps: 12 })
+  await page.mouse.up()
+  await page.waitForTimeout(2_500)
+}
+
+// The first Esc dismisses the menu's tips (only on the first open), the next
+// one closes the drawer.
+const closeDrawer = async (page: Page) => {
+  await page.keyboard.press('Escape')
+  if (await page.locator('.warp-about-drawer').count()) {
+    await page.keyboard.press('Escape')
+  }
+  await expect(page.locator('.warp-about-drawer')).toHaveCount(0)
+}
+
+// Compares the globe with the marks on and off. Marks sit on a few posters,
+// so if none are in view the globe is turned a little and it tries again.
+const marksDiffer = (page: Page) => {
+  const clip = { x: 0, y: 0, width: 900, height: 700 }
+  // The drawer blurs the globe, so change the setting, close it, then look.
+  const shot = async (on: boolean) => {
+    await page.locator('button.warp-info-button').click()
+    // Press it with the keyboard: on a slow runner the drawer's entrance and
+    // the line tips keep the button "unstable" for a click.
+    // Both settings, so links and path marks give the globe the most to show.
+    for (const group of ['Session path', 'Favorite links']) {
+      const toggle = page
+        .getByRole('group', { name: group })
+        .getByRole('button', { name: on ? 'On' : 'Off', exact: true })
+      await toggle.focus()
+      await page.keyboard.press('Enter')
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    }
+    await closeDrawer(page)
+    await page.waitForTimeout(500)
+    return (await page.screenshot({ clip })).toString('base64')
+  }
+  return async (sign: 1 | -1) => {
+    let best = { changed: 0, meanDelta: 0 }
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const on = await shot(true)
+      const off = await shot(false)
+      const diff = await compareShots(page, off, on)
+      // Other things move on the globe too (a poster fading in), so keep
+      // looking until the change is the marks': light on dark, ink on light.
+      const marks = Math.sign(diff.meanDelta) === sign
+      const bestMarks = Math.sign(best.meanDelta) === sign
+      if (marks && (!bestMarks || diff.changed > best.changed)) best = diff
+      else if (!bestMarks && diff.changed > best.changed) best = diff
+      if (best.changed > 30 && Math.sign(best.meanDelta) === sign) break
+      await page.mouse.move(700, 450)
+      await page.mouse.down()
+      await page.mouse.move(560, 430, { steps: 10 })
+      await page.mouse.up()
+      await page.waitForTimeout(2_000)
+    }
+    const diff = best
+    // Leave the marks on for whatever comes next.
+    await shot(true)
+    return diff
+  }
+}
 
 test.describe('Gallery user flows', () => {
   test.beforeEach(async ({ page }) => {
@@ -319,5 +469,49 @@ test.describe('Gallery user flows', () => {
     await open()
     await page.locator('.mood-panel').nth(2).click()
     await expect(tip).toHaveCount(0)
+  })
+
+  test('constellations follow the globe and theme', async ({ page }) => {
+    // Each pass turns the globe and shoots it four times; allow a few passes.
+    test.setTimeout(180_000)
+    test.skip(
+      (page.viewportSize()?.width ?? 0) <= 900,
+      'the drawer fills a phone',
+    )
+    await openWithConstellations(page)
+    const lines = marksDiffer(page)
+
+    // Light marks on the dark globe...
+    const dark = await lines(1)
+    expect(dark.changed).toBeGreaterThan(30)
+    expect(dark.meanDelta).toBeGreaterThan(0)
+
+    // ...and ink on the light one.
+    await page.locator('button.warp-info-button').click()
+    await page.getByRole('button', { name: 'Light', exact: true }).click()
+    await closeDrawer(page)
+    await expect(page.locator('main')).toHaveAttribute('data-theme', 'light')
+    const light = await lines(-1)
+    expect(light.changed).toBeGreaterThan(30)
+    expect(light.meanDelta).toBeLessThan(0)
+  })
+
+  test('links stay on posters after resize', async ({ page }) => {
+    // Each pass turns the globe and shoots it four times; allow a few passes.
+    test.setTimeout(180_000)
+    test.skip(
+      (page.viewportSize()?.width ?? 0) <= 900,
+      'the drawer fills a phone',
+    )
+    await openWithConstellations(page)
+
+    // The globe has gone to sleep by now; a resize must wake it and the marks
+    // must be redrawn with the posters at the new size.
+    await page.setViewportSize({ width: 1180, height: 760 })
+    await page.waitForTimeout(1_200)
+
+    const diff = await marksDiffer(page)(1)
+    expect(diff.changed).toBeGreaterThan(30)
+    expect(diff.meanDelta).toBeGreaterThan(0)
   })
 })

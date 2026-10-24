@@ -1,25 +1,25 @@
 import { type Page, expect, test } from '@playwright/test'
 
 const STORE_KEY = 'wtw:shuffle-pro:v1'
+// Dev mode exists only on the dev server, which is what these specs run on.
+const DEV_MODE_KEY = 'wtw:shuffle-pro:dev-mode'
 const entry = { count: 3, firstAt: 1, lastAt: 2 }
 const ALL_FOUND = { frost: entry, amethyst: entry, jade: entry, gold: entry }
 
 const openGallery = async (
   page: Page,
-  data: { found?: object; demoMode?: boolean } = {},
+  data: { found?: object; devMode?: boolean } = {},
 ) => {
   await page.addInitScript(
-    ([key, payload]) => {
+    ([key, payload, devKey, devMode]) => {
       window.localStorage.setItem(key, payload)
+      window.localStorage.setItem(devKey, devMode)
     },
     [
       STORE_KEY,
-      JSON.stringify({
-        v: 1,
-        found: data.found ?? {},
-        repeatFound: false,
-        demoMode: data.demoMode ?? false,
-      }),
+      JSON.stringify({ v: 1, found: data.found ?? {} }),
+      DEV_MODE_KEY,
+      data.devMode ? '1' : '0',
     ] as const,
   )
   await page.goto('/')
@@ -102,14 +102,14 @@ test.describe('Shuffle Pro holds', () => {
   })
 })
 
-test.describe('Demo mode', () => {
+test.describe('Dev mode', () => {
   test('is off by default: no counter', async ({ page }) => {
     await openGallery(page)
     await expect(page.locator('.warp-demo-chip')).toHaveCount(0)
   })
 
   test('shows a streak counter that follows shuffles', async ({ page }) => {
-    await openGallery(page, { demoMode: true })
+    await openGallery(page, { devMode: true })
     const chip = page.locator('.warp-demo-chip')
     await expect(chip).toBeVisible()
     await expect(chip).toContainText('0 / 5')

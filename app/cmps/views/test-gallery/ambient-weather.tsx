@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { detectLightweightDevice } from './catalog-loader'
 import { readReducedMotion } from './shuffle-pro/use-shuffle-pro'
 
 export type AmbientKind = 'rain' | 'snow'
@@ -12,6 +13,8 @@ type Drop = {
 }
 
 const COUNT = 110
+// Phones and low-memory devices get fewer particles.
+const LIGHT_COUNT = 70
 const MAX_DPR = 1.5
 // Drawn at half the display rate: the layer is atmosphere, not the hero.
 const FRAME_MS = 1000 / 30
@@ -51,7 +54,8 @@ export const AmbientWeather = ({
       canvas.height = Math.round(height * dpr)
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       drops.length = 0
-      for (let index = 0; index < COUNT; index += 1) {
+      const count = detectLightweightDevice() ? LIGHT_COUNT : COUNT
+      for (let index = 0; index < count; index += 1) {
         drops.push({
           x: Math.random() * (width + 200) - 100,
           y: Math.random() * height,

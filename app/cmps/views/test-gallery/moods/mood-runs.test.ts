@@ -26,7 +26,6 @@ const base = (overrides: Partial<MoodRunInputs> = {}): MoodRunInputs => ({
   picks: [],
   landings: {},
   found: {},
-  repeatFound: false,
   ...overrides,
 })
 
@@ -85,22 +84,13 @@ describe('eclipse', () => {
     expect(plan.run?.look).toBe('amethyst')
   })
 
-  it('stays quiet once found, unless repeats are on', () => {
+  it('stays quiet once found', () => {
     const found = { eclipse: { count: 1 } }
     const quiet = planMoodRun(
       base({ selected: ['dark'], landings: { dark: 2 }, found }),
     )
     expect(quiet.run).toBeNull()
     expect(quiet.landings).toEqual({ dark: 3 })
-    const again = planMoodRun(
-      base({
-        selected: ['dark'],
-        landings: { dark: 2 },
-        found,
-        repeatFound: true,
-      }),
-    )
-    expect(again.run?.path).toBe('eclipse')
   })
 })
 
