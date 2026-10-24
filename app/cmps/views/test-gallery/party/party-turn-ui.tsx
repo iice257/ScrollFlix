@@ -6,6 +6,7 @@ import { ArrowRight, Check, Film, Minus, Plus, Star, X } from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { playCue } from '../../../../audio/sound-engine'
 import { cn } from '../../../../utils/tw'
+import { overlayScrollbarRef } from '../../../ui/use-overlay-scrollbar'
 import {
   type PartyState,
   type VoteSlot,
@@ -37,7 +38,7 @@ const Sheet = ({
 }) => (
   <section className='party-layer is-sheet' aria-label={label}>
     <div className='party-backdrop is-soft' aria-hidden='true' />
-    <div className='party-card party-sheet'>
+    <div className='party-card party-sheet' ref={overlayScrollbarRef}>
       <span className='party-grip' aria-hidden='true' />
       {children}
     </div>
@@ -301,7 +302,7 @@ export const PartyVote = ({ state, movieOf, onSubmit, onEnd }: VoteProps) => {
         <p>{local ? 'Would you watch it? Each of you decides.' : heading}</p>
       </header>
 
-      <div className='party-vote-list'>
+      <div className='party-vote-list' ref={overlayScrollbarRef}>
         {groups.map((group) => {
           const info = landing(group)
           return (
@@ -459,7 +460,10 @@ export const PartyReveal = ({
   return (
     <section className='party-layer is-sheet' aria-label='Result'>
       <div className='party-backdrop is-soft' aria-hidden='true' />
-      <div className='party-card party-sheet party-reveal'>
+      <div
+        className='party-card party-sheet party-reveal'
+        ref={overlayScrollbarRef}
+      >
         <span className='party-grip' aria-hidden='true' />
         <div className='party-reveal-film'>
           <Poster src={movie?.posterUrl} title={last.title} />

@@ -6,6 +6,8 @@
   --warp-pill-bg: rgb(90 83 72 / 0.86);
   --warp-danger: rgb(229 72 77);
   --warp-danger-hover: rgb(209 52 56);
+  --warp-scroll-thumb: rgb(33 26 16 / 0.32);
+  --warp-scroll-thumb-active: rgb(33 26 16 / 0.55);
   background: rgb(247 240 225);
   color: rgb(41 34 24);
 }
@@ -1628,6 +1630,15 @@
   .warp-shell[data-theme="light"] .warp-trailer-handle {
     background: rgb(33 26 16 / 0.32);
   }
+}
+
+.warp-shell[data-theme="light"] .warp-osb-thumb {
+  background: var(--warp-scroll-thumb, rgb(33 26 16 / 0.32));
+}
+
+.warp-shell[data-theme="light"] .warp-osb:hover .warp-osb-thumb,
+.warp-shell[data-theme="light"] .warp-osb[data-active="true"] .warp-osb-thumb {
+  background: var(--warp-scroll-thumb-active, rgb(33 26 16 / 0.55));
 }
 
 /* Stage: tan beige with a cream centre glow and a faint gold edge. */
