@@ -105,7 +105,7 @@
 .ts-sheen[data-variant="share"] {
   --ts-g1: 255 232 190;
   --ts-g2: 150 190 255;
-  --ts-gain: 0.9;
+  --ts-gain: 1.15;
 }
 
 /* Per-tier character. Frost is cool and glassy, Amethyst warmer and violet,
