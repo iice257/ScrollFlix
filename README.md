@@ -6,7 +6,7 @@ Stop scrolling lists. Spin a wall of posters from 100k+ films and stop on whatev
 
 A custom WebGL wall you scroll, drag and spin. Open any poster for details, save favorites, and jump out to your own streaming or review links.
 
-**[Spin the wall →](https://scroll-flix.vercel.app)** · React · TypeScript · WebGL · Vite
+**[Spin the wall →](https://scrollflix.app)** · React · TypeScript · WebGL · Vite
 
 ---
 
@@ -72,7 +72,7 @@ ScrollFlix is for people who:
 
 This is an active personal project. The core app experience is present, with a React interface and a custom WebGL globe.
 
-The app is live at https://scroll-flix.vercel.app/ and browses 100k+ films, refreshed nightly from TMDB.
+The app is live at https://scrollflix.app/ and browses 100k+ films, refreshed nightly from TMDB.
 
 
 ## Tech Stack

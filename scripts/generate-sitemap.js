@@ -13,7 +13,7 @@ import { resolve } from 'path'
 
 // Configuration
 const config = {
-  baseUrl: process.env.SITE_URL || 'https://scroll-flix.vercel.app',
+  baseUrl: process.env.SITE_URL || 'https://scrollflix.app',
   outputPath: resolve('public/sitemap.xml'),
   lastModified: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
 }

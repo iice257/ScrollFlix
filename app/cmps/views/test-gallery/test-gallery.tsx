@@ -5429,7 +5429,7 @@ const AboutDrawer = ({
           <h3>Credits</h3>
           <p>
             Carefully put together by my humble self -{' '}
-            <a href='https://kingsleyaremu.vercel.app/'>ICE</a>.
+            <a href='https://kingsleyaremu.com/'>ICE</a>.
           </p>
         </section>
       </div>

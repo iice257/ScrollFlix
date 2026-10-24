@@ -1,6 +1,6 @@
 import type { Film } from './tmdb.js'
 
-export const SITE = 'https://scroll-flix.vercel.app'
+export const SITE = 'https://scrollflix.app'
 
 // Link-preview fetchers. Googlebot is left out on purpose: it should see the
 // app, not the stub. iMessage unfurls with the Facebook and Twitter tokens,
