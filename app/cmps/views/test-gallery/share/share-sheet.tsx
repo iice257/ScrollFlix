@@ -10,6 +10,8 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '../../../../utils/tw'
+import { SheenLayers, TiltHint } from '../tilt-sheen/tilt-sheen'
+import { useTiltSheen } from '../tilt-sheen/use-tilt-sheen'
 import type { PathScene } from './path-art'
 import type { RecapScene } from './recap-art'
 import { SHARE_CLIP_SECONDS, SHARE_HEIGHT, SHARE_WIDTH } from './share-art'
@@ -77,6 +79,8 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
   const [busy, setBusy] = useState(false)
   const preparedRef = useRef<ShareRenderable | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const tiltRef = useRef<HTMLDivElement | null>(null)
+  useTiltSheen({ areaRef: tiltRef, targetRef: tiltRef })
   const recordAbortRef = useRef<AbortController | null>(null)
   const noticeTimerRef = useRef(0)
   const canClip = clipSupported()
@@ -283,53 +287,59 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
         </header>
 
         <div className='warp-share-body'>
-          <div className='warp-share-stage' data-phase={phase}>
-            {format === 'clip' && clip ? (
-              <video
-                key={clip.url}
-                className='warp-share-video'
-                src={clip.url}
-                autoPlay
-                loop
-                muted
-                playsInline
-                controls={false}
-              />
-            ) : (
-              <canvas
-                ref={canvasRef}
-                className='warp-share-canvas'
-                width={Math.round(SHARE_WIDTH * PREVIEW_SCALE)}
-                height={Math.round(SHARE_HEIGHT * PREVIEW_SCALE)}
-                aria-label='Preview of the share card'
-              />
-            )}
-            {phase === 'loading' ? (
-              <span className='warp-share-overlay'>Preparing your card…</span>
-            ) : null}
-            {phase === 'error' ? (
-              <span className='warp-share-overlay'>
-                This card could not be made.
-              </span>
-            ) : null}
-            {phase === 'recording' ? (
-              <span className='warp-share-overlay is-recording'>
-                <span className='warp-share-rec' aria-hidden='true' />
-                Recording{' '}
-                {Math.min(
-                  SHARE_CLIP_SECONDS,
-                  Math.ceil(progress * SHARE_CLIP_SECONDS),
-                )}
-                s / {SHARE_CLIP_SECONDS}s
-                <i
-                  style={
-                    {
-                      '--share-progress': `${Math.round(progress * 100)}%`,
-                    } as never
-                  }
+          <div className='warp-share-tilt' ref={tiltRef}>
+            <div className='warp-share-stage' data-phase={phase}>
+              {format === 'clip' && clip ? (
+                <video
+                  key={clip.url}
+                  className='warp-share-video'
+                  src={clip.url}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  controls={false}
                 />
-              </span>
-            ) : null}
+              ) : (
+                <canvas
+                  ref={canvasRef}
+                  className='warp-share-canvas'
+                  width={Math.round(SHARE_WIDTH * PREVIEW_SCALE)}
+                  height={Math.round(SHARE_HEIGHT * PREVIEW_SCALE)}
+                  aria-label='Preview of the share card'
+                />
+              )}
+              {phase === 'loading' || phase === 'error' ? null : (
+                <SheenLayers variant='share' />
+              )}
+              {phase === 'loading' ? (
+                <span className='warp-share-overlay'>Preparing your card…</span>
+              ) : null}
+              {phase === 'error' ? (
+                <span className='warp-share-overlay'>
+                  This card could not be made.
+                </span>
+              ) : null}
+              {phase === 'recording' ? (
+                <span className='warp-share-overlay is-recording'>
+                  <span className='warp-share-rec' aria-hidden='true' />
+                  Recording{' '}
+                  {Math.min(
+                    SHARE_CLIP_SECONDS,
+                    Math.ceil(progress * SHARE_CLIP_SECONDS),
+                  )}
+                  s / {SHARE_CLIP_SECONDS}s
+                  <i
+                    style={
+                      {
+                        '--share-progress': `${Math.round(progress * 100)}%`,
+                      } as never
+                    }
+                  />
+                </span>
+              ) : null}
+            </div>
+            {phase === 'ready' || phase === 'clip-ready' ? <TiltHint /> : null}
           </div>
 
           <div className='warp-share-options'>
