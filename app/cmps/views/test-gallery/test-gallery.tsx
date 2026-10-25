@@ -683,13 +683,20 @@ const MoviePoster = (props: MoviePosterProps) => (
   <MoviePosterImage key={props.movie.id} {...props} />
 )
 
+// Posters that have already been decoded in this session. Opening one of them
+// again starts on the sharp image: no placeholder, no thumbnail, no fade.
+const decodedPosters = new Set<string>()
+
 const MoviePosterImage = ({
   movie,
   loading = 'lazy',
   priority = false,
   size = 'thumb',
 }: MoviePosterProps) => {
-  const [loadState, setLoadState] = useState<PosterLoadState>('loading')
+  const decodedKey = `${movie.id}|${size}`
+  const [loadState, setLoadState] = useState<PosterLoadState>(() =>
+    decodedPosters.has(decodedKey) ? 'loaded' : 'loading',
+  )
   const [attempt, setAttempt] = useState(0)
   // A copy fetched around the HTTP cache, used after a failed first try.
   const [recovered, setRecovered] = useState<string | null>(null)
@@ -775,7 +782,10 @@ const MoviePosterImage = ({
         onError={() => setLoadState('error')}
         // The fade starts once the pixels are decoded, not when the bytes land.
         onLoad={(event) => {
-          const reveal = () => setLoadState('loaded')
+          const reveal = () => {
+            decodedPosters.add(decodedKey)
+            setLoadState('loaded')
+          }
           const image = event.currentTarget
           if (typeof image.decode === 'function')
             image.decode().then(reveal, reveal)
