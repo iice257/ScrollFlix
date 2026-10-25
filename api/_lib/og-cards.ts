@@ -12,12 +12,49 @@ const MUTED = '#9a9ea6'
 
 export type Style = Record<string, string | number>
 export type El = { type: string; props: Record<string, unknown> }
+// Layouts are written in 1200x630 design pixels. The PNG is what crawlers
+// download and WhatsApp drops previews much over 300 KB, so the card is drawn
+// on a smaller canvas: every length in a style is multiplied by the current
+// scale as the element is built, and the file shrinks with the area.
+let scale = 1
+const LENGTHS = new Set([
+  'width',
+  'height',
+  'left',
+  'top',
+  'fontSize',
+  'letterSpacing',
+  'borderRadius',
+  'marginTop',
+  'marginBottom',
+  'marginLeft',
+  'marginRight',
+  'padding',
+  'boxShadow',
+])
+const sized = (value: string | number) =>
+  typeof value === 'number'
+    ? Math.round(value * scale * 100) / 100
+    : value.replace(
+        /(-?\d+(?:\.\d+)?)px/g,
+        (_, n: string) => `${Math.round(Number(n) * scale * 100) / 100}px`,
+      )
 const h = (
   type: string,
   style: Style,
   children?: unknown,
   extra: Record<string, unknown> = {},
-): El => ({ type, props: { style, children, ...extra } })
+): El => {
+  const out: Style = {}
+  for (const [key, value] of Object.entries(style)) {
+    out[key] = LENGTHS.has(key) ? sized(value) : value
+  }
+  const attrs: Record<string, unknown> = { ...extra }
+  for (const key of ['width', 'height'] as const) {
+    if (typeof attrs[key] === 'number') attrs[key] = sized(attrs[key] as number)
+  }
+  return { type, props: { style: out, children, ...attrs } }
+}
 
 const brand = (markSrc: string | null, size = 44) =>
   h('div', { display: 'flex', alignItems: 'center' }, [
@@ -52,6 +89,16 @@ const glow = (x: string, y: string, size: number, alpha: number): El =>
     height: size,
     borderRadius: size,
     background: `radial-gradient(circle, rgba(79,227,196,${alpha}) 0%, rgba(79,227,196,0) 65%)`,
+  })
+
+const stripe = (): El =>
+  h('div', {
+    position: 'absolute',
+    left: 0,
+    top: 622,
+    width: 1200,
+    height: 8,
+    background: TEAL,
   })
 
 const frame = (children: unknown[]): El =>
@@ -89,7 +136,11 @@ const fitTitle = (title: string) => {
   return { size: 56, lines: 3 }
 }
 
-export const filmCard = (film: Film, poster: string, mark: string | null): El => {
+export const filmCard = (
+  film: Film,
+  poster: string,
+  mark: string | null,
+): El => {
   const facts = [
     film.rating
       ? h('div', { display: 'flex', alignItems: 'center' }, [
@@ -131,8 +182,7 @@ export const filmCard = (film: Film, poster: string, mark: string | null): El =>
     Math.floor((540 - used) / 39.2),
   )
   return frame([
-    glow('-100px', '-80px', 820, 0.3),
-    glow('600px', '260px', 760, 0.12),
+    stripe(),
     h(
       'div',
       {
@@ -143,7 +193,6 @@ export const filmCard = (film: Film, poster: string, mark: string | null): El =>
         width: 380,
         height: 540,
         borderRadius: 22,
-        boxShadow: '0 30px 80px rgba(0,0,0,0.75)',
         overflow: 'hidden',
       },
       [
@@ -248,7 +297,7 @@ export const defaultCard = (posters: string[], mark: string | null): El => {
         {
           display: 'flex',
           position: 'absolute',
-          left: 620,
+          left: 760,
           top: -150,
           transform: 'rotate(-9deg)',
           opacity: 0.95,
@@ -257,12 +306,11 @@ export const defaultCard = (posters: string[], mark: string | null): El => {
           col(posters.slice(0, 3), 40),
           col(posters.slice(3, 6), -60),
           col(posters.slice(6, 9), 90),
-          col(posters.slice(9, 12), -20),
         ],
       )
     : null
   return frame([
-    glow('-160px', '120px', 900, posters.length ? 0.18 : 0.3),
+    posters.length ? null : glow('-160px', '120px', 900, 0.3),
     wall,
     // Keeps the pitch readable over the wall.
     wall
@@ -319,7 +367,6 @@ export const defaultCard = (posters: string[], mark: string | null): El => {
   ])
 }
 
-
 export type PartyCardInput = {
   headline: string
   detail: string
@@ -329,18 +376,14 @@ export type PartyCardInput = {
 
 // Pass the Globe: the whole card says whose turn it is, or who won. With a
 // poster it sits left like a film card; without one the text takes the width.
-export const partyCard = (
-  input: PartyCardInput,
-  mark: string | null,
-): El => {
+export const partyCard = (input: PartyCardInput, mark: string | null): El => {
   const { size, lines } = fitTitle(input.headline)
   const textLeft = input.poster ? 530 : 80
   const textWidth = input.poster ? 600 : 1040
   const used = 56 + lines * size * 1.04 + 34 + 44 + 44 + 32
   const detailLines = Math.max(1, Math.min(2, Math.floor((540 - used) / 44)))
   return frame([
-    glow('-100px', '-80px', 820, 0.3),
-    glow('600px', '260px', 760, 0.12),
+    stripe(),
     input.poster
       ? h(
           'div',
@@ -352,7 +395,6 @@ export const partyCard = (
             width: 380,
             height: 540,
             borderRadius: 22,
-            boxShadow: '0 30px 80px rgba(0,0,0,0.75)',
             overflow: 'hidden',
           },
           [
@@ -423,35 +465,22 @@ export const partyCard = (
   ])
 }
 
-// Draws a 1200x630 design on a smaller canvas. The PNG is the payload crawlers
-// download, and WhatsApp drops previews much over 300 KB, so the card is
-// rendered at `scale` of its design size and the file shrinks with the area.
-export const scaled = (card: El, scale: number): El =>
-  scale === 1
-    ? card
-    : h(
-        'div',
-        {
-          display: 'flex',
-          position: 'relative',
-          width: Math.round(1200 * scale),
-          height: Math.round(630 * scale),
-          overflow: 'hidden',
-        },
-        [
-          h(
-            'div',
-            {
-              display: 'flex',
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              width: 1200,
-              height: 630,
-              transform: `scale(${scale})`,
-              transformOrigin: '0 0',
-            },
-            [card],
-          ),
-        ],
-      )
+// Photo-heavy cards stay flat: soft gradients and shadows are what PNG
+// compresses worst, and they cost ~100 KB on a film card.
+export const OG_SCALE = 0.6
+export const CARD_WIDTH = 1200
+export const CARD_HEIGHT = 630
+
+// Builds a card at `k` of its design size and reports the canvas to draw on.
+export const buildCard = (k: number, build: () => El) => {
+  scale = k
+  try {
+    return {
+      card: build(),
+      width: Math.round(CARD_WIDTH * k),
+      height: Math.round(CARD_HEIGHT * k),
+    }
+  } finally {
+    scale = 1
+  }
+}
