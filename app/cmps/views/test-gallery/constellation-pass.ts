@@ -492,9 +492,9 @@ export class ConstellationPass {
       this.failed = true
       return
     }
-    let centres = this.centres
-    const resized = !centres || centres.length !== instances * 4
-    if (resized) centres = this.centres = new Float32Array(instances * 4)
+    const resized = this.centres?.length !== instances * 4
+    if (resized) this.centres = new Float32Array(instances * 4)
+    const centres = this.centres as Float32Array
     let changed = resized
     for (let i = 0; i < instances; i += 1) {
       const from = i * 16 + 12
