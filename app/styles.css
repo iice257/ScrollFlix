@@ -2996,7 +2996,8 @@
     margin-top: 22px;
   }
 
-  .warp-watch-links :is(button, a) {
+  .warp-watch-links button,
+  .warp-watch-links a {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -3042,11 +3043,13 @@
   }
 
   .warp-watch-close:active,
-  .warp-watch-links :is(button:not(:disabled), a):active {
+  .warp-watch-links button:not(:disabled):active,
+  .warp-watch-links a:active {
     transform: translateY(1px) scale(0.98);
   }
 
-  .warp-watch-links :is(button, a) span:last-child {
+  .warp-watch-links button span:last-child,
+  .warp-watch-links a span:last-child {
     color: rgb(255 255 255 / 0.42);
     font-size: 10px;
     font-weight: 900;

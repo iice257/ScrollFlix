@@ -723,7 +723,8 @@
   color: rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"] .warp-watch-links :is(button {
+.warp-shell[data-theme="light"] .warp-watch-links button,
+.warp-shell[data-theme="light"] .warp-watch-links a {
   border: 1px solid rgb(33 26 16 / 0.12);
   background: rgb(33 26 16 / 0.06);
   color: rgb(33 26 16);
@@ -745,7 +746,8 @@
   color: rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"] .warp-watch-links :is(button {
+.warp-shell[data-theme="light"] .warp-watch-links button span:last-child,
+.warp-shell[data-theme="light"] .warp-watch-links a span:last-child {
   color: rgb(33 26 16 / 0.42);
 }
 
