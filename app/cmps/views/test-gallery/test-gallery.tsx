@@ -116,6 +116,7 @@ import {
   pickRandomRow,
   visibleGenreTags,
 } from './list-scroll'
+import { useLoaderState } from './loader-state'
 import { MoodFunnel, MoodLine, MoodNudge } from './moods/mood-entry'
 import { landMoodRun } from './moods/mood-run-plan'
 import type { MoodPick } from './moods/mood-runs'
@@ -276,10 +277,6 @@ const galleryWindowSize = () => {
     return DESKTOP_GLOBE_COUNT
   }
 }
-// Posters now come from the TMDB CDN, so the first-load screen can no longer
-// wait for all of them. Once chunk 0 is in and the placeholders are up, the
-// screen lets go after this long and the posters fill in behind it.
-const FIRST_LOAD_MAX_LOCK_MS = 3000
 const MIN_DECISION_FILTER_RESULTS = 24
 // The popups with no backdrop: a press outside them (and outside the button
 // that toggles them) closes them.
@@ -1807,20 +1804,17 @@ export const TestGalleryApp = () => {
     }
   }, [loadState, visibleMovies.length])
 
-  useEffect(() => {
-    if (initialGalleryReady || loadState !== 'ready') return
-    if (!visibleMovies.length) return
-    const timer = window.setTimeout(
-      () => setInitialGalleryReady(true),
-      FIRST_LOAD_MAX_LOCK_MS,
-    )
-    return () => window.clearTimeout(timer)
-  }, [initialGalleryReady, loadState, visibleMovies.length])
-
   const handleGalleryLoadProgress = useCallback((percent: number) => {
     setGalleryLoadPercent(Math.round(percent))
     if (percent >= 100) setInitialGalleryReady(true)
   }, [])
+
+  // No auto-dismiss: the screen stays until the gallery is ready or the
+  // visitor skips. After 6 s without progress it turns amber and says so.
+  const loaderState = useLoaderState(
+    mode === 'wall' && !initialGalleryReady,
+    galleryLoadPercent,
+  )
 
   useEffect(() => {
     if (mode !== 'wall') return
@@ -3384,6 +3378,7 @@ export const TestGalleryApp = () => {
           ref={preloaderRef}
           className='warp-gallery-preloader'
           data-state={initialGalleryReady ? 'ready' : 'loading'}
+          data-loader-state={loaderState}
           onAnimationEnd={(event) => {
             if (event.animationName === 'warp-preloader-denied') {
               event.currentTarget.classList.remove('is-denied')
@@ -3393,9 +3388,13 @@ export const TestGalleryApp = () => {
           aria-live='polite'
         >
           <div className='warp-preloader-stack'>
-            <span>
-              <strong>Building gallery</strong>
-              <i>
+            <span className='warp-preloader-card'>
+              <strong className='warp-preloader-title'>
+                {loaderState === 'slow'
+                  ? 'This is taking longer than it should'
+                  : 'Building gallery'}
+              </strong>
+              <i className='warp-preloader-bar'>
                 <b
                   style={
                     {
@@ -3404,15 +3403,27 @@ export const TestGalleryApp = () => {
                   }
                 />
               </i>
-              <small>{galleryLoadPercent}%</small>
+              <small className='warp-preloader-percent'>
+                {galleryLoadPercent}%
+              </small>
               <button
                 type='button'
                 className='warp-preloader-skip'
                 onClick={() => setInitialGalleryReady(true)}
               >
-                Skip first time load
+                {loaderState === 'slow' ? (
+                  <>
+                    Poor connection? <b>Skip</b>
+                  </>
+                ) : (
+                  'Skip first time load'
+                )}
               </button>
-              <em>Images will load in the background</em>
+              <em className='warp-preloader-hint'>
+                {loaderState === 'slow'
+                  ? '(images may be pixelated)'
+                  : 'Images will load in the background'}
+              </em>
             </span>
             <LoaderSoundToggle />
           </div>
