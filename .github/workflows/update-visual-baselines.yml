@@ -7,10 +7,6 @@ name: Update visual baselines
 
 on:
   workflow_dispatch:
-  # TEMPORARY: remove after the baselines are regenerated.
-  push:
-    branches: [test/visual-baselines]
-    paths: ['playwright-tests/visual/*.ts']
 
 permissions:
   contents: write
