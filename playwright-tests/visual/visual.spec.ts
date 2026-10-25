@@ -8,7 +8,6 @@ import {
   prepare,
   type Scheme,
   shotName,
-  waitForGlobeComplete,
 } from './support'
 
 /**
@@ -161,5 +160,3 @@ declare global {
   }
 }
 
-// Keeps the helper imported for specs that only wait for the globe.
-void waitForGlobeComplete
