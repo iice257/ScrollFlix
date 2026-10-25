@@ -31,9 +31,6 @@ const strategyFor = (kind) =>
       ? 'network-first'
       : 'passthrough'
 
-// Reachable by tests that evaluate this file with a stub `self`.
-if (typeof self !== 'undefined') self.__swRoutes = { classify, strategyFor }
-
 const trim = async (cache) => {
   const keys = await cache.keys()
   if (keys.length <= TMDB_MAX_ENTRIES) return
@@ -56,6 +53,7 @@ const cacheFirst = async (request, cacheName, limit) => {
 
 const networkFirst = async (request, cacheName) => {
   const cache = await caches.open(cacheName)
+  let failed = null
   try {
     const response = await Promise.race([
       fetch(request),
@@ -63,14 +61,24 @@ const networkFirst = async (request, cacheName) => {
         setTimeout(() => reject(new Error('timeout')), MANIFEST_TIMEOUT_MS),
       ),
     ])
-    if (response.ok) await cache.put(request, response.clone())
-    return response
+    if (response.ok) {
+      await cache.put(request, response.clone())
+      return response
+    }
+    // An error page must not shadow a good cached manifest.
+    failed = response
   } catch (error) {
     const hit = await cache.match(request)
     if (hit) return hit
     throw error
   }
+  const hit = await cache.match(request)
+  return hit ?? failed
 }
+
+// Reachable by tests that evaluate this file with a stub `self`.
+if (typeof self !== 'undefined')
+  self.__swRoutes = { classify, strategyFor, cacheFirst, networkFirst, trim }
 
 if (typeof self !== 'undefined' && self.addEventListener) {
   self.addEventListener('install', () => {

@@ -1,0 +1,33 @@
+{
+  "workflows": {
+    "default": {
+      "description": "Commit, push, open a PR against the default branch (staging), merge it when CI is green, wait for the staging deploy and its smoke check. Every type uses the PR flow.",
+      "typed": true,
+      "flow": "pr",
+      "steps": [
+        "run:node scripts/ci/ship-helpers.mjs guard",
+        "preflight",
+        "secret-guard",
+        "checks",
+        "commit",
+        "push",
+        "pr",
+        "merge",
+        "deploy",
+        "run:node scripts/ci/ship-helpers.mjs wait-smoke staging",
+        "summary"
+      ]
+    },
+    "release": {
+      "description": "Promote staging to production: run the Promote workflow (CI and staging smoke must be green), merge staging into main, wait for the production deploy and its smoke check.",
+      "aliases": ["promote"],
+      "flags": ["release"],
+      "type": "release",
+      "summary": "Promote staging to production",
+      "steps": [
+        "run:node scripts/ci/ship-helpers.mjs release",
+        "summary"
+      ]
+    }
+  }
+}

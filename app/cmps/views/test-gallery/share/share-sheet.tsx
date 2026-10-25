@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '../../../../utils/tw'
+import { useOverlayScrollbar } from '../../../ui/use-overlay-scrollbar'
 import { SheenLayers, TiltHint } from '../tilt-sheen/tilt-sheen'
 import { useTiltSheen } from '../tilt-sheen/use-tilt-sheen'
 import type { PathScene } from './path-art'
@@ -120,6 +121,7 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
   // Space and Enter inside the sheet act on its buttons, never on the page's
   // shortcuts (Space shuffles) behind it.
   const sheetRef = useRef<HTMLDialogElement | null>(null)
+  const sheetScrollRef = useOverlayScrollbar(sheetRef)
   useEffect(() => {
     const sheet = sheetRef.current
     if (!sheet) return
@@ -270,7 +272,12 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
         aria-label='Close share'
         onClick={onClose}
       />
-      <dialog ref={sheetRef} className='warp-share-card' aria-modal='true' open>
+      <dialog
+        ref={sheetScrollRef}
+        className='warp-share-card'
+        aria-modal='true'
+        open
+      >
         <header className='warp-share-heading'>
           <div>
             <h2>{heading}</h2>

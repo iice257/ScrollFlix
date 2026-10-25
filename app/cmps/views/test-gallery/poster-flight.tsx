@@ -11,7 +11,9 @@ export type ViewRect = {
 type PosterFlightProps = {
   // Where the poster is on the globe.
   from: ViewRect
-  image: string
+  // Best first. Stacked as backgrounds, so a sharper image that is not in yet
+  // leaves the one below showing instead of a gap.
+  images: string[]
   onDone: () => void
 }
 
@@ -66,7 +68,7 @@ export const finalPosterRect = (
 // A poster that lifts off the globe and settles into the card's poster slot.
 // While it flies, the card's own poster is hidden; it is always shown again,
 // however the flight ends.
-export const PosterFlight = ({ from, image, onDone }: PosterFlightProps) => {
+export const PosterFlight = ({ from, images, onDone }: PosterFlightProps) => {
   const ghostRef = useRef<HTMLDivElement | null>(null)
   const doneRef = useRef(onDone)
   doneRef.current = onDone
@@ -164,7 +166,9 @@ export const PosterFlight = ({ from, image, onDone }: PosterFlightProps) => {
         pointerEvents: 'none',
         transformOrigin: '0 0',
         borderRadius: 18,
-        backgroundImage: `url(${JSON.stringify(image)})`,
+        backgroundImage: images
+          .map((image) => `url(${JSON.stringify(image)})`)
+          .join(', '),
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         willChange: 'transform',

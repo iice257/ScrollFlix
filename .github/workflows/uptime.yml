@@ -1,0 +1,82 @@
+name: Uptime
+
+# Every 15 minutes, run the HTTP smoke checks against production. These cover
+# what can break without a deploy (the catalogue, the API routes, the poster
+# CDN, Vercel itself). The in-browser boot check runs on every deploy instead,
+# because the JavaScript only changes when a deploy happens.
+#
+# A failure opens (or updates) one `prod-down` issue; a pass closes it.
+# GitHub only runs scheduled workflows from the default branch, and may delay
+# them a few minutes under load.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Shares its group with the deploy check so the two never fight over the issue.
+concurrency:
+  group: prod-smoke-alerts
+  cancel-in-progress: false
+
+jobs:
+  uptime:
+    name: Production uptime
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Run smoke checks
+        id: smoke
+        continue-on-error: true
+        uses: ./.github/actions/smoke
+        with:
+          base-url: https://scrollflix.app
+          browser: 'false'
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: smoke-report-uptime
+          path: smoke-report/
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Update the prod-down issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome == 'success' && 'success' || 'failure' }}
+          SMOKE_TARGET: https://scrollflix.app
+          SMOKE_SOURCE: scheduled uptime check
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/ci/smoke-alert.mjs
+
+      - name: Say how to roll back
+        if: steps.smoke.outcome != 'success'
+        run: |
+          {
+            echo "### Production smoke check failed"
+            echo
+            echo "Roll back in the Vercel dashboard (project scrollflix, Deployments, previous production deployment, Promote to Production),"
+            echo "or run: \`npx vercel rollback\`"
+            echo
+            echo "A \`prod-down\` issue has been opened or updated."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail the run if the checks failed
+        if: steps.smoke.outcome == 'failure'
+        run: |
+          echo "::error::Production smoke checks failed"
+          exit 1
