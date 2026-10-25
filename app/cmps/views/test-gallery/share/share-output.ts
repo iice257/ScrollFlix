@@ -2,6 +2,7 @@
 // short video clip recorded on the device, the native share sheet, a download
 // and a link. Nothing is uploaded anywhere.
 
+import { filmLinkId } from '../landing'
 import { TIER_LABELS, type Tier } from '../shuffle-pro/shuffle-pro-logic'
 import { type PathScene, drawPath, preparePath } from './path-art'
 import { type RecapScene, drawRecap, prepareRecap } from './recap-art'
@@ -286,6 +287,47 @@ export const canShareFile = (blob: Blob, fileName: string) => {
   }
 }
 
+// What the native sheet is given. Many apps (WhatsApp, X, Instagram) keep the
+// file and drop `url` when files are present, so the link also goes in `text`,
+// where it survives and the recipient's app can unfurl it.
+export const nativeSharePayload = (
+  file: File,
+  title: string,
+  url?: string,
+): ShareData => ({
+  files: [file],
+  title,
+  ...(url ? { text: `${title}\n${url}`, url } : {}),
+})
+
+// The order the sheet should offer sharing in. The link is what unfurls into a
+// card with the poster and title in a chat, so it leads; the image and the
+// download are extras. (share-sheet.tsx still shows Share first and Copy link
+// as a small text button; the B report says what to change.)
+export const SHARE_ACTIONS = ['copy-link', 'share-image', 'save'] as const
+export type ShareAction = (typeof SHARE_ACTIONS)[number]
+export const primaryShareAction: ShareAction = SHARE_ACTIONS[0]
+
+// Asks for the film's link-preview card so it is rendered and cached by the
+// time someone pastes the link. Fire and forget, once per film per page load;
+// a failure costs nothing.
+const warmed = new Set<string>()
+export const warmFilmCard = (
+  movieId: string,
+  origin = window.location.origin,
+) => {
+  const id = filmLinkId(movieId)
+  if (!/^\d{1,9}$/.test(id) || warmed.has(id)) return
+  warmed.add(id)
+  try {
+    void fetch(`${origin}/api/og?kind=film&id=${id}`, {
+      mode: 'no-cors',
+    }).catch(() => {})
+  } catch {
+    // Not worth reporting.
+  }
+}
+
 // Shares the file with the native sheet when files are supported, otherwise
 // downloads it.
 export const deliverShare = async (
@@ -297,7 +339,7 @@ export const deliverShare = async (
   const file = new File([blob], fileName, { type: blob.type })
   if (navigator.canShare?.({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title, ...(url ? { url } : {}) })
+      await navigator.share(nativeSharePayload(file, title, url))
       return 'shared'
     } catch (error) {
       // The user dismissing the sheet is not a failure.
