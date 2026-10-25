@@ -2,7 +2,9 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SLOW_LOAD_MS, useLoaderState } from './loader-state'
 
-beforeEach(() => vi.useFakeTimers())
+beforeEach(() =>
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }),
+)
 afterEach(() => vi.useRealTimers())
 
 describe('useLoaderState', () => {
