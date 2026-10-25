@@ -32,6 +32,7 @@
 		"catalog:build": "node scripts/catalog/build.mjs",
 		"catalog:pull": "node scripts/catalog/pull.mjs",
 		"seo:sitemap": "node scripts/generate-sitemap.js",
+		"seo:indexnow": "node scripts/indexnow.mjs",
 		"seo:validate": "node -e \"const fs=require('fs');console.log('robots.txt:');console.log(fs.readFileSync('public/robots.txt','utf8'));console.log('sitemap.xml:',fs.statSync('public/sitemap.xml').size,'bytes')\""
 	},
 	"dependencies": {
