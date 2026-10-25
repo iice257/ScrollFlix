@@ -97,6 +97,7 @@ import {
   withWeightedRatings,
 } from './catalog-loader'
 import { constellationSetting } from './constellation'
+import { countGenresAndFilters } from './filter-count'
 import { formatGenreCount } from './genre-count'
 import { sessionPathSetting } from './globe-lines'
 import type { LineKind } from './globe-lines-nudge'
@@ -214,6 +215,7 @@ import {
 } from './trailer/trailer-logic'
 import { useDynamicSky } from './use-dynamic-sky'
 import { useTitleTranslation } from './use-title-translation'
+import { youtubeWatchHref } from './watch-links'
 import { WeatherLayer, type WeatherStorm } from './weather-layer'
 
 // TestMovie, the catalogue loading and the legacy id migration live in
@@ -1646,6 +1648,22 @@ export const TestGalleryApp = () => {
   const genreSummaries = useMemo(() => getGenreSummaries(movies), [movies])
 
   const decadeOptions = useMemo(() => getDecadeSummaries(movies), [movies])
+
+  // Same lists the Filters page renders, so the About figure follows them.
+  const genreAndFilterCount = useMemo(
+    () =>
+      countGenresAndFilters({
+        genres: genreSummaries.map((summary) => summary.genre),
+        groups: [
+          CONTENT_FILTERS,
+          MOVIE_RUNTIME_FILTERS,
+          decadeOptions,
+          RATING_PRESETS,
+          MOOD_FILTERS,
+        ],
+      }),
+    [genreSummaries, decadeOptions],
+  )
 
   const baseMovies = useMemo(
     () => filterMoviesByYearAndRating(movies, selectedYear, ratingMin),
@@ -3457,7 +3475,7 @@ export const TestGalleryApp = () => {
           themePref={themePref}
           sky={sky}
           onThemeChange={changeTheme}
-          genreCount={genreSummaries.length}
+          genreCount={genreAndFilterCount}
           globeCount={visibleMovies.length}
           maximized={aboutMaximized}
           motionPhase={aboutPresence.motionPhase}
@@ -5367,11 +5385,11 @@ const AboutDrawer = ({
               <dd>{formatFilmCount(movieCount)}</dd>
             </div>
             <div>
-              <dt>Posters on the globe</dt>
+              <dt>Gallery snapshot</dt>
               <dd>{globeCount.toLocaleString()}</dd>
             </div>
             <div>
-              <dt>Genres</dt>
+              <dt>Genres and filters</dt>
               <dd>{genreCount}</dd>
             </div>
           </dl>
@@ -5420,8 +5438,10 @@ const AboutDrawer = ({
         <section className='warp-about-section'>
           <h3>Watch links</h3>
           <p>
-            Links are a work in progress and are disabled for now. You can find
-            any movie seen here with a quick Google search.
+            Trailers now play right here in the app, and Watch opens the trailer
+            on YouTube. Links to the streaming services are still a work in
+            progress and disabled for now. You can find any movie seen here with
+            a quick Google search.
           </p>
         </section>
 
@@ -5429,7 +5449,13 @@ const AboutDrawer = ({
           <h3>Credits</h3>
           <p>
             Carefully put together by my humble self -{' '}
-            <a href='https://kingsleyaremu.com/'>ICE</a>.
+            <a
+              className='warp-about-credit-link'
+              href='https://kingsleyaremu.com/'
+            >
+              ICE
+            </a>
+            .
           </p>
           <p>
             Follow along on{' '}
@@ -5725,50 +5751,76 @@ const WatchLinksDialog = ({
   movie,
   onClose,
   onOpenAbout,
-}: WatchLinksDialogProps) => (
-  <section
-    className='warp-watch-layer'
-    data-motion={motionPhase}
-    aria-label={`${movie.title} watch links`}
-  >
-    <button
-      type='button'
-      className='warp-watch-backdrop'
-      aria-label='Close watch links'
-      onClick={onClose}
-    />
-    <dialog
-      className='warp-watch-card'
-      aria-label={`${movie.title} watch options`}
-      aria-modal='true'
-      open
+}: WatchLinksDialogProps) => {
+  // The YouTube entry opens the film's first trailer that still plays.
+  const movieText = useMovieText(movie)
+  const youtubeHref = youtubeWatchHref(
+    movieText?.trailerKeys?.length ? movieText.trailerKeys : movie.trailerKeys,
+    readDeadTrailers(),
+    movie.title,
+    /^\d{4}$/.test(movie.year) ? movie.year : undefined,
+  )
+  return (
+    <section
+      className='warp-watch-layer'
+      data-motion={motionPhase}
+      aria-label={`${movie.title} watch links`}
     >
       <button
         type='button'
-        className='warp-watch-close'
+        className='warp-watch-backdrop'
         aria-label='Close watch links'
         onClick={onClose}
+      />
+      <dialog
+        className='warp-watch-card'
+        aria-label={`${movie.title} watch options`}
+        aria-modal='true'
+        open
       >
-        Close
-      </button>
-      <p className='warp-watch-kicker'>Watch options</p>
-      <h2>{movie.title}</h2>
-      <p className='warp-watch-meta'>{formatMovieMeta(movie)}</p>
-      <div className='warp-watch-links'>
-        {WATCH_LINKS.map((link) => (
-          <button type='button' key={link.label} disabled>
-            <span>{link.label}</span>
-            <span>{link.meta}</span>
-          </button>
-        ))}
-      </div>
-      <button type='button' className='warp-watch-about' onClick={onOpenAbout}>
-        <Info aria-hidden='true' />
-        About ScrollFlix and where these links come from
-      </button>
-    </dialog>
-  </section>
-)
+        <button
+          type='button'
+          className='warp-watch-close'
+          aria-label='Close watch links'
+          onClick={onClose}
+        >
+          Close
+        </button>
+        <p className='warp-watch-kicker'>Watch options</p>
+        <h2>{movie.title}</h2>
+        <p className='warp-watch-meta'>{formatMovieMeta(movie)}</p>
+        <div className='warp-watch-links'>
+          {WATCH_LINKS.map((link) =>
+            link.label === 'YouTube' ? (
+              <a
+                key={link.label}
+                href={youtubeHref}
+                target='_blank'
+                rel='noopener noreferrer'
+              >
+                <span>{link.label}</span>
+                <span>{link.meta}</span>
+              </a>
+            ) : (
+              <button type='button' key={link.label} disabled>
+                <span>{link.label}</span>
+                <span>{link.meta}</span>
+              </button>
+            ),
+          )}
+        </div>
+        <button
+          type='button'
+          className='warp-watch-about'
+          onClick={onOpenAbout}
+        >
+          <Info aria-hidden='true' />
+          About ScrollFlix and where these links come from
+        </button>
+      </dialog>
+    </section>
+  )
+}
 
 type MovieCardFilter =
   | { kind: 'year'; year: number }
@@ -5985,7 +6037,13 @@ const MovieDetailsCard = ({
   const trailerKeys = movieText?.trailerKeys?.length
     ? movieText.trailerKeys
     : (movie.trailerKeys ?? [])
-  const trailerButton = trailerButtonFor(trailerKeys, deadTrailers)
+  // While the film's text is on its way the keys are unknown, so a disabled
+  // placeholder holds the spot and nothing jumps when they arrive.
+  const trailerButton = trailerButtonFor(
+    trailerKeys,
+    deadTrailers,
+    movieText === null,
+  )
   // On phones the trailer entry sits on the poster as a frosted pill, so the
   // action row keeps its three buttons. Wide screens use the row button.
   const trailerPill =
@@ -5995,6 +6053,16 @@ const MovieDetailsCard = ({
         className='warp-details-trailer-pill'
         aria-haspopup='dialog'
         onClick={() => setTrailerOpen(true)}
+      >
+        <Play aria-hidden='true' size={14} strokeWidth={2.6} />
+        Trailer
+      </button>
+    ) : trailerButton.kind === 'loading' ? (
+      <button
+        type='button'
+        className='warp-details-trailer-pill is-loading'
+        disabled
+        aria-busy='true'
       >
         <Play aria-hidden='true' size={14} strokeWidth={2.6} />
         Trailer
@@ -6236,6 +6304,20 @@ const MovieDetailsCard = ({
                     className='warp-details-trailer'
                     aria-haspopup='dialog'
                     onClick={() => setTrailerOpen(true)}
+                  >
+                    <Clapperboard
+                      aria-hidden='true'
+                      size={15}
+                      strokeWidth={2.4}
+                    />
+                    Play trailer
+                  </button>
+                ) : trailerButton.kind === 'loading' ? (
+                  <button
+                    type='button'
+                    className='warp-details-trailer is-loading'
+                    disabled
+                    aria-busy='true'
                   >
                     <Clapperboard
                       aria-hidden='true'
