@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test'
+import { SITE_TITLE_PATTERN } from './site-meta'
 
 test('renders the canonical gallery route', async ({ page }) => {
   await page.goto('/')
 
-  // The tab title animates trailing dots ("ScrollFlix", "ScrollFlix.", ...).
-  await expect(page).toHaveTitle(/^ScrollFlix\.{0,3}$/)
+  // The tab title animates trailing dots; the pattern allows for them.
+  await expect(page).toHaveTitle(SITE_TITLE_PATTERN)
   await expect(
     page.getByRole('region', { name: 'Warp Wall movie gallery' }),
   ).toBeVisible()
