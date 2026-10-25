@@ -2201,7 +2201,7 @@ export const TestGalleryApp = () => {
   const [posterFlight, setPosterFlight] = useState<{
     movieId: string
     from: ViewRect
-    image: string
+    images: string[]
   } | null>(null)
   const startPosterFlight = useCallback(
     (movie: TestMovie) => {
@@ -2213,7 +2213,15 @@ export const TestGalleryApp = () => {
       }
       const from = menuControlRef.current?.getPosterRect(movie.id)
       if (!from) return
-      setPosterFlight({ movieId: movie.id, from, image: movie.posterUrl })
+      // Start from the sharp tier the globe has already fetched for the pick
+      // (the same URL, so it is cached), never down at the w154 thumbnail.
+      const images = movie.posterPath
+        ? [
+            posterUrl(movie.posterPath, readDpr() >= 1.5 ? 'w500' : 'w342'),
+            movie.posterUrl,
+          ]
+        : [movie.posterUrl]
+      setPosterFlight({ movieId: movie.id, from, images })
     },
     [reducedMotionOverride, shuffleProController],
   )
@@ -3350,7 +3358,7 @@ export const TestGalleryApp = () => {
         <PosterFlight
           key={posterFlight.movieId}
           from={posterFlight.from}
-          image={posterFlight.image}
+          images={posterFlight.images}
           onDone={() => setPosterFlight(null)}
         />
       ) : null}
