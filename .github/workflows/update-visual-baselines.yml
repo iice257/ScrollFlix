@@ -50,5 +50,6 @@ jobs:
             echo "Baselines unchanged."
           else
             git commit -m "test: update visual baselines"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
             git push
           fi
