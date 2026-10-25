@@ -5,8 +5,9 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './playwright-tests',
-  /* Pixel baselines run from playwright.visual.config.ts only. */
-  testIgnore: ['**/visual/**', '**/fixtures/**'],
+  /* Pixel baselines run from playwright.visual.config.ts only; the smoke
+     checks run against deployed URLs (playwright.smoke.config.ts). */
+  testIgnore: ['**/visual/**', '**/fixtures/**', '**/smoke.spec.ts'],
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */

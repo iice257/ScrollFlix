@@ -138,6 +138,31 @@
     font-optical-sizing: auto;
   }
 
+  /* Any scroller that is not on the overlay scrollbar still gets a thin,
+     quiet bar in the theme's colour instead of the Windows default, and never
+     reserves a gutter. Firefox and current Chromium read the first two lines;
+     Safari the ::-webkit-scrollbar rules. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--warp-scroll-thumb, rgb(255 255 255 / 0.28)) transparent;
+    scrollbar-gutter: auto;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: var(--warp-scroll-thumb, rgb(255 255 255 / 0.28));
+  }
+
   html {
     @apply touch-pan-x touch-pan-y min-h-full; /* prevent pinch-zoom at page bottom */
   }
@@ -257,6 +282,9 @@
     --warp-tab-tracking: -0.025em;
     --warp-danger: #e5484d;
     --warp-danger-hover: #d13438;
+    /* The scrollbar thumb: a quiet tint at rest, firmer on hover and drag. */
+    --warp-scroll-thumb: rgb(255 255 255 / 0.32);
+    --warp-scroll-thumb-active: rgb(255 255 255 / 0.55);
     background: #000;
     color: #f7f7f1;
     font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
@@ -6944,6 +6972,55 @@
   @media (prefers-reduced-motion: reduce) {
     .warp-details-heart.is-saved svg {
       animation: none;
+    }
+  }
+
+  /* The overlay scrollbar (app/cmps/ui/overlay-scrollbar.ts). The native bar is
+     hidden on the container so it can never take layout width, and the thumb
+     is drawn over its right edge from the shell, outside the container. Only
+     the strip takes pointer events, and only while it is showing. */
+  [data-osb] {
+    scrollbar-width: none;
+  }
+
+  [data-osb]::-webkit-scrollbar {
+    display: none;
+  }
+
+  .warp-osb {
+    position: fixed;
+    width: 14px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+  }
+
+  .warp-osb[data-visible="true"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .warp-osb-thumb {
+    position: absolute;
+    top: 0;
+    right: 4px;
+    width: 6px;
+    border-radius: 999px;
+    background: var(--warp-scroll-thumb, rgb(255 255 255 / 0.32));
+    touch-action: none;
+    transition: width 140ms ease, background-color 140ms ease;
+  }
+
+  .warp-osb:hover .warp-osb-thumb,
+  .warp-osb[data-active="true"] .warp-osb-thumb {
+    width: 10px;
+    background: var(--warp-scroll-thumb-active, rgb(255 255 255 / 0.55));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .warp-osb,
+    .warp-osb-thumb {
+      transition: none;
     }
   }
 

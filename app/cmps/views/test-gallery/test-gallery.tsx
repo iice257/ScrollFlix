@@ -83,6 +83,10 @@ import {
   TooltipTrigger,
 } from '../../ui/tooltip'
 import {
+  overlayScrollbarRef,
+  useOverlayScrollbar,
+} from '../../ui/use-overlay-scrollbar'
+import {
   type MovieText,
   type TestMovie,
   detectLightweightDevice,
@@ -2227,7 +2231,7 @@ export const TestGalleryApp = () => {
   const [posterFlight, setPosterFlight] = useState<{
     movieId: string
     from: ViewRect
-    image: string
+    images: string[]
   } | null>(null)
   const startPosterFlight = useCallback(
     (movie: TestMovie) => {
@@ -2239,7 +2243,15 @@ export const TestGalleryApp = () => {
       }
       const from = menuControlRef.current?.getPosterRect(movie.id)
       if (!from) return
-      setPosterFlight({ movieId: movie.id, from, image: movie.posterUrl })
+      // Start from the sharp tier the globe has already fetched for the pick
+      // (the same URL, so it is cached), never down at the w154 thumbnail.
+      const images = movie.posterPath
+        ? [
+            posterUrl(movie.posterPath, readDpr() >= 1.5 ? 'w500' : 'w342'),
+            movie.posterUrl,
+          ]
+        : [movie.posterUrl]
+      setPosterFlight({ movieId: movie.id, from, images })
     },
     [reducedMotionOverride, shuffleProController],
   )
@@ -3352,7 +3364,7 @@ export const TestGalleryApp = () => {
         <PosterFlight
           key={posterFlight.movieId}
           from={posterFlight.from}
-          image={posterFlight.image}
+          images={posterFlight.images}
           onDone={() => setPosterFlight(null)}
         />
       ) : null}
@@ -4033,6 +4045,7 @@ const WarpList = ({
   const pulseTimerRef = useRef<number | null>(null)
 
   const listRef = useRef<HTMLElement | null>(null)
+  const listScrollRef = useOverlayScrollbar(listRef)
   const [pickScroll, setPickScroll] = useState<{ id: string } | null>(null)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const [highlight, setHighlight] = useState(-1)
@@ -4246,7 +4259,11 @@ const WarpList = ({
   }, [randomRequest])
 
   return (
-    <section ref={listRef} className='warp-list' aria-label='Movie list view'>
+    <section
+      ref={listScrollRef}
+      className='warp-list'
+      aria-label='Movie list view'
+    >
       <header className='warp-list-heading'>
         <h1 className='warp-list-title'>Movie Index</h1>
         <form
@@ -4622,6 +4639,7 @@ const SortPanel = ({
 
   return (
     <section
+      ref={overlayScrollbarRef}
       className='warp-sort-panel'
       data-motion={motionPhase}
       aria-label='Sort the index'
@@ -4930,7 +4948,11 @@ const FilterPanel = ({
   strictResultCount,
   ...sections
 }: FilterPanelProps) => (
-  <aside className='warp-filter-panel' data-motion={motionPhase}>
+  <aside
+    ref={overlayScrollbarRef}
+    className='warp-filter-panel'
+    data-motion={motionPhase}
+  >
     <div className='warp-filter-panel-heading'>
       <p>Add filters</p>
       <span>
@@ -4961,7 +4983,11 @@ const FiltersView = ({
   selectedFilterCount,
   ...sections
 }: FiltersViewProps) => (
-  <section className='warp-filters-view' aria-label='Filters'>
+  <section
+    ref={overlayScrollbarRef}
+    className='warp-filters-view'
+    aria-label='Filters'
+  >
     <header>
       <div>
         <h1>Filters</h1>
@@ -5324,6 +5350,7 @@ const AboutDrawer = ({
   const theme = resolveTheme(themePref, sky)
   return maximized ? (
     <section
+      ref={overlayScrollbarRef}
       className='warp-about-page'
       data-motion={motionPhase}
       aria-label='About ScrollFlix'
@@ -5479,6 +5506,7 @@ const AboutDrawer = ({
     </section>
   ) : (
     <aside
+      ref={overlayScrollbarRef}
       className='warp-about-drawer'
       data-motion={motionPhase}
       aria-label='About ScrollFlix'
@@ -5548,6 +5576,7 @@ const SavedDrawer = ({
   onRemove,
 }: SavedDrawerProps) => (
   <aside
+    ref={overlayScrollbarRef}
     className='warp-about-drawer warp-saved-drawer'
     data-motion={motionPhase}
     aria-label='Saved movies'
@@ -5579,7 +5608,7 @@ const SavedDrawer = ({
       </p>
     ) : null}
     {movies.length ? (
-      <ul className='warp-saved-list'>
+      <ul className='warp-saved-list' ref={overlayScrollbarRef}>
         {movies.map((movie) => (
           <li key={movie.id}>
             <button
@@ -5656,6 +5685,7 @@ const PathDrawer = ({
     sessionPathSetting.get,
   )
   const listRef = useRef<HTMLOListElement | null>(null)
+  const pathScrollRef = useOverlayScrollbar(listRef)
   // Open on the newest step.
   useEffect(() => {
     const list = listRef.current
@@ -5664,6 +5694,7 @@ const PathDrawer = ({
 
   return (
     <aside
+      ref={overlayScrollbarRef}
       className='warp-about-drawer warp-saved-drawer warp-path-drawer'
       data-motion={motionPhase}
       aria-label='Session path'
@@ -5694,7 +5725,7 @@ const PathDrawer = ({
         <span>Show on globe</span>
         <i className='warp-path-switch' />
       </button>
-      <ol className='warp-path-list' ref={listRef}>
+      <ol className='warp-path-list' ref={pathScrollRef}>
         {steps.map(({ point, movie, index }, place) => (
           <li
             key={`${point.id}-${index}`}
@@ -6008,6 +6039,10 @@ const MovieDetailsCard = ({
   // On a phone the short card scrolls like any page: reaching its end (or
   // pushing on past it) opens the long description, no tap on More needed.
   const copyScrollRef = useRef<HTMLDivElement | null>(null)
+  const copyScrollNodeRef = useCallback((node: HTMLDivElement | null) => {
+    copyScrollRef.current = node
+    return overlayScrollbarRef(node)
+  }, [])
   useExpandAtScrollEnd(copyScrollRef, !isWide && !isExpanded, () =>
     setIsExpanded(true),
   )
@@ -6260,7 +6295,7 @@ const MovieDetailsCard = ({
             poster
           )}
           <div className='warp-details-copy'>
-            <div className='warp-details-copy-scroll' ref={copyScrollRef}>
+            <div className='warp-details-copy-scroll' ref={copyScrollNodeRef}>
               {premiumTier ? (
                 <PremiumPlate tier={premiumTier} mood={premiumMood} />
               ) : null}

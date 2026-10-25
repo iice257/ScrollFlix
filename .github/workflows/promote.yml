@@ -1,0 +1,173 @@
+name: Promote staging to production
+
+# Run from the Actions tab, or `gh workflow run promote.yml`, or `ship release`.
+#
+# 1. Checks that the newest commit on `staging` has green CI and that the smoke
+#    checks passed against https://staging.scrollflix.app for that same commit.
+# 2. Opens (or reuses) a pull request staging -> main.
+# 3. Merges it with a MERGE COMMIT (never squash or rebase: that would leave
+#    staging and main with different histories).
+# 4. Waits for the production deployment and its smoke check, and reports.
+#
+# Needs the repository setting "Allow GitHub Actions to create and approve pull
+# requests" (Settings > Actions > General). Without it the workflow stops with
+# a link to open the pull request by hand. See docs/deployment.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      wait:
+        description: Wait for the production deploy and its smoke check
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+  statuses: read
+
+concurrency:
+  group: promote
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  REPO: ${{ github.repository }}
+  REQUIRED_CHECKS: 'Lint, unit tests, build|End-to-end tests'
+
+jobs:
+  promote:
+    name: Promote
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Find what would be promoted
+        id: plan
+        run: |
+          staging=$(gh api "repos/$REPO/git/ref/heads/staging" --jq .object.sha)
+          main=$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)
+          ahead=$(gh api "repos/$REPO/compare/main...staging" --jq .ahead_by)
+          echo "staging=$staging" >> "$GITHUB_OUTPUT"
+          echo "main=$main" >> "$GITHUB_OUTPUT"
+          echo "staging is $ahead commit(s) ahead of main"
+          if [ "$ahead" = "0" ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing to promote: main already contains staging ($staging)." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check CI is green on the staging commit
+        if: steps.plan.outputs.has_changes == 'true'
+        env:
+          SHA: ${{ steps.plan.outputs.staging }}
+        run: |
+          runs=$(gh api "repos/$REPO/commits/$SHA/check-runs" --paginate \
+            --jq '.check_runs[] | [.name, (.conclusion // .status)] | @tsv')
+          echo "$runs"
+          ok=true
+          IFS='|' read -ra required <<< "$REQUIRED_CHECKS"
+          for name in "${required[@]}"; do
+            result=$(echo "$runs" | awk -F'\t' -v n="$name" '$1==n {print $2}' | tail -n1)
+            if [ "$result" != "success" ]; then
+              echo "::error::Required check \"$name\" on ${SHA:0:7} is: ${result:-missing}"
+              ok=false
+            fi
+          done
+          $ok
+
+      - name: Check the staging smoke test passed for the same commit
+        if: steps.plan.outputs.has_changes == 'true'
+        env:
+          SHA: ${{ steps.plan.outputs.staging }}
+        run: |
+          state=$(gh api "repos/$REPO/commits/$SHA/statuses" \
+            --jq '[.[] | select(.context == "smoke/staging")][0].state // "missing"')
+          echo "smoke/staging on ${SHA:0:7}: $state"
+          if [ "$state" != "success" ]; then
+            echo "::error::The staging smoke check for ${SHA:0:7} is \"$state\". Wait for the staging deploy to finish (or fix it) and run this again."
+            exit 1
+          fi
+
+      - name: Open or reuse the pull request
+        if: steps.plan.outputs.has_changes == 'true'
+        id: pr
+        run: |
+          number=$(gh pr list --repo "$REPO" --base main --head staging --state open --json number --jq '.[0].number // empty')
+          if [ -z "$number" ]; then
+            commits=$(gh api "repos/$REPO/compare/main...staging" --jq '.commits[] | "- " + (.commit.message | split("\n")[0])')
+            body=$(printf 'Promotes staging to production.\n\nCI and the staging smoke check passed for %s.\n\n%s\n' "${{ steps.plan.outputs.staging }}" "$commits")
+            if ! url=$(gh pr create --repo "$REPO" --base main --head staging \
+                  --title "Promote staging to production" --body "$body" 2>pr-error.txt); then
+              cat pr-error.txt
+              {
+                echo "### Could not open the pull request"
+                echo
+                echo "GitHub Actions is not allowed to create pull requests. Enable **Settings > Actions > General > Allow GitHub Actions to create and approve pull requests**, or open it yourself:"
+                echo "https://github.com/$REPO/compare/main...staging?expand=1"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+            number="${url##*/}"
+            echo "Opened $url"
+          else
+            echo "Reusing pull request #$number"
+          fi
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - name: Merge it (merge commit)
+        if: steps.plan.outputs.has_changes == 'true'
+        run: |
+          number="${{ steps.pr.outputs.number }}"
+          if gh pr merge "$number" --repo "$REPO" --merge; then
+            echo "Merged #$number"
+          elif gh pr merge "$number" --repo "$REPO" --merge --auto; then
+            echo "Auto-merge enabled on #$number; it merges when the required checks are green."
+          else
+            {
+              echo "### Pull request left open"
+              echo
+              echo "The checks passed but GitHub would not merge #$number with this token (branch protection may need a review or a personal access token). Merge it by hand with **Create a merge commit**: https://github.com/$REPO/pull/$number"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Could not merge #$number automatically"
+            exit 1
+          fi
+
+      - name: Wait for production
+        if: steps.plan.outputs.has_changes == 'true' && inputs.wait
+        env:
+          NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          # The merge commit exists once the PR is merged (auto-merge may take a while).
+          deadline=$((SECONDS + 1500))
+          sha=""
+          while [ $SECONDS -lt $deadline ]; do
+            sha=$(gh pr view "$NUMBER" --repo "$REPO" --json mergeCommit --jq '.mergeCommit.oid // empty')
+            [ -n "$sha" ] && break
+            sleep 15
+          done
+          if [ -z "$sha" ]; then echo "::error::PR #$NUMBER was not merged in time"; exit 1; fi
+          echo "Merge commit: $sha. Waiting for the production smoke check (smoke/production)..."
+          while [ $SECONDS -lt $deadline ]; do
+            state=$(gh api "repos/$REPO/commits/$sha/statuses" \
+              --jq '[.[] | select(.context == "smoke/production")][0].state // "pending"')
+            echo "smoke/production: $state"
+            if [ "$state" = "success" ]; then
+              echo "Production is live and healthy: https://scrollflix.app (commit ${sha:0:7})" | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            if [ "$state" = "failure" ] || [ "$state" = "error" ]; then
+              {
+                echo "### Production smoke check FAILED for ${sha:0:7}"
+                echo
+                echo "Roll back: Vercel dashboard > scrollflix > Deployments > previous production deployment > Promote to Production, or run \`npx vercel rollback\`."
+                echo "A \`prod-down\` issue was opened. See docs/deployment.md."
+              } | tee -a "$GITHUB_STEP_SUMMARY"
+              echo "::error::Production smoke check failed after promotion"
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "::error::Timed out waiting for the production smoke check"
+          exit 1
