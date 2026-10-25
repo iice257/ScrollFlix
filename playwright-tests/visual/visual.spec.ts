@@ -124,11 +124,9 @@ for (const device of DEVICE_NAMES) {
         release()
       })
 
-      // TODO(workstream D): the amber "slow" loader is being built by another
-      // builder. When it lands, remove .fixme and generate its baselines. The
-      // contract this test relies on: after loading has run long, the loader
-      // element (.warp-gallery-preloader) carries data-loader-state="slow".
-      test.fixme('loader, amber slow state', async ({ page }) => {
+      // Once loading has run long (6 s with no progress) the loader carries
+      // data-loader-state="slow" and turns amber.
+      test('loader, amber slow state', async ({ page }) => {
         const { release } = await prepare(page, { scheme, holdCatalogue: true })
         await page.goto('/', { waitUntil: 'domcontentloaded' })
         const loader = page.locator('.warp-gallery-preloader')
