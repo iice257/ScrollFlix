@@ -3,14 +3,9 @@ import { join } from 'node:path'
 import { ImageResponse } from '@vercel/og'
 import { describe, expect, it } from 'vitest'
 import {
-  encodeParty,
-  summarizeParty,
-} from '../../app/cmps/views/test-gallery/party/party-link'
-import type { PartyState } from '../../app/cmps/views/test-gallery/party/party-logic'
-import {
   OG_IMAGE_HEIGHT,
   OG_IMAGE_WIDTH,
-  previewForParty,
+  defaultPreview,
   renderMetaHtml,
 } from './meta'
 import {
@@ -22,7 +17,6 @@ import {
 } from './og-cards'
 import { interFonts } from './og-fonts'
 import { MARK_DATA_URI } from './og-mark'
-import { summarizePartyCode } from './party-meta'
 
 // WhatsApp drops preview images much over ~300 KB.
 const LIMIT = 300_000
@@ -56,17 +50,9 @@ describe('share card images', () => {
     )
     expect(built.width).toBe(OG_IMAGE_WIDTH)
     expect(built.height).toBe(OG_IMAGE_HEIGHT)
-    expect(
-      renderMetaHtml(
-        previewForParty(new URL('https://x.test/?party=eyJ2IjoxfQ')) ?? {
-          title: 't',
-          description: 'd',
-          image: 'i',
-          imageAlt: 'a',
-          url: 'u',
-        },
-      ),
-    ).toContain(`og:image:width" content="${OG_IMAGE_WIDTH}"`)
+    expect(renderMetaHtml(defaultPreview('https://x.test'))).toContain(
+      `og:image:width" content="${OG_IMAGE_WIDTH}"`,
+    )
   })
 
   it('keeps a film card under the WhatsApp limit', async () => {
@@ -104,72 +90,4 @@ describe('share card images', () => {
     )
     expect(bytes.length).toBeLessThan(LIMIT)
   }, 30000)
-})
-
-const state = (over: Partial<PartyState> = {}): PartyState => {
-  const pick = (id: number, score: number, guess: number) => ({
-    movieId: `c${id}`,
-    title: 'A film',
-    year: null,
-    rating: null,
-    mode: 'year' as const,
-    guess,
-    score,
-  })
-  return {
-    phase: 'turn',
-    mode: 'year',
-    players: [
-      { name: 'Maya', picks: [pick(603, 40, 1999)] },
-      { name: 'Sam', picks: [pick(27205, 70, 2010)] },
-    ],
-    rounds: 1,
-    settle: false,
-    online: true,
-    turn: 2,
-    current: null,
-    last: null,
-    vetoed: [],
-    tonight: null,
-    notice: null,
-    ...over,
-  } as PartyState
-}
-
-describe('party previews', () => {
-  it('says the same as the app for a finished game', () => {
-    const s = state()
-    const mine = summarizePartyCode(encodeParty(s))
-    const app = summarizeParty(s)
-    expect(mine?.headline).toBe(app.headline)
-    expect(mine?.detail).toBe(app.detail)
-    expect(mine?.lastTmdbId).toBe(app.lastTmdbId)
-  })
-
-  it('says whose turn it is mid-game', () => {
-    const s = state({
-      rounds: 2,
-      turn: 2,
-    })
-    const mine = summarizePartyCode(encodeParty(s))
-    const app = summarizeParty(s)
-    expect(mine?.headline).toBe(app.headline)
-    expect(mine?.detail).toBe(app.detail)
-  })
-
-  it('rejects junk codes', () => {
-    expect(summarizePartyCode('not a code')).toBeNull()
-    expect(summarizePartyCode('AAAAAAAAAAAA')).toBeNull()
-    expect(
-      previewForParty(new URL('https://x.test/?party=%3Cscript%3E')),
-    ).toBeNull()
-  })
-
-  it('builds tags that point at the party card', () => {
-    const code = encodeParty(state())
-    const p = previewForParty(new URL(`https://x.test/?party=${code}`))
-    expect(p?.image).toBe(`https://x.test/api/og?kind=party&code=${code}`)
-    expect(p?.url).toBe(`https://x.test/?party=${code}`)
-    expect(p?.title).toContain('Pass the Globe')
-  })
 })
