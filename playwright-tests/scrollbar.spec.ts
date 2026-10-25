@@ -55,7 +55,9 @@ test.describe('Scrollbar baseline', () => {
       box.remove()
       return { scrollbarWidth, scrollbarGutter }
     })
-    expect(style.scrollbarWidth).toBe('thin')
+    // Never the platform default. Chromium reports thin; headless Firefox on
+    // Linux folds its overlay bar into none.
+    expect(['thin', 'none']).toContain(style.scrollbarWidth)
     expect(style.scrollbarGutter).toBe('auto')
   })
 })
