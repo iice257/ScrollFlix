@@ -61,7 +61,7 @@ out float vSigma;
 out float vGlow;
 
 vec3 posterAt(float index) {
-  return texelFetch(uPos, ivec2(int(index + 0.5) * 4 + 3, 0), 0).xyz;
+  return texelFetch(uPos, ivec2(int(index + 0.5), 0), 0).xyz;
 }
 
 // A point on the great circle between two posters, a little above the globe.
@@ -184,7 +184,7 @@ out vec3 vInk;
 out float vPulse;
 
 vec3 posterAt(float index) {
-  return texelFetch(uPos, ivec2(int(index + 0.5) * 4 + 3, 0), 0).xyz;
+  return texelFetch(uPos, ivec2(int(index + 0.5), 0), 0).xyz;
 }
 
 vec3 arc(vec3 a, vec3 b, float t) {
@@ -385,7 +385,8 @@ export class ConstellationPass {
   private linkBuffer: WebGLBuffer | null = null
   private pointBuffer: WebGLBuffer | null = null
   private positionTexture: WebGLTexture | null = null
-  private positionWidth = 0
+  private maxTextureSize = 0
+  private centres: Float32Array | null = null
   private linkCount = 0
   private pointCount = 0
   private inkLight: boolean | null = null
@@ -478,20 +479,38 @@ export class ConstellationPass {
   }
 
   // The poster matrices as the globe uploads them (16 floats per instance). A
-  // poster's centre is the last column, so it is read straight from here: four
-  // RGBA texels per instance, the fourth one being the position.
+  // poster's centre is the last column, so only that is kept: one RGBA texel
+  // per instance. It is re-uploaded only when a centre actually moved, which
+  // spares the twinkle-only redraws a half-megabyte copy.
   setMatrices(data: Float32Array, instances: number) {
     const gl = this.gl
     if (this.failed || !this.positionTexture) return
-    const width = instances * 4
-    if (width > (gl.getParameter(gl.MAX_TEXTURE_SIZE) as number)) {
+    if (this.maxTextureSize === 0) {
+      this.maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
+    }
+    if (instances > this.maxTextureSize) {
       this.failed = true
       return
     }
+    let centres = this.centres
+    const resized = !centres || centres.length !== instances * 4
+    if (resized) centres = this.centres = new Float32Array(instances * 4)
+    let changed = resized
+    for (let i = 0; i < instances; i += 1) {
+      const from = i * 16 + 12
+      const to = i * 4
+      for (let k = 0; k < 4; k += 1) {
+        const value = data[from + k]
+        if (centres[to + k] !== value) {
+          centres[to + k] = value
+          changed = true
+        }
+      }
+    }
+    if (!changed) return
     gl.activeTexture(gl.TEXTURE0 + POSITION_UNIT)
     gl.bindTexture(gl.TEXTURE_2D, this.positionTexture)
-    if (width !== this.positionWidth) {
-      this.positionWidth = width
+    if (resized) {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
@@ -500,12 +519,12 @@ export class ConstellationPass {
         gl.TEXTURE_2D,
         0,
         gl.RGBA32F,
-        width,
+        instances,
         1,
         0,
         gl.RGBA,
         gl.FLOAT,
-        data,
+        centres,
       )
     } else {
       gl.texSubImage2D(
@@ -513,11 +532,11 @@ export class ConstellationPass {
         0,
         0,
         0,
-        width,
+        instances,
         1,
         gl.RGBA,
         gl.FLOAT,
-        data,
+        centres,
       )
     }
     gl.activeTexture(gl.TEXTURE0)
