@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '../../../../utils/tw'
+import { overlayScrollbarRef } from '../../../ui/use-overlay-scrollbar'
 import {
   type PartyState,
   actorIndex,
@@ -96,7 +97,7 @@ export const PartyBoard = ({ state, onClaim, onEnd }: BoardProps) => {
   return (
     <section className='party-layer is-sheet' aria-label='Pass the globe'>
       <Backdrop />
-      <div className='party-card party-sheet'>
+      <div className='party-card party-sheet' ref={overlayScrollbarRef}>
         <span className='party-grip' aria-hidden='true' />
         <header className='party-heading'>
           <span className='party-badge' aria-hidden='true'>
@@ -132,7 +133,7 @@ export const PartyPass = ({ state, onPass, onEnd }: PassProps) => {
   return (
     <section className='party-layer is-sheet' aria-label='Pass it on'>
       <Backdrop />
-      <div className='party-card party-sheet'>
+      <div className='party-card party-sheet' ref={overlayScrollbarRef}>
         <span className='party-grip' aria-hidden='true' />
         <header className='party-heading'>
           <span className='party-badge' aria-hidden='true'>
@@ -174,7 +175,7 @@ export const PartyHandoff = ({
   return (
     <section className='party-layer is-sheet' aria-label='Link ready'>
       <Backdrop />
-      <div className='party-card party-sheet'>
+      <div className='party-card party-sheet' ref={overlayScrollbarRef}>
         <span className='party-grip' aria-hidden='true' />
         <header className='party-heading'>
           <span className='party-badge is-green' aria-hidden='true'>
@@ -248,7 +249,10 @@ export const PartySettle = ({
   return (
     <section className='party-layer is-sheet' aria-label='Settle it'>
       <Backdrop />
-      <div className='party-card party-sheet party-settle'>
+      <div
+        className='party-card party-sheet party-settle'
+        ref={overlayScrollbarRef}
+      >
         <span className='party-grip' aria-hidden='true' />
         <header className='party-heading'>
           <span className='party-badge is-gold' aria-hidden='true'>
@@ -348,7 +352,7 @@ export const PartyTonight = ({
   return (
     <section className='party-layer' aria-label='Tonight’s film'>
       <Backdrop onClick={onDone} />
-      <div className='party-card party-tonight'>
+      <div className='party-card party-tonight' ref={overlayScrollbarRef}>
         <Poster src={movie?.posterUrl} title={title} className='is-large' />
         <span className='party-eyebrow is-gold'>
           <Sparkles aria-hidden='true' />
@@ -397,7 +401,7 @@ export const PartyBroken = ({ kind, onNew, onClose }: BrokenProps) => {
   return (
     <section className='party-layer' aria-label='Game link'>
       <Backdrop onClick={onClose} />
-      <div className='party-card'>
+      <div className='party-card' ref={overlayScrollbarRef}>
         <header className='party-heading'>
           <span className='party-badge is-muted' aria-hidden='true'>
             <Link2Off />
