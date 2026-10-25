@@ -39,6 +39,7 @@ import {
   Fragment,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
   Suspense,
   type SyntheticEvent,
   lazy,
@@ -5835,6 +5836,52 @@ type MovieDetailsCardProps = {
   onWatch: (movie: TestMovie) => void
 }
 
+// Calls onEnd when the user scrolls the element to its end, or pushes upward on
+// it while it already sits at its end (a short card has nothing to scroll).
+const useExpandAtScrollEnd = (
+  ref: RefObject<HTMLElement | null>,
+  active: boolean,
+  onEnd: () => void,
+) => {
+  const onEndRef = useRef(onEnd)
+  onEndRef.current = onEnd
+  useEffect(() => {
+    const element = ref.current
+    if (!active || !element) return
+    const armedAt = performance.now() + 500
+    const atEnd = () =>
+      element.scrollTop + element.clientHeight >= element.scrollHeight - 2
+    let lastTop = element.scrollTop
+    let touchY: number | null = null
+    const handleScroll = () => {
+      const top = element.scrollTop
+      const movedDown = top > lastTop
+      lastTop = top
+      if (performance.now() < armedAt) return
+      if (movedDown && top > 0 && atEnd()) onEndRef.current()
+    }
+    const handleTouchStart = (event: TouchEvent) => {
+      touchY = event.touches[0]?.clientY ?? null
+    }
+    const handleTouchMove = (event: TouchEvent) => {
+      const y = event.touches[0]?.clientY
+      if (touchY === null || y === undefined) return
+      if (touchY - y > 24 && atEnd()) {
+        touchY = null
+        onEndRef.current()
+      }
+    }
+    element.addEventListener('scroll', handleScroll, { passive: true })
+    element.addEventListener('touchstart', handleTouchStart, { passive: true })
+    element.addEventListener('touchmove', handleTouchMove, { passive: true })
+    return () => {
+      element.removeEventListener('scroll', handleScroll)
+      element.removeEventListener('touchstart', handleTouchStart)
+      element.removeEventListener('touchmove', handleTouchMove)
+    }
+  }, [active, ref])
+}
+
 const MovieDetailsCard = ({
   movies,
   motionPhase,
@@ -5937,6 +5984,13 @@ const MovieDetailsCard = ({
     if (dragPointerIdRef.current !== event.pointerId) return
     finishDrag(event.clientY)
   }
+
+  // On a phone the short card scrolls like any page: reaching its end (or
+  // pushing on past it) opens the long description, no tap on More needed.
+  const copyScrollRef = useRef<HTMLDivElement | null>(null)
+  useExpandAtScrollEnd(copyScrollRef, !isWide && !isExpanded, () =>
+    setIsExpanded(true),
+  )
 
   const showFullContent = isWide || isExpanded
   const yearNumber = Number.parseInt(movie.year, 10)
@@ -6186,7 +6240,7 @@ const MovieDetailsCard = ({
             poster
           )}
           <div className='warp-details-copy'>
-            <div className='warp-details-copy-scroll'>
+            <div className='warp-details-copy-scroll' ref={copyScrollRef}>
               {premiumTier ? (
                 <PremiumPlate tier={premiumTier} mood={premiumMood} />
               ) : null}
