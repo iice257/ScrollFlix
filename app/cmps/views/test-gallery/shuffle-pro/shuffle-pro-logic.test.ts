@@ -143,15 +143,33 @@ describe('holdProgress', () => {
     }
   })
 
-  it('hides once the pointer wandered past the still allowance', () => {
-    const args = { elapsedMs: 2000, immersive: false }
-    expect(holdProgress({ ...args, maxMovedPx: 9 })).toBeNull()
+  it('keeps showing once the pointer wandered, on the longer moving clock', () => {
+    // Root cause of "the ring vanishes after the globe is moved": a dragged
+    // press still triggers (at movingMs), so its ring must show too.
+    const drag = { maxMovedPx: 9, immersive: false }
+    expect(holdProgress({ ...drag, elapsedMs: HOLD_PREWARM_MS })).toBe(0)
     expect(
-      holdProgress({ ...args, maxMovedPx: 9, pointerType: 'touch' }),
-    ).not.toBeNull()
+      holdProgress({ ...drag, elapsedMs: HOLD_RULES.normal.movingMs }),
+    ).toBe(1)
+    expect(
+      holdProgress({ ...drag, elapsedMs: HOLD_RULES.normal.movingMs - 1 }),
+    ).toBeLessThan(1)
+    expect(holdRingSpanMs(false, true)).toBe(
+      HOLD_RULES.normal.movingMs - HOLD_PREWARM_MS,
+    )
+    expect(
+      shouldTriggerHold({ ...drag, elapsedMs: HOLD_RULES.normal.movingMs }),
+    ).toBe(true)
+  })
+
+  it('treats touch jitter as still, but a real touch drag as moving', () => {
+    const args = { elapsedMs: 3000, immersive: false }
+    expect(holdProgress({ ...args, maxMovedPx: 9, pointerType: 'touch' })).toBe(
+      1,
+    )
     expect(
       holdProgress({ ...args, maxMovedPx: 25, pointerType: 'touch' }),
-    ).toBeNull()
+    ).toBeLessThan(1)
   })
 
   it('never shows for a held key', () => {

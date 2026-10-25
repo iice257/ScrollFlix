@@ -60,10 +60,16 @@ export const shouldTriggerHold = ({
 // warming the effect up, and show the progress ring.
 export const HOLD_PREWARM_MS = 1500
 
+// Whether a press has wandered past the still allowance (a drag). Such a press
+// still triggers, just later, so its ring shows on a longer clock.
+export const holdIsMoving = (maxMovedPx: number, pointerType?: string) =>
+  maxMovedPx > stillMovePxFor(pointerType)
+
 // How far a held pointer press is toward its trigger, 0..1, for the progress
-// ring. Null while nothing should show: before the ring appears, once the
-// pointer has wandered off (the press is a drag, with a later trigger), and
-// for a held key, which has no point to draw at.
+// ring. Null while nothing should show: before the ring appears and for a
+// held key, which has no point to draw at. A press that moved still triggers
+// (later, on the moving clock), so its ring shows too: the ring is on whenever
+// the effect is coming.
 export const holdProgress = ({
   elapsedMs,
   maxMovedPx,
@@ -79,16 +85,19 @@ export const holdProgress = ({
 }): number | null => {
   if (source === 'key') return null
   if (elapsedMs < HOLD_PREWARM_MS) return null
-  if (maxMovedPx > stillMovePxFor(pointerType)) return null
   const rules = immersive ? HOLD_RULES.immersive : HOLD_RULES.normal
-  const span = Math.max(1, rules.stillMs - HOLD_PREWARM_MS)
+  const end = holdIsMoving(maxMovedPx, pointerType)
+    ? rules.movingMs
+    : rules.stillMs
+  const span = Math.max(1, end - HOLD_PREWARM_MS)
   return Math.min(1, Math.max(0, (elapsedMs - HOLD_PREWARM_MS) / span))
 }
 
 // The whole ring fill, from appearing to the trigger moment.
-export const holdRingSpanMs = (immersive: boolean) =>
-  (immersive ? HOLD_RULES.immersive : HOLD_RULES.normal).stillMs -
-  HOLD_PREWARM_MS
+export const holdRingSpanMs = (immersive: boolean, moving = false) => {
+  const rules = immersive ? HOLD_RULES.immersive : HOLD_RULES.normal
+  return (moving ? rules.movingMs : rules.stillMs) - HOLD_PREWARM_MS
+}
 
 // ---------------------------------------------------------------- Space
 
