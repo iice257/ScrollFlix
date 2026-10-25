@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { expect, type Page } from '@playwright/test'
+import { type Page, expect } from '@playwright/test'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fixtures = join(here, '..', 'fixtures')
@@ -153,7 +153,10 @@ export const prepare = async (
   { scheme, withPath = false, holdCatalogue = false }: PrepareOptions,
 ) => {
   await page.clock.setFixedTime(new Date('2026-01-15T12:00:00Z'))
-  await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'no-preference' })
+  await page.emulateMedia({
+    colorScheme: scheme,
+    reducedMotion: 'no-preference',
+  })
   await page.addInitScript(determinismScript, {
     scheme,
     seedPath: withPath ? PATH_IDS : null,
@@ -233,7 +236,8 @@ export const prepare = async (
 // Readiness
 // ---------------------------------------------------------------------------
 
-export const globe = (page: Page) => page.getByLabel('Infinite movie poster menu')
+export const globe = (page: Page) =>
+  page.getByLabel('Infinite movie poster menu')
 
 /**
  * The globe is "complete" when every poster texture has been uploaded

@@ -40,7 +40,10 @@ export default defineConfig({
   snapshotPathTemplate: '{testDir}/__screenshots__/{arg}{ext}',
   outputDir: 'test-results/visual',
   reporter: process.env.CI
-    ? [['list'], ['html', { open: 'never', outputFolder: 'playwright-report/visual' }]]
+    ? [
+        ['list'],
+        ['html', { open: 'never', outputFolder: 'playwright-report/visual' }],
+      ]
     : [['list']],
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,

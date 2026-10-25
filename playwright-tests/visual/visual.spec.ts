@@ -1,12 +1,12 @@
-import { expect, type Page, test } from '@playwright/test'
+import { type Page, expect, test } from '@playwright/test'
 import {
   DEVICES,
   type Device,
+  type Scheme,
   globe,
   gotoGlobe,
   imagesSettled,
   prepare,
-  type Scheme,
   shotName,
 } from './support'
 
@@ -84,7 +84,12 @@ for (const device of DEVICE_NAMES) {
         await prepare(page, { scheme })
         await gotoGlobe(page)
         await page.getByRole('button', { name: /^Open details for / }).click()
-        await expect(page.getByRole('dialog').or(page.locator('.warp-details-card')).first()).toBeVisible()
+        await expect(
+          page
+            .getByRole('dialog')
+            .or(page.locator('.warp-details-card'))
+            .first(),
+        ).toBeVisible()
         await imagesSettled(page, '.warp-details-card img')
         await page.waitForTimeout(1200)
         await expect(page).toHaveScreenshot(snap('film-card'))
@@ -137,7 +142,9 @@ for (const device of DEVICE_NAMES) {
       test('session path panel', async ({ page }) => {
         await prepare(page, { scheme, withPath: true })
         await gotoGlobe(page)
-        await page.getByRole('button', { name: /^Session path, \d+ films$/ }).click()
+        await page
+          .getByRole('button', { name: /^Session path, \d+ films$/ })
+          .click()
         await expect(page.getByLabel('Session path').last()).toBeVisible()
         await page.waitForTimeout(1200)
         await expect(page).toHaveScreenshot(snap('session-path'))
@@ -146,7 +153,9 @@ for (const device of DEVICE_NAMES) {
       test('share card', async ({ page }) => {
         await prepare(page, { scheme, withPath: true })
         await gotoGlobe(page)
-        await page.getByRole('button', { name: /^Session path, \d+ films$/ }).click()
+        await page
+          .getByRole('button', { name: /^Session path, \d+ films$/ })
+          .click()
         await page.getByRole('button', { name: /share/i }).first().click()
         await page.waitForTimeout(2500)
         await expect(page).toHaveScreenshot(snap('share-card'))
@@ -164,4 +173,3 @@ declare global {
     }
   }
 }
-
