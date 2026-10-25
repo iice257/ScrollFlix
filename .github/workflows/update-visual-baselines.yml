@@ -7,12 +7,6 @@ name: Update visual baselines
 
 on:
   workflow_dispatch:
-  # Bootstrap only: GitHub cannot dispatch a workflow that is not on the default
-  # branch yet, so pushes of this file on the build branch run it once. Remove
-  # this trigger when the workflow has merged to main.
-  push:
-    branches: [test/visual-baselines]
-    paths: ['.github/workflows/update-visual-baselines.yml', 'playwright-tests/visual/*.ts']
 
 permissions:
   contents: write
