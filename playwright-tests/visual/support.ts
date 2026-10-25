@@ -152,6 +152,7 @@ export const prepare = async (
   page: Page,
   { scheme, withPath = false, holdCatalogue = false }: PrepareOptions,
 ) => {
+  await page.clock.setFixedTime(new Date('2026-01-15T12:00:00Z'))
   await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'no-preference' })
   await page.addInitScript(determinismScript, {
     scheme,

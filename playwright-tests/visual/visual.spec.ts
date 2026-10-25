@@ -40,7 +40,12 @@ const openMenu = async (page: Page, label: string) => {
 for (const device of DEVICE_NAMES) {
   for (const scheme of SCHEMES) {
     test.describe(`${device} ${scheme}`, () => {
-      test.use({ ...DEVICES[device], colorScheme: scheme })
+      test.use({
+        ...DEVICES[device],
+        colorScheme: scheme,
+        timezoneId: 'Africa/Lagos',
+        locale: 'en-US',
+      })
 
       const snap = (state: string) => shotName(state, device, scheme)
 
