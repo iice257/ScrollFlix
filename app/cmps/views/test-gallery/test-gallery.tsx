@@ -670,7 +670,16 @@ const DETAIL_POSTER_SIZES =
 const readDpr = () =>
   typeof window === 'undefined' ? 1 : Math.min(3, window.devicePixelRatio || 1)
 
-const MoviePoster = ({
+// One poster per film: a card that changes film in place (an index shuffle)
+// must not keep the last film's image and its "loaded" state on screen while
+// the new title and details are already showing. The key remounts it, so the
+// new film starts from its placeholder and thumbnail and the sharp image fades
+// in once decoded.
+const MoviePoster = (props: MoviePosterProps) => (
+  <MoviePosterImage key={props.movie.id} {...props} />
+)
+
+const MoviePosterImage = ({
   movie,
   loading = 'lazy',
   priority = false,
