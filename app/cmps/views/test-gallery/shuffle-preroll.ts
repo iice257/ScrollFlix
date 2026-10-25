@@ -18,7 +18,7 @@ export type PrerollOptions<T> = {
   candidates: () => readonly T[]
   // Loads and decodes the film's full-size poster. Called with the film and
   // nothing else for the pick and for both decoys.
-  preload: (film: T) => void | Promise<unknown>
+  preload: (film: T) => unknown
   // Test seam: a source of 32-bit entropy for the fresh seed.
   entropy?: () => number
 }

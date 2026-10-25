@@ -61,7 +61,9 @@ describe('shuffle preroll', () => {
       const { calls, preroll } = setup()
       preroll.prepare()
       const pick = preroll.take()
-      const at = calls.findIndex((args) => (args[0] as { id: number }).id === pick?.id)
+      const at = calls.findIndex(
+        (args) => (args[0] as { id: number }).id === pick?.id,
+      )
       slots[at] += 1
     }
     for (const count of slots) {
