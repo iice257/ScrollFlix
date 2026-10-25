@@ -5459,7 +5459,12 @@ const AboutDrawer = ({
           </p>
           <p>
             Follow along on{' '}
-            <a href='https://x.com/scrollflix' target='_blank' rel='noreferrer'>
+            <a
+              className='warp-about-credit-link'
+              href='https://x.com/scrollflix'
+              target='_blank'
+              rel='noreferrer'
+            >
               X @scrollflix
             </a>
             .
