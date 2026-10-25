@@ -12,7 +12,7 @@ on:
   # this trigger when the workflow has merged to main.
   push:
     branches: [test/visual-baselines]
-    paths: ['.github/workflows/update-visual-baselines.yml']
+    paths: ['.github/workflows/update-visual-baselines.yml', 'playwright-tests/visual/*.ts']
 
 permissions:
   contents: write
