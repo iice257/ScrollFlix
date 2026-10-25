@@ -84,6 +84,7 @@ export const renderMetaHtml = (p: Preview) => `<!doctype html>
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="${esc(p.imageAlt)}">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@scrollflix">
 <meta name="twitter:title" content="${esc(p.title)}">
 <meta name="twitter:description" content="${esc(p.description)}">
 <meta name="twitter:image" content="${esc(p.image)}">

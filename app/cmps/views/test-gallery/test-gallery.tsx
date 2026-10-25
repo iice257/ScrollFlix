@@ -5431,6 +5431,13 @@ const AboutDrawer = ({
             Carefully put together by my humble self -{' '}
             <a href='https://kingsleyaremu.com/'>ICE</a>.
           </p>
+          <p>
+            Follow along on{' '}
+            <a href='https://x.com/scrollflix' target='_blank' rel='noreferrer'>
+              X @scrollflix
+            </a>
+            .
+          </p>
         </section>
       </div>
     </section>

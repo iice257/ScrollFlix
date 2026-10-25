@@ -93,6 +93,7 @@ describe('renderMetaHtml', () => {
     expect(html).toContain('&quot;&gt;&lt;script&gt;')
     expect(html).toContain('Tom &amp; Jerry&#39;s &lt;b&gt;')
     expect(html).toContain('twitter:card" content="summary_large_image"')
+    expect(html).toContain('twitter:site" content="@scrollflix"')
     expect(html).toContain('rel="canonical"')
     expect(html).toContain('og:image:width" content="1200"')
   })
