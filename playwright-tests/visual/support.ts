@@ -267,9 +267,19 @@ export const imagesSettled = async (page: Page, selector = 'img') => {
       () =>
         page.evaluate(
           (sel) =>
-            [...document.querySelectorAll<HTMLImageElement>(sel)].every(
-              (img) => img.complete && img.naturalWidth > 0,
-            ),
+            // Only images on screen: lazy, off-screen ones never load.
+            [...document.querySelectorAll<HTMLImageElement>(sel)]
+              .filter((img) => {
+                const r = img.getBoundingClientRect()
+                return (
+                  r.width > 0 &&
+                  r.bottom > 0 &&
+                  r.top < window.innerHeight &&
+                  r.right > 0 &&
+                  r.left < window.innerWidth
+                )
+              })
+              .every((img) => img.complete && img.naturalWidth > 0),
           selector,
         ),
       { timeout: 30_000 },
