@@ -203,6 +203,7 @@ import {
   useShuffleProController,
 } from './shuffle-pro/use-shuffle-pro'
 import { DESKTOP_GLOBE_COUNT } from './texture-tiers'
+import { useDismissLayer } from './use-dismiss-layer'
 import './session-path.css'
 import { AmbientWeather } from './ambient-weather'
 import { AppearanceSetting, useDynamicHint } from './dynamic-theme-setting'
@@ -279,6 +280,13 @@ const galleryWindowSize = () => {
 // screen lets go after this long and the posters fill in behind it.
 const FIRST_LOAD_MAX_LOCK_MS = 3000
 const MIN_DECISION_FILTER_RESULTS = 24
+// The popups with no backdrop: a press outside them (and outside the button
+// that toggles them) closes them.
+const FILTER_POPUP_SELECTOR = '.warp-filter-panel, .warp-filter-button'
+const SORT_POPUP_SELECTOR = '.warp-sort-panel, .warp-sort-button'
+const closestElement = (node: Node, selector: string) =>
+  (node instanceof Element ? node : node.parentElement)?.closest(selector)
+
 const DETAILS_EXPAND_DRAG_PX = 42
 const DETAILS_CLOSE_DRAG_PX = 68
 const DETAILS_COMPACT_DRAG_PX = 38
@@ -2587,45 +2595,21 @@ export const TestGalleryApp = () => {
     reopenDetailsAfterListShuffleRef.current = false
   }, [])
 
-  useEffect(() => {
-    if (
-      !detailsMovieId &&
-      !watchMovieId &&
-      !aboutOpen &&
-      !savedOpen &&
-      !pathOpen &&
-      !moodsOpen &&
-      !filterOpen &&
-      !sortOpen
-    )
-      return
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      // Close only the top-most layer: watch links, then details, then About,
-      // then Saved, then panels.
-      if (moodsOpen) setMoodsOpen(false)
-      else if (watchMovieId) setWatchMovieId(null)
-      else if (detailsMovieId) setDetailsMovieId(null)
-      else if (aboutOpen) setAboutOpen(false)
-      else if (savedOpen) setSavedOpen(false)
-      else if (pathOpen) setPathOpen(false)
-      else if (sortOpen) setSortOpen(false)
-      else setFilterOpen(false)
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [
-    aboutOpen,
-    detailsMovieId,
-    filterOpen,
-    moodsOpen,
-    pathOpen,
-    savedOpen,
-    sortOpen,
-    watchMovieId,
-  ])
+  // Every card, sheet and popup joins one dismiss stack in the order it opens:
+  // Escape closes the topmost, and the Filters and Sort popups (which have no
+  // backdrop) also close on a press outside. Focus goes back to the opener.
+  useDismissLayer(moodsOpen, () => setMoodsOpen(false))
+  useDismissLayer(Boolean(watchMovieId), () => setWatchMovieId(null))
+  useDismissLayer(Boolean(detailsMovieId), () => setDetailsMovieId(null))
+  useDismissLayer(aboutOpen, () => setAboutOpen(false))
+  useDismissLayer(savedOpen, () => setSavedOpen(false))
+  useDismissLayer(pathOpen, () => setPathOpen(false))
+  useDismissLayer(sortOpen && mode === 'list', () => setSortOpen(false), {
+    inside: (node) => Boolean(closestElement(node, SORT_POPUP_SELECTOR)),
+  })
+  useDismissLayer(filterOpen, () => setFilterOpen(false), {
+    inside: (node) => Boolean(closestElement(node, FILTER_POPUP_SELECTOR)),
+  })
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
