@@ -41,6 +41,20 @@
       ]
     }
   ],
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "scroll-flix.vercel.app" }],
+      "destination": "https://scrollflix.app/$1",
+      "statusCode": 308
+    },
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "what-to-watch-brown.vercel.app" }],
+      "destination": "https://scrollflix.app/$1",
+      "statusCode": 308
+    }
+  ],
   "rewrites": [
     {
       "source": "/((?!api/).*)",
