@@ -1,6 +1,7 @@
 import { ArrowRight, Crown, Link2, Plus, Users, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '../../../../utils/tw'
+import { overlayScrollbarRef } from '../../../ui/use-overlay-scrollbar'
 import './party.css'
 import './party-v2.css'
 import {
@@ -59,6 +60,7 @@ export const PartySetup = ({ onStart, onClose }: SetupProps) => {
         onClick={onClose}
       />
       <form
+        ref={overlayScrollbarRef}
         className='party-card'
         onSubmit={(event) => {
           event.preventDefault()
@@ -290,7 +292,7 @@ export const PartyFinal = ({
         aria-label='Close results'
         onClick={onDone}
       />
-      <div className='party-card is-final'>
+      <div className='party-card is-final' ref={overlayScrollbarRef}>
         <header className='party-heading'>
           <span className='party-badge is-gold' aria-hidden='true'>
             <Crown />
