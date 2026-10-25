@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { SITE_TITLE } from './site-meta'
 
 test.describe('SEO foundation', () => {
   test('home HTML carries the canonical host, title and JSON-LD', async ({
@@ -13,7 +14,7 @@ test.describe('SEO foundation', () => {
     expect(html).toContain(
       'property="og:url" content="https://scrollflix.app/"',
     )
-    expect(html).toMatch(/<title>ScrollFlix: Spin a Globe of 100k\+ Movies/)
+    expect(html).toContain(`<title>${SITE_TITLE}</title>`)
     expect(html).not.toContain('vercel.app')
     expect(html).not.toContain('name="keywords"')
     expect(html).toContain('application/ld+json')

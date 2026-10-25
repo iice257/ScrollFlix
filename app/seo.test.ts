@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { SITE_TITLE } from '../playwright-tests/site-meta'
 // @ts-expect-error plain JS build script
 import * as sitemap from '../scripts/generate-sitemap.js'
 
@@ -82,6 +83,10 @@ describe('index.html', () => {
     expect(desc.length).toBeLessThanOrEqual(160)
     for (const word of ['discover', 'mood', 'shuffle', 'trailers'])
       expect(desc).toContain(word)
+  })
+
+  it('matches the title constant used by the e2e specs', () => {
+    expect(meta(/<title>([^<]*)<\/title>/)).toBe(SITE_TITLE)
   })
 
   it('keeps og/twitter tags consistent with title and description', () => {
