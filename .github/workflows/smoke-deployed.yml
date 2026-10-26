@@ -117,6 +117,13 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+      # Production only, and only once it is healthy: tell Bing and the other
+      # IndexNow engines the site changed. Never fails the run.
+      - name: Ping search engines (IndexNow)
+        if: steps.target.outputs.name == 'production' && steps.smoke.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/indexnow.mjs
+
       # The promote workflow (and branch protection, if you want) reads this.
       - name: Record the result on the commit
         if: always() && steps.target.outputs.run == 'true'
