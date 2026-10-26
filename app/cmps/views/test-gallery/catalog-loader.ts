@@ -249,8 +249,11 @@ export const getCatalogChunkCount = (
   )
 }
 
-const fetchJson = async <T>(url: string): Promise<T> => {
-  const response = await fetch(url)
+const fetchJson = async <T>(
+  url: string,
+  priority: RequestPriority = 'auto',
+): Promise<T> => {
+  const response = await fetch(url, { priority })
   if (!response.ok) throw new Error(`Catalogue ${response.status} (${url})`)
   return response.json() as Promise<T>
 }
@@ -313,9 +316,11 @@ const loadChunk = (
   let request = chunkRequests.get(chunk)
   if (!request) {
     const url = `${CATALOG_URL}/${manifest.chunks[chunk]}`
+    // Chunk 0 is what the globe waits for; the rest stream in behind the
+    // posters at low priority.
     request = onProgress
       ? fetchJsonWithProgress<CatalogRow[]>(url, onProgress)
-      : fetchJson<CatalogRow[]>(url)
+      : fetchJson<CatalogRow[]>(url, chunk === 0 ? 'auto' : 'low')
     chunkRequests.set(chunk, request)
     request.catch(() => chunkRequests.delete(chunk))
   }

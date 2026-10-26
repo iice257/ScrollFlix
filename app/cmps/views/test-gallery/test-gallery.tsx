@@ -146,8 +146,7 @@ import { PartyLayer } from './party/party-layer'
 import type { PartyMovieInfo } from './party/party-parts'
 import { toPartyFilm, usePartyGame } from './party/use-party'
 import {
-  STARTER_ALPHA_COUNT,
-  firstByKey,
+  STARTER_INDEX_COUNT,
   getWarmPosterUrl,
   loadPosterBlob,
   seedStarterSet,
@@ -692,6 +691,14 @@ const detailsBackdropUrl = (movie: TestMovie) =>
         ),
       )
     : posterBackdropUrl(movie)
+// A film's index-row thumbnail: the size its 46 px tile needs on this screen.
+const listPosterUrl = (movie: TestMovie) =>
+  movie.posterPath
+    ? posterUrl(
+        movie.posterPath,
+        pickPosterSize(LIST_POSTER_CSS_WIDTH * readDpr()),
+      )
+    : (movie.posterListUrl ?? movie.posterUrl)
 const readDpr = () =>
   typeof window === 'undefined' ? 1 : Math.min(3, window.devicePixelRatio || 1)
 
@@ -730,9 +737,7 @@ const MoviePosterImage = ({
         ? posterUrl(path, 'w342')
         : (movie.posterDetailUrl ?? movie.posterUrl)
       : size === 'list'
-        ? path
-          ? posterUrl(path, pickPosterSize(LIST_POSTER_CSS_WIDTH * readDpr()))
-          : (movie.posterListUrl ?? movie.posterUrl)
+        ? listPosterUrl(movie)
         : movie.posterUrl
   // On a dense desktop screen, w500 follows once w342 is showing, as a
   // layer over it, so the poster never steps back to a blank or a fill.
@@ -1118,13 +1123,9 @@ export const getActiveSortRules = (rules: SortRule[]) => {
     : [{ key: 'alpha' as const, direction: 'asc' as const }]
 }
 
-export const sortMoviesByRules = (movies: TestMovie[], rules: SortRule[]) => {
-  const active = getActiveSortRules(rules)
-  // Grouping by initial letter only lists titles that start with a letter.
-  const sortableMovies =
-    active[0].key === 'alpha' ? movies.filter(hasLatinLeadingTitle) : movies
-
-  return [...sortableMovies].sort((movieA, movieB) => {
+const compareByRules =
+  (active: ReturnType<typeof getActiveSortRules>) =>
+  (movieA: TestMovie, movieB: TestMovie) => {
     for (const rule of active) {
       const order = compareMoviesByRule(
         movieA,
@@ -1135,7 +1136,43 @@ export const sortMoviesByRules = (movies: TestMovie[], rules: SortRule[]) => {
       if (order) return order
     }
     return compareTitleKeys(movieA, movieB)
-  })
+  }
+
+// Grouping by initial letter only lists titles that start with a letter.
+const sortableFor = (
+  movies: readonly TestMovie[],
+  active: ReturnType<typeof getActiveSortRules>,
+) => (active[0].key === 'alpha' ? movies.filter(hasLatinLeadingTitle) : movies)
+
+export const sortMoviesByRules = (movies: TestMovie[], rules: SortRule[]) => {
+  const active = getActiveSortRules(rules)
+  return [...sortableFor(movies, active)].sort(compareByRules(active))
+}
+
+// The first `count` films sortMoviesByRules would list, without sorting the
+// whole catalogue (one pass, keeping the best few).
+export const firstByRules = (
+  movies: readonly TestMovie[],
+  rules: SortRule[],
+  count: number,
+) => {
+  const active = getActiveSortRules(rules)
+  const compare = compareByRules(active)
+  const best: TestMovie[] = []
+  for (const movie of sortableFor(movies, active)) {
+    if (best.length >= count && compare(movie, best[best.length - 1]) >= 0)
+      continue
+    let low = 0
+    let high = best.length
+    while (low < high) {
+      const mid = (low + high) >> 1
+      if (compare(best[mid], movie) <= 0) low = mid + 1
+      else high = mid
+    }
+    best.splice(low, 0, movie)
+    if (best.length > count) best.pop()
+  }
+  return best
 }
 
 export const sortMoviesForList = (
@@ -1489,18 +1526,22 @@ export const TestGalleryApp = () => {
   const theme: Theme = resolveTheme(themePref, sky)
   const ambientWeather =
     themePref === 'dynamic' ? resolveDynamic(sky).effect : null
-  // Keeps the first films of the index, and a few random ones, on the device,
-  // so the next visit starts populated. Waits for the catalogue to settle.
+  // Keeps the first films of the index (as it opens: newest first, then A-Z)
+  // and a few random ones on the device, with their list thumbnails ready, so
+  // opening the index shows its first rows at once. Waits for the catalogue
+  // to settle; the films the index lists first change when more arrive.
   useEffect(() => {
     if (!movies.length || prefersSavedData()) return
     const timer = window.setTimeout(() => {
       const toFilm = (movie: TestMovie) => ({
         id: movie.id,
         thumbUrl: movie.posterUrl,
-        listUrl: movie.posterListUrl ?? movie.posterUrl,
+        listUrl: listPosterUrl(movie),
       })
       seedStarterSet(
-        firstByKey(movies, getTitleKey, STARTER_ALPHA_COUNT).map(toFilm),
+        firstByRules(movies, DEFAULT_SORT_RULES, STARTER_INDEX_COUNT).map(
+          toFilm,
+        ),
         movies.slice(0, galleryWindowSize()).map(toFilm),
       )
     }, 3000)

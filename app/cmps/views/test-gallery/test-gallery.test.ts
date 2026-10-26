@@ -17,6 +17,7 @@ import {
   filterMoviesByGenres,
   filterMoviesByTitleSearch,
   filterMoviesByYearAndRating,
+  firstByRules,
   formatFilmCount,
   formatMovieMeta,
   getActiveSortRules,
@@ -182,6 +183,33 @@ describe('test gallery filtering helpers', () => {
       )
     expect(order('desc')).toEqual(['8+', '6+', 'Unrated'])
     expect(order('asc')).toEqual(['6+', '8+', 'Unrated'])
+  })
+
+  it("lists the index's first films without sorting everything", () => {
+    const years = ['2019', '2021', '----', '2021', '1999', '2005', '2021']
+    const titles = ['Zed', 'Alpha', 'Unknown', 'Beta', 'Old', 'Mid', '9 Lives']
+    const pool = Array.from({ length: 60 }, (_, at) =>
+      movie(
+        String(at),
+        `${titles[at % titles.length]} ${at}`,
+        years[at % years.length],
+        ['Drama'],
+        at,
+      ),
+    )
+    for (const rules of [
+      DEFAULT_SORT_RULES,
+      [{ key: 'alpha' as const, direction: 'asc' as const }],
+      [{ key: 'rating' as const, direction: 'desc' as const }],
+    ]) {
+      for (const count of [1, 5, 30]) {
+        expect(firstByRules(pool, rules, count).map((film) => film.id)).toEqual(
+          sortMoviesByRules(pool, rules)
+            .slice(0, count)
+            .map((film) => film.id),
+        )
+      }
+    }
   })
 
   it('sorts by stacked rules and ignores rules without a direction', () => {
