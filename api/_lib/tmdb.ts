@@ -38,7 +38,7 @@ export const parseFilm = (raw: TmdbMovie | null | undefined): Film | null => {
   }
 }
 
-const get = async (path: string): Promise<unknown> => {
+export const get = async (path: string): Promise<unknown> => {
   const token = process.env.TMDB_API_READ_TOKEN
   if (!token) return null
   const res = await fetch(`https://api.themoviedb.org/3/${path}`, {
