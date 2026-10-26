@@ -185,14 +185,16 @@ export const mapCatalogRow = (
 
 // The blurred card backdrop is a CSS image, which is fetched without CORS. A
 // response cached from such a request carries no CORS headers, so the same URL
-// then fails for WebGL and for the CORS-enabled index tiles (blank posters).
-// It therefore uses a catalogue size nothing else requests.
+// then fails for WebGL and for every CORS image of that poster. Every poster
+// size is now requested with CORS somewhere (w185 is the globe's mid tier), so
+// the backdrop gets its own cache entry instead: TMDB ignores the query.
 export const POSTER_BACKDROP_SIZE = 'w185'
+export const NO_CORS_QUERY = '?no-cors'
 export const posterBackdropUrl = (
   movie: Pick<TestMovie, 'posterUrl' | 'posterDetailUrl'>,
 ) =>
   movie.posterDetailUrl
-    ? movie.posterUrl.replace('/w154/', `/${POSTER_BACKDROP_SIZE}/`)
+    ? `${movie.posterUrl.replace('/w154/', `/${POSTER_BACKDROP_SIZE}/`)}${NO_CORS_QUERY}`
     : movie.posterUrl
 
 export type DeviceSignals = {

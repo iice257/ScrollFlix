@@ -157,7 +157,6 @@ import {
   backdropUrl,
   pickBackdropSize,
   pickPosterSize,
-  posterSrcSet,
   posterUrl,
 } from './poster-sizes'
 import { savedStore } from './saved-store'
@@ -673,10 +672,6 @@ const detailsBackdropUrl = (movie: TestMovie) =>
         ),
       )
     : posterBackdropUrl(movie)
-// The card's poster column: clamp(240px, 25vw, 330px) on desktop, and about
-// two thirds of min(30dvh, 250px) on phones.
-const DETAIL_POSTER_SIZES =
-  '(max-width: 720px) min(20dvh, 167px), clamp(240px, 25vw, 330px)'
 const readDpr = () =>
   typeof window === 'undefined' ? 1 : Math.min(3, window.devicePixelRatio || 1)
 
@@ -707,21 +702,32 @@ const MoviePosterImage = ({
   // A copy fetched around the HTTP cache, used after a failed first try.
   const [recovered, setRecovered] = useState<string | null>(null)
   const path = movie.posterPath
+  // The card shows w342 first: the file the globe's opened poster, the
+  // flight and the shuffle preroll already fetch, so it is usually cached.
   const src =
     size === 'detail'
       ? path
-        ? posterUrl(path, 'w500')
+        ? posterUrl(path, 'w342')
         : (movie.posterDetailUrl ?? movie.posterUrl)
       : size === 'list'
         ? path
           ? posterUrl(path, pickPosterSize(LIST_POSTER_CSS_WIDTH * readDpr()))
           : (movie.posterListUrl ?? movie.posterUrl)
         : movie.posterUrl
-  const srcSet = size === 'detail' && path ? posterSrcSet(path) : undefined
+  // On a dense desktop screen, w500 follows once w342 is showing, as a
+  // layer over it, so the poster never steps back to a blank or a fill.
+  const upgradeSrc =
+    size === 'detail' && path && wantsDetailUpgrade()
+      ? posterUrl(path, 'w500')
+      : null
+  const [upgraded, setUpgraded] = useState(false)
   // The detail card sits on the thumbnail the globe already loaded, and the
   // sharper image fades in over it, so opening a poster never flashes empty.
+  const [baseFailed, setBaseFailed] = useState(false)
   const baseSrc =
-    size === 'detail' && movie.posterDetailUrl ? movie.posterUrl : null
+    size === 'detail' && movie.posterDetailUrl && !baseFailed
+      ? movie.posterUrl
+      : null
 
   useEffect(() => {
     if (loadState !== 'error') return
@@ -771,16 +777,16 @@ const MoviePosterImage = ({
           aria-hidden='true'
           crossOrigin='anonymous'
           decoding='async'
+          // A failed thumbnail goes, rather than leaving a broken-image icon.
+          onError={() => setBaseFailed(true)}
         />
       ) : null}
       <img
         key={attempt}
         src={recovered ?? getWarmPosterUrl(src) ?? src}
-        srcSet={recovered ? undefined : srcSet}
-        sizes={srcSet ? DETAIL_POSTER_SIZES : undefined}
         alt=''
         decoding='async'
-        fetchPriority={priority ? 'high' : undefined}
+        fetchPriority={priority || size === 'detail' ? 'high' : 'low'}
         // TMDB only sends CORS headers when asked and does not vary on it, so
         // a plain request would cache a copy the globe's WebGL cannot use.
         crossOrigin={movie.posterDetailUrl ? 'anonymous' : undefined}
@@ -798,9 +804,35 @@ const MoviePosterImage = ({
           else reveal()
         }}
       />
+      {upgradeSrc && loadState === 'loaded' ? (
+        <img
+          className='warp-poster-upgrade'
+          data-shown={upgraded ? 'true' : undefined}
+          src={upgradeSrc}
+          alt=''
+          aria-hidden='true'
+          crossOrigin='anonymous'
+          decoding='async'
+          onLoad={(event) => {
+            const image = event.currentTarget
+            const show = () => setUpgraded(true)
+            if (typeof image.decode === 'function')
+              image.decode().then(show, show)
+            else show()
+          }}
+        />
+      ) : null}
     </span>
   )
 }
+
+// Whether the card's poster is drawn wide enough to gain from w500 over
+// w342: desktops only (phones keep the lighter file), at 1.25x and up.
+const wantsDetailUpgrade = () =>
+  typeof window !== 'undefined' &&
+  !detectLightweightDevice() &&
+  Math.min(330, Math.max(240, window.innerWidth * 0.25)) * readDpr() >
+    342 * 1.15
 
 const useExitPresence = <T,>(
   isOpen: boolean,
@@ -2279,13 +2311,10 @@ export const TestGalleryApp = () => {
       }
       const from = menuControlRef.current?.getPosterRect(movie.id)
       if (!from) return
-      // Start from the sharp tier the globe has already fetched for the pick
-      // (the same URL, so it is cached), never down at the w154 thumbnail.
+      // The card's first image (w342, which the globe's opened poster also
+      // fetches), over the w154 thumbnail the globe already has.
       const images = movie.posterPath
-        ? [
-            posterUrl(movie.posterPath, readDpr() >= 1.5 ? 'w500' : 'w342'),
-            movie.posterUrl,
-          ]
+        ? [posterUrl(movie.posterPath, 'w342'), movie.posterUrl]
         : [movie.posterUrl]
       setPosterFlight({ movieId: movie.id, from, images })
     },
@@ -6145,8 +6174,8 @@ const MovieDetailsCard = ({
     ...(premiumMood ? moodCardVars(premiumMood.palette) : null),
     // CSS images are fetched without CORS. A copy cached from such a request
     // has no CORS headers and breaks the same URL for the globe and index
-    // tiles, so catalogue films use a size nothing else requests (w92 is the
-    // index, w154 the globe, w342 the card); see posterBackdropUrl.
+    // tiles, so catalogue films use a URL nothing else requests; see
+    // posterBackdropUrl.
     '--details-backdrop': `url(${JSON.stringify(detailsBackdropUrl(movie))})`,
   } as CSSProperties
   const movieText = useMovieText(movie)

@@ -619,6 +619,19 @@
     transition: none;
   }
 
+  /* The card's w500 upgrade, over the w342 already showing; it fades in only
+     once decoded, so the poster never steps back to a blank. */
+  .warp-poster-frame img.warp-poster-upgrade {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    opacity: 0;
+  }
+
+  .warp-poster-frame img.warp-poster-upgrade[data-shown="true"] {
+    opacity: 1;
+  }
+
   .warp-poster-frame[data-poster-state="loaded"] .warp-poster-placeholder,
   .warp-poster-frame[data-poster-state="fallback"] .warp-poster-placeholder {
     opacity: 0;

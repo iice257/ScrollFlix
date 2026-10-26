@@ -34,9 +34,6 @@ export const pickPosterSize = (deviceWidthPx: number): PosterSize => {
   return 'w780'
 }
 
-export const posterSrcSet = (path: string) =>
-  `${posterUrl(path, 'w342')} 342w, ${posterUrl(path, 'w500')} 500w, ${posterUrl(path, 'w780')} 780w`
-
 export const pickBackdropSize = (deviceWidthPx: number): BackdropSize =>
   deviceWidthPx <= 780 ? 'w780' : 'w1280'
 

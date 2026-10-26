@@ -399,6 +399,10 @@ const MIP_BATCH_MS = 150
 // A tier image that failed is not asked for again for this long.
 const LOD_RETRY_MS = 30000
 const LOADER_CONCURRENCY = 12
+// While a card is open the globe's own loading keeps to a few slots, so the
+// card's poster (and the opened poster's sharp tier, which jumps the queue)
+// is not competing with a dozen background downloads.
+const LOADER_CONCURRENCY_CARD_OPEN = 3
 // A tier upgrade cross-fades over this long.
 const LOD_FADE_MS = 150
 // What the shader's poster mapping shows of a poster: the whole poster spans
@@ -2148,6 +2152,9 @@ class InfiniteMovieEngine<T> {
 
     this.detailTargetProgress = open ? 1 : 0
     if (!open) this.detailVertexIndex = null
+    this.loader?.setConcurrency(
+      open ? LOADER_CONCURRENCY_CARD_OPEN : LOADER_CONCURRENCY,
+    )
     this.renderDirty = true
   }
 
@@ -3284,19 +3291,13 @@ class InfiniteMovieEngine<T> {
             posterUrl(path, 'w185'),
             posterUrl(path, 'w92'),
           ]
-    // The opened poster is fetched sharper still on a dense screen, and
-    // scaled into its layer.
-    return item === this.openedItem && this.pxScale >= 1.5
-      ? [
-          posterUrl(path, 'w500'),
-          posterUrl(path, 'w342'),
-          posterUrl(path, 'w185'),
-        ]
-      : [
-          posterUrl(path, 'w342'),
-          posterUrl(path, 'w185'),
-          posterUrl(path, 'w154'),
-        ]
+    // w342 fills the 342 px layer exactly. The opened poster asks for the
+    // same file as the card's first image, so the two share one download.
+    return [
+      posterUrl(path, 'w342'),
+      posterUrl(path, 'w185'),
+      posterUrl(path, 'w154'),
+    ]
   }
 
   private applyTier(tier: 'm' | 'd', keys: string[], now: number) {
@@ -3945,7 +3946,12 @@ const FallbackMovieMenu = <T,>({
               }
               onClick={() => onActiveItemChange(item)}
             >
-              <img src={item.image} alt='' loading='lazy' />
+              <img
+                src={item.image}
+                alt=''
+                loading='lazy'
+                crossOrigin='anonymous'
+              />
             </button>
           )
         })}

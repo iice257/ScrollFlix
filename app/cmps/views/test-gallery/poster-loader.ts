@@ -38,6 +38,8 @@ export type PosterLoader = {
     cells: readonly CellSpec[],
   ): Promise<PosterImage[]>
   reprioritise(key: string, priority: number): void
+  // How many may run at once from now on; running ones are never stopped.
+  setConcurrency(concurrency: number): void
   cancel(key: string): void
   // Number of requests queued or in flight.
   readonly pending: number
@@ -67,7 +69,7 @@ const canUseWorker = () =>
 export const createPosterLoader = (
   options: PosterLoaderOptions = {},
 ): PosterLoader => {
-  const concurrency = options.concurrency ?? 12
+  let concurrency = options.concurrency ?? 12
   const deps = options.deps ?? realDeps()
   const jobs = new Map<string, Job>()
   const queue = createPriorityQueue<string>()
@@ -206,6 +208,10 @@ export const createPosterLoader = (
       }),
     requestCells: (key, urls, priority, cells) =>
       requestCells(key, urls, priority, cells),
+    setConcurrency(next) {
+      concurrency = Math.max(1, next)
+      pump()
+    },
     reprioritise(key, priority) {
       const job = jobs.get(key)
       if (job && !job.running) queue.update(key, priority)

@@ -91,6 +91,7 @@ export const WatchOptionsList = ({ movieId, title }: WatchOptionsListProps) => {
                         height={32}
                         loading='lazy'
                         decoding='async'
+                        crossOrigin='anonymous'
                       />
                     ) : (
                       <span className='warp-watch-logo-blank' aria-hidden />
