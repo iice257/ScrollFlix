@@ -406,6 +406,34 @@ const PRIORITY_OPENED = -1
 const PRIORITY_DETAIL = 5000
 const PRIORITY_MID = 10000
 
+// Muted colours for films the catalogue has no average colour for.
+const PLACEHOLDER_PALETTE = [
+  [0x3a, 0x2f, 0x45],
+  [0x2c, 0x3e, 0x4a],
+  [0x4a, 0x3a, 0x2c],
+  [0x2f, 0x45, 0x3a],
+  [0x45, 0x2c, 0x33],
+  [0x3d, 0x3d, 0x4f],
+] as const
+
+// A slot's placeholder colour: the film's average colour, else a muted one
+// picked by position so neighbours differ.
+export const placeholderRgb = (
+  colour: string | undefined,
+  index: number,
+): [number, number, number] => {
+  const match = colour ? /^#?([0-9a-f]{6})$/i.exec(colour) : null
+  if (match) {
+    const rgb = Number.parseInt(match[1], 16)
+    return [(rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255]
+  }
+  const [r, g, b] =
+    PLACEHOLDER_PALETTE[
+      (Math.imul(index, 2654435761) >>> 0) % PLACEHOLDER_PALETTE.length
+    ]
+  return [r, g, b]
+}
+
 // The film a newly built globe turns to: the landing pick on the first build,
 // then whatever film is on show, if the new set still has it.
 export const faceTargetFor = (
@@ -596,6 +624,9 @@ export const pickWinner = (
   return winner
 }
 
+// Placeholder blocks across and down a poster (see the shader's placeholder).
+const PLACEHOLDER_BLOCKS = [4, 6] as const
+
 // The poster is 2:3; its corners are this share of its width (the detail
 // card's 18 px on a 330 px poster is 5.5%).
 export const POSTER_ASPECT = 1.5
@@ -685,6 +716,8 @@ uniform vec4 uTint;
 uniform float uLodFade;
 // Per-poster reveal clock: the time each cell's full poster arrived (0 = none).
 uniform sampler2D uRevealTex;
+// Per-poster placeholder colour (the film's average colour, or a random one).
+uniform sampler2D uColorTex;
 uniform float uRevealActive;
 uniform float uRevealSeconds;
 uniform float uNow;
@@ -708,6 +741,24 @@ float posterMask(vec2 poster) {
   return clamp(0.5 - dist / aa, 0.0, 1.0);
 }
 
+float hash13(vec3 p) {
+  p = fract(p * 0.1031);
+  p += dot(p, p.zyx + 31.32);
+  return fract((p.x + p.y) * p.z);
+}
+
+// What a slot shows until its poster arrives: a coarse grid of blocks around
+// the film's colour, so the globe is full from its first frame without a
+// single request. It reads as a placeholder (big, flat pixels), never as art.
+vec4 placeholder(vec2 poster, int itemIndex) {
+  vec3 base = texelFetch(uColorTex, ivec2(itemIndex % uRevealSize, itemIndex / uRevealSize), 0).rgb;
+  vec2 block = floor(clamp(poster, 0.0, 0.999) * vec2(${PLACEHOLDER_BLOCKS[0]}.0, ${PLACEHOLDER_BLOCKS[1]}.0));
+  float h = hash13(vec3(block, float(itemIndex)));
+  float shade = 0.62 + 0.5 * h;
+  vec3 rgb = max(base, vec3(0.07)) * shade;
+  return vec4(min(rgb, vec3(1.0)), 1.0);
+}
+
 // Where the whole 2:3 poster sits on the quad: the rounded rectangle shows it
 // from 0.056 to 0.944 of its width and all of its height.
 vec2 posterUv(vec2 uv) {
@@ -724,6 +775,7 @@ void main() {
 
   vec4 color;
   vec2 poster = posterUv(vUvs);
+  vec4 empty = placeholder(poster, itemIndex);
   if (dot(vSmear, vSmear) > 0.0) {
     // Six taps along the smear, clamped to this poster's own tile so
     // neighbouring posters never bleed in.
@@ -734,11 +786,11 @@ void main() {
       color += texture(uTex, clamp(posterUv(tapUv), cellInset, 1.0 - cellInset) * uAtlasSpan + tileOrigin);
     }
     color /= 6.0;
-    color = mix(vec4(0.0196, 0.0196, 0.0196, 1.0), color, color.a);
+    color = mix(empty, color, color.a);
   } else {
     color = texture(uTex, clamp(poster, cellInset, 1.0 - cellInset) * uAtlasSpan + tileOrigin);
-    // A cell that has not arrived is empty (alpha 0): it shows as the dark slot.
-    color = mix(vec4(0.0196, 0.0196, 0.0196, 1.0), color, color.a);
+    // A cell that has not arrived is empty (alpha 0): it shows its placeholder.
+    color = mix(empty, color, color.a);
     // The sharper tiers fade in over the one below them.
     if (vLod.x >= 0.0) {
       float fade = clamp((uNow - vLod.z) / uLodFade, 0.0, 1.0);
@@ -749,13 +801,13 @@ void main() {
       color = mix(color, texture(uDetailTex, vec3(poster, vLod.y)), fade);
     }
     if (uRevealActive > 0.5) {
-      // One plain fade from the empty slot to the poster. A start time still
-      // in the future (the arrival stagger) keeps the slot empty until then.
+      // One plain fade from the placeholder to the poster. A start time still
+      // in the future (the arrival stagger) keeps the placeholder until then.
       float arrived = texelFetch(uRevealTex, ivec2(itemIndex % uRevealSize, itemIndex / uRevealSize), 0).r;
       if (arrived > 0.0) {
         float progress = clamp((uNow - arrived) / uRevealSeconds, 0.0, 1.0);
         float eased = 1.0 - pow(1.0 - progress, 3.0);
-        color = mix(vec4(0.0196, 0.0196, 0.0196, 1.0), color, eased);
+        color = mix(empty, color, eased);
       }
     }
   }
@@ -1476,6 +1528,7 @@ class InfiniteMovieEngine<T> {
   private texture: WebGLTexture | null = null
   // One float per poster cell: when its full poster arrived (see the shader).
   private revealTexture: WebGLTexture | null = null
+  private colorTexture: WebGLTexture | null = null
   private readonly revealEpoch = performance.now()
   private revealUntil = 0
   private revealPending = false
@@ -1693,6 +1746,7 @@ class InfiniteMovieEngine<T> {
       uRevealSize: gl.getUniformLocation(program, 'uRevealSize'),
       uLodFade: gl.getUniformLocation(program, 'uLodFade'),
       uRevealTex: gl.getUniformLocation(program, 'uRevealTex'),
+      uColorTex: gl.getUniformLocation(program, 'uColorTex'),
       uRevealActive: gl.getUniformLocation(program, 'uRevealActive'),
       uRevealSeconds: gl.getUniformLocation(program, 'uRevealSeconds'),
       uNow: gl.getUniformLocation(program, 'uNow'),
@@ -1955,18 +2009,20 @@ class InfiniteMovieEngine<T> {
       if (this.midTexture) this.gl.deleteTexture(this.midTexture)
       if (this.detailTexture) this.gl.deleteTexture(this.detailTexture)
       if (this.revealTexture) this.gl.deleteTexture(this.revealTexture)
+      if (this.colorTexture) this.gl.deleteTexture(this.colorTexture)
       this.geometryBuffers.forEach((buffer) => this.gl.deleteBuffer(buffer))
       if (this.vao) this.gl.deleteVertexArray(this.vao)
       // The program stays cached with the context for the next engine.
     }
     if (this.texture) {
-      debugStats.textures -= 4
+      debugStats.textures -= 5
       debugStats.engines -= 1
     }
     this.texture = null
     this.midTexture = null
     this.detailTexture = null
     this.revealTexture = null
+    this.colorTexture = null
     this.vao = null
     this.canvas.dataset.webglState = 'disposed'
   }
@@ -2531,8 +2587,10 @@ class InfiniteMovieEngine<T> {
     this.loader = createPosterLoader({ concurrency: LOADER_CONCURRENCY })
 
     this.initRevealTexture()
-    // Four live textures per engine: base, mid, detail and the reveal clock.
-    debugStats.textures += 4
+    this.initColorTexture()
+    // Five live textures per engine: base, mid, detail, the reveal clock and
+    // the placeholder colours.
+    debugStats.textures += 5
     debugStats.engines += 1
     const bytes = estimateTextureBytes(this.tiers, itemCount)
     this.canvas.dataset.atlasColumns = String(this.atlas.columns)
@@ -2583,6 +2641,38 @@ class InfiniteMovieEngine<T> {
       gl.FLOAT,
       new Float32Array(this.revealSize * this.revealSize),
     )
+    gl.bindTexture(gl.TEXTURE_2D, this.texture)
+  }
+
+  // One texel per film: its average colour from the catalogue, or a muted
+  // random one, for the placeholder blocks.
+  private initColorTexture() {
+    const gl = this.gl
+    const size = this.revealSize
+    const data = new Uint8Array(size * size * 4)
+    this.items.forEach((item, index) => {
+      const [r, g, b] = placeholderRgb(item.placeholderColor, index)
+      data.set([r, g, b, 255], index * 4)
+    })
+    this.colorTexture = gl.createTexture()
+    gl.activeTexture(gl.TEXTURE4)
+    gl.bindTexture(gl.TEXTURE_2D, this.colorTexture)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA8,
+      size,
+      size,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      data,
+    )
+    gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
   }
 
@@ -2695,15 +2785,7 @@ class InfiniteMovieEngine<T> {
     const indices = this.items
       .map((_, index) => index)
       .sort((a, b) => facing[b] - facing[a])
-    const loaded = new Set<number>()
     this.watchWallVisible()
-
-    // A poster that could not be fetched keeps its slot as its average colour.
-    const paintFallback = (index: number) => {
-      if (this.disposed || this.contextLost || !this.texture) return
-      if (loaded.has(index)) return
-      this.paintPlaceholderCell(index)
-    }
 
     // Show the wall once every poster has settled; progress is settled / total.
     const total = Math.max(1, indices.length)
@@ -2749,10 +2831,8 @@ class InfiniteMovieEngine<T> {
       }
       this.reportProgress(8 + (settled / total) * 91)
     }
-    const onLoaded = (index: number, image: PosterImage) => {
-      loaded.add(index)
+    const onLoaded = (index: number, image: PosterImage) =>
       this.uploadPosterCell(index, image)
-    }
 
     // A poster that fails is retried quickly (800ms, then 2.4s) before it
     // settles on its placeholder, so one bad request can never stall or kill
@@ -2764,10 +2844,8 @@ class InfiniteMovieEngine<T> {
         onLoaded(index, image)
         countSettled()
       },
-      (index) => {
-        paintFallback(index)
-        countSettled()
-      },
+      // A poster that could not be fetched keeps its placeholder.
+      () => countSettled(),
       POSTER_SETTLE_RETRY_DELAYS_MS,
     )
 
@@ -2932,41 +3010,6 @@ class InfiniteMovieEngine<T> {
       priority,
       cell,
     )
-  }
-
-  // A poster that could not be fetched keeps its slot as its average colour.
-  private paintPlaceholderCell(index: number) {
-    const item = this.items[index]
-    const colour = item?.placeholderColor
-    if (!colour || !this.texture) return
-    const match = /^#?([0-9a-f]{6})$/i.exec(colour)
-    if (!match) return
-    const rgb = Number.parseInt(match[1], 16)
-    const { cellWidth, cellHeight, columns } = this.atlas
-    const data = new Uint8Array(cellWidth * cellHeight * 4)
-    for (let at = 0; at < data.length; at += 4) {
-      data[at] = (rgb >> 16) & 255
-      data[at + 1] = (rgb >> 8) & 255
-      data[at + 2] = rgb & 255
-      data[at + 3] = 255
-    }
-    const gl = this.gl
-    gl.bindTexture(gl.TEXTURE_2D, this.texture)
-    gl.texSubImage2D(
-      gl.TEXTURE_2D,
-      0,
-      (index % columns) * cellWidth,
-      Math.floor(index / columns) * cellHeight,
-      cellWidth,
-      cellHeight,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      data,
-    )
-    this.baseMipsDirty = true
-    this.scheduleMips()
-    this.markPosterArrived(index)
-    this.renderDirty = true
   }
 
   private uploadPosterCell(index: number, image: PosterImage) {
@@ -3493,6 +3536,7 @@ class InfiniteMovieEngine<T> {
     gl.uniform1f(this.locations.uLodFade, LOD_FADE_MS / 1000)
     gl.uniform1i(this.locations.uTex, 0)
     gl.uniform1i(this.locations.uRevealTex, 1)
+    gl.uniform1i(this.locations.uColorTex, 4)
     gl.uniform1i(this.locations.uMidTex, 2)
     gl.uniform1i(this.locations.uDetailTex, 3)
     gl.uniform1f(
@@ -3511,6 +3555,8 @@ class InfiniteMovieEngine<T> {
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.midTexture)
     gl.activeTexture(gl.TEXTURE3)
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.detailTexture)
+    gl.activeTexture(gl.TEXTURE4)
+    gl.bindTexture(gl.TEXTURE_2D, this.colorTexture)
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
     if (this.lodDirty) {

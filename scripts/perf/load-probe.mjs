@@ -21,9 +21,11 @@ const option = (name, fallback) => {
 const phone = flag('phone')
 const seconds = option('seconds', 25)
 const skipAt = option('skip-at', null)
+// --shots=<dir>: screenshots just after skipping and at the end.
+const shotsDir = args.find((arg) => arg.startsWith('--shots='))?.split('=')[1]
 
 const proxy = process.env.HTTPS_PROXY
-  ? { server: process.env.HTTPS_PROXY }
+  ? { server: process.env.HTTPS_PROXY, bypass: 'localhost,127.0.0.1' }
   : undefined
 const browser = await chromium.launch({
   proxy,
@@ -135,21 +137,29 @@ const run = async () => {
       ) {
         skipped = true
         await page
-          .click('.warp-preloader-skip', { timeout: 1000 })
+          .click('.warp-preloader-skip', { timeout: 2000, force: true })
           .catch(() => {})
+        if (shotsDir) {
+          await page.waitForTimeout(400)
+          await page.screenshot({ path: `${shotsDir}/after-skip.png` })
+        }
       }
     }
     await page.waitForTimeout(100)
   }
+
+  if (shotsDir) await page.screenshot({ path: `${shotsDir}/end.png` })
 
   let card = null
   if (flag('open-card')) {
     const opened = Date.now()
     await page
       .click('.warp-cta', { timeout: 5000, force: true })
-      .catch((error) => consoleErrors.push({ t: at(), text: String(error).slice(0, 120) }))
+      .catch((error) =>
+        consoleErrors.push({ t: at(), text: String(error).slice(0, 120) }),
+      )
     let sharpAt = null
-    let states = []
+    const states = []
     while (Date.now() - opened < 12000) {
       const state = await page
         .evaluate(

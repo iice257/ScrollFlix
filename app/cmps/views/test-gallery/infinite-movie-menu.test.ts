@@ -7,6 +7,7 @@ import {
   createPickCandidate,
   ellipseIntersectsQuad,
   faceTargetFor,
+  placeholderRgb,
   pickWinner,
   pointToQuadDistance,
   releaseTimeConstant,
@@ -295,5 +296,23 @@ describe('faceTargetFor', () => {
     expect(faceTargetFor(null, 'z', items)).toBeNull()
     expect(faceTargetFor('z', null, items)).toBeNull()
     expect(faceTargetFor(null, null, items)).toBeNull()
+  })
+})
+
+describe('placeholderRgb', () => {
+  it("uses the film's average colour", () => {
+    expect(placeholderRgb('#336699', 0)).toEqual([0x33, 0x66, 0x99])
+    expect(placeholderRgb('a0b0c0', 5)).toEqual([0xa0, 0xb0, 0xc0])
+  })
+
+  it('falls back to a muted colour that varies by slot', () => {
+    const colours = new Set(
+      Array.from({ length: 12 }, (_, index) =>
+        placeholderRgb(undefined, index).join(),
+      ),
+    )
+    expect(colours.size).toBeGreaterThan(2)
+    for (const value of placeholderRgb('not a colour', 3))
+      expect(value).toBeLessThan(0x60)
   })
 })
