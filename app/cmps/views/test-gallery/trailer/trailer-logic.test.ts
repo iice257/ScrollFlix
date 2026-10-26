@@ -84,4 +84,13 @@ describe('trailerButtonFor', () => {
       kind: 'youtube',
     })
   })
+
+  it('holds a placeholder while the keys may still arrive, until they do', () => {
+    expect(trailerButtonFor([], new Set(), true)).toEqual({ kind: 'loading' })
+    expect(trailerButtonFor(undefined, new Set(), true)).toEqual({
+      kind: 'loading',
+    })
+    expect(trailerButtonFor(['a'], new Set(), true)).toEqual({ kind: 'play' })
+    expect(trailerButtonFor([], new Set(), false)).toEqual({ kind: 'none' })
+  })
 })

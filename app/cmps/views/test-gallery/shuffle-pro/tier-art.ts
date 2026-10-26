@@ -15,12 +15,12 @@ export type ArtPath = {
 // 64x64 box and mirrored into the other three.
 export const CORNER_ART: Record<Tier, ArtPath[]> = {
   frost: [
-    { d: 'M5 5L42 42' },
-    { d: 'M20 20V7M20 20H7' },
-    { d: 'M30 30V15M30 30H15', opacity: 0.8 },
-    { d: 'M12 12L25 9M12 12L9 25', opacity: 0.7 },
-    { d: 'M42 42l3-3 3 3-3 3z', fill: true },
-    { d: 'M7 7m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0', fill: true },
+    // A cut-ice corner: a chamfered rail that hugs the card's edges (the other
+    // paths hug them too), an inner echo, and one diamond facet.
+    { d: 'M4 44V16L16 4H44' },
+    { d: 'M10 34V22L22 10H34', opacity: 0.6 },
+    { d: 'M17 17L24 24', opacity: 0.7 },
+    { d: 'M24 20l4 4-4 4-4-4z', fill: true },
   ],
   amethyst: [
     { d: 'M4 44C4 22 22 4 44 4' },

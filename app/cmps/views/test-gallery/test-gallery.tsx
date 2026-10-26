@@ -39,6 +39,7 @@ import {
   Fragment,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
   Suspense,
   type SyntheticEvent,
   lazy,
@@ -101,6 +102,7 @@ import {
   withWeightedRatings,
 } from './catalog-loader'
 import { constellationSetting } from './constellation'
+import { countGenresAndFilters } from './filter-count'
 import { formatGenreCount } from './genre-count'
 import { sessionPathSetting } from './globe-lines'
 import type { LineKind } from './globe-lines-nudge'
@@ -118,6 +120,7 @@ import {
   pickRandomRow,
   visibleGenreTags,
 } from './list-scroll'
+import { useLoaderState } from './loader-state'
 import { MoodFunnel, MoodLine, MoodNudge } from './moods/mood-entry'
 import { landMoodRun } from './moods/mood-run-plan'
 import type { MoodPick } from './moods/mood-runs'
@@ -206,6 +209,8 @@ import {
   useShuffleProController,
 } from './shuffle-pro/use-shuffle-pro'
 import { DESKTOP_GLOBE_COUNT } from './texture-tiers'
+import { useDismissLayer } from './use-dismiss-layer'
+import { WatchOptionsList } from './watch-options'
 import './session-path.css'
 import { AmbientWeather } from './ambient-weather'
 import { AppearanceSetting, useDynamicHint } from './dynamic-theme-setting'
@@ -218,6 +223,7 @@ import {
 } from './trailer/trailer-logic'
 import { useDynamicSky } from './use-dynamic-sky'
 import { useTitleTranslation } from './use-title-translation'
+import { youtubeWatchHref } from './watch-links'
 import { WeatherLayer, type WeatherStorm } from './weather-layer'
 
 // TestMovie, the catalogue loading and the legacy id migration live in
@@ -276,11 +282,14 @@ const galleryWindowSize = () => {
     return DESKTOP_GLOBE_COUNT
   }
 }
-// Posters now come from the TMDB CDN, so the first-load screen can no longer
-// wait for all of them. Once chunk 0 is in and the placeholders are up, the
-// screen lets go after this long and the posters fill in behind it.
-const FIRST_LOAD_MAX_LOCK_MS = 3000
 const MIN_DECISION_FILTER_RESULTS = 24
+// The popups with no backdrop: a press outside them (and outside the button
+// that toggles them) closes them.
+const FILTER_POPUP_SELECTOR = '.warp-filter-panel, .warp-filter-button'
+const SORT_POPUP_SELECTOR = '.warp-sort-panel, .warp-sort-button'
+const closestElement = (node: Node, selector: string) =>
+  (node instanceof Element ? node : node.parentElement)?.closest(selector)
+
 const DETAILS_EXPAND_DRAG_PX = 42
 const DETAILS_CLOSE_DRAG_PX = 68
 const DETAILS_COMPACT_DRAG_PX = 38
@@ -666,13 +675,29 @@ const DETAIL_POSTER_SIZES =
 const readDpr = () =>
   typeof window === 'undefined' ? 1 : Math.min(3, window.devicePixelRatio || 1)
 
-const MoviePoster = ({
+// One poster per film: a card that changes film in place (an index shuffle)
+// must not keep the last film's image and its "loaded" state on screen while
+// the new title and details are already showing. The key remounts it, so the
+// new film starts from its placeholder and thumbnail and the sharp image fades
+// in once decoded.
+const MoviePoster = (props: MoviePosterProps) => (
+  <MoviePosterImage key={props.movie.id} {...props} />
+)
+
+// Posters that have already been decoded in this session. Opening one of them
+// again starts on the sharp image: no placeholder, no thumbnail, no fade.
+const decodedPosters = new Set<string>()
+
+const MoviePosterImage = ({
   movie,
   loading = 'lazy',
   priority = false,
   size = 'thumb',
 }: MoviePosterProps) => {
-  const [loadState, setLoadState] = useState<PosterLoadState>('loading')
+  const decodedKey = `${movie.id}|${size}`
+  const [loadState, setLoadState] = useState<PosterLoadState>(() =>
+    decodedPosters.has(decodedKey) ? 'loaded' : 'loading',
+  )
   const [attempt, setAttempt] = useState(0)
   // A copy fetched around the HTTP cache, used after a failed first try.
   const [recovered, setRecovered] = useState<string | null>(null)
@@ -758,7 +783,10 @@ const MoviePoster = ({
         onError={() => setLoadState('error')}
         // The fade starts once the pixels are decoded, not when the bytes land.
         onLoad={(event) => {
-          const reveal = () => setLoadState('loaded')
+          const reveal = () => {
+            decodedPosters.add(decodedKey)
+            setLoadState('loaded')
+          }
           const image = event.currentTarget
           if (typeof image.decode === 'function')
             image.decode().then(reveal, reveal)
@@ -1651,6 +1679,22 @@ export const TestGalleryApp = () => {
 
   const decadeOptions = useMemo(() => getDecadeSummaries(movies), [movies])
 
+  // Same lists the Filters page renders, so the About figure follows them.
+  const genreAndFilterCount = useMemo(
+    () =>
+      countGenresAndFilters({
+        genres: genreSummaries.map((summary) => summary.genre),
+        groups: [
+          CONTENT_FILTERS,
+          MOVIE_RUNTIME_FILTERS,
+          decadeOptions,
+          RATING_PRESETS,
+          MOOD_FILTERS,
+        ],
+      }),
+    [genreSummaries, decadeOptions],
+  )
+
   const baseMovies = useMemo(
     () => filterMoviesByYearAndRating(movies, selectedYear, ratingMin),
     [movies, selectedYear, ratingMin],
@@ -1784,20 +1828,17 @@ export const TestGalleryApp = () => {
     }
   }, [loadState, visibleMovies.length])
 
-  useEffect(() => {
-    if (initialGalleryReady || loadState !== 'ready') return
-    if (!visibleMovies.length) return
-    const timer = window.setTimeout(
-      () => setInitialGalleryReady(true),
-      FIRST_LOAD_MAX_LOCK_MS,
-    )
-    return () => window.clearTimeout(timer)
-  }, [initialGalleryReady, loadState, visibleMovies.length])
-
   const handleGalleryLoadProgress = useCallback((percent: number) => {
     setGalleryLoadPercent(Math.round(percent))
     if (percent >= 100) setInitialGalleryReady(true)
   }, [])
+
+  // No auto-dismiss: the screen stays until the gallery is ready or the
+  // visitor skips. After 6 s without progress it turns amber and says so.
+  const loaderState = useLoaderState(
+    mode === 'wall' && !initialGalleryReady,
+    galleryLoadPercent,
+  )
 
   useEffect(() => {
     if (mode !== 'wall') return
@@ -2581,45 +2622,21 @@ export const TestGalleryApp = () => {
     reopenDetailsAfterListShuffleRef.current = false
   }, [])
 
-  useEffect(() => {
-    if (
-      !detailsMovieId &&
-      !watchMovieId &&
-      !aboutOpen &&
-      !savedOpen &&
-      !pathOpen &&
-      !moodsOpen &&
-      !filterOpen &&
-      !sortOpen
-    )
-      return
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      // Close only the top-most layer: watch links, then details, then About,
-      // then Saved, then panels.
-      if (moodsOpen) setMoodsOpen(false)
-      else if (watchMovieId) setWatchMovieId(null)
-      else if (detailsMovieId) setDetailsMovieId(null)
-      else if (aboutOpen) setAboutOpen(false)
-      else if (savedOpen) setSavedOpen(false)
-      else if (pathOpen) setPathOpen(false)
-      else if (sortOpen) setSortOpen(false)
-      else setFilterOpen(false)
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [
-    aboutOpen,
-    detailsMovieId,
-    filterOpen,
-    moodsOpen,
-    pathOpen,
-    savedOpen,
-    sortOpen,
-    watchMovieId,
-  ])
+  // Every card, sheet and popup joins one dismiss stack in the order it opens:
+  // Escape closes the topmost, and the Filters and Sort popups (which have no
+  // backdrop) also close on a press outside. Focus goes back to the opener.
+  useDismissLayer(moodsOpen, () => setMoodsOpen(false))
+  useDismissLayer(Boolean(watchMovieId), () => setWatchMovieId(null))
+  useDismissLayer(Boolean(detailsMovieId), () => setDetailsMovieId(null))
+  useDismissLayer(aboutOpen, () => setAboutOpen(false))
+  useDismissLayer(savedOpen, () => setSavedOpen(false))
+  useDismissLayer(pathOpen, () => setPathOpen(false))
+  useDismissLayer(sortOpen && mode === 'list', () => setSortOpen(false), {
+    inside: (node) => Boolean(closestElement(node, SORT_POPUP_SELECTOR)),
+  })
+  useDismissLayer(filterOpen, () => setFilterOpen(false), {
+    inside: (node) => Boolean(closestElement(node, FILTER_POPUP_SELECTOR)),
+  })
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -3393,6 +3410,7 @@ export const TestGalleryApp = () => {
           ref={preloaderRef}
           className='warp-gallery-preloader'
           data-state={initialGalleryReady ? 'ready' : 'loading'}
+          data-loader-state={loaderState}
           onAnimationEnd={(event) => {
             if (event.animationName === 'warp-preloader-denied') {
               event.currentTarget.classList.remove('is-denied')
@@ -3402,9 +3420,13 @@ export const TestGalleryApp = () => {
           aria-live='polite'
         >
           <div className='warp-preloader-stack'>
-            <span>
-              <strong>Building gallery</strong>
-              <i>
+            <span className='warp-preloader-card'>
+              <strong className='warp-preloader-title'>
+                {loaderState === 'slow'
+                  ? 'This is taking longer than it should'
+                  : 'Building gallery'}
+              </strong>
+              <i className='warp-preloader-bar'>
                 <b
                   style={
                     {
@@ -3413,15 +3435,27 @@ export const TestGalleryApp = () => {
                   }
                 />
               </i>
-              <small>{galleryLoadPercent}%</small>
+              <small className='warp-preloader-percent'>
+                {galleryLoadPercent}%
+              </small>
               <button
                 type='button'
                 className='warp-preloader-skip'
                 onClick={() => setInitialGalleryReady(true)}
               >
-                Skip first time load
+                {loaderState === 'slow' ? (
+                  <>
+                    Poor connection? <b>Skip</b>
+                  </>
+                ) : (
+                  'Skip first time load'
+                )}
               </button>
-              <em>Images will load in the background</em>
+              <em className='warp-preloader-hint'>
+                {loaderState === 'slow'
+                  ? '(images may be pixelated)'
+                  : 'Images will load in the background'}
+              </em>
             </span>
             <LoaderSoundToggle />
           </div>
@@ -3469,7 +3503,7 @@ export const TestGalleryApp = () => {
           themePref={themePref}
           sky={sky}
           onThemeChange={changeTheme}
-          genreCount={genreSummaries.length}
+          genreCount={genreAndFilterCount}
           globeCount={visibleMovies.length}
           maximized={aboutMaximized}
           motionPhase={aboutPresence.motionPhase}
@@ -5394,11 +5428,11 @@ const AboutDrawer = ({
               <dd>{formatFilmCount(movieCount)}</dd>
             </div>
             <div>
-              <dt>Posters on the globe</dt>
+              <dt>Gallery snapshot</dt>
               <dd>{globeCount.toLocaleString()}</dd>
             </div>
             <div>
-              <dt>Genres</dt>
+              <dt>Genres and filters</dt>
               <dd>{genreCount}</dd>
             </div>
           </dl>
@@ -5447,8 +5481,10 @@ const AboutDrawer = ({
         <section className='warp-about-section'>
           <h3>Watch links</h3>
           <p>
-            Links are a work in progress and are disabled for now. You can find
-            any movie seen here with a quick Google search.
+            Where to watch lists the legal services that carry a film in your
+            country, from JustWatch through TMDB. Each one opens that service's
+            own search, and the YouTube link opens the film's trailer.
+            ScrollFlix doesn't host or stream any films.
           </p>
         </section>
 
@@ -5456,11 +5492,22 @@ const AboutDrawer = ({
           <h3>Credits</h3>
           <p>
             Carefully put together by my humble self -{' '}
-            <a href='https://kingsleyaremu.com/'>ICE</a>.
+            <a
+              className='warp-about-credit-link'
+              href='https://kingsleyaremu.com/'
+            >
+              ICE
+            </a>
+            .
           </p>
           <p>
             Follow along on{' '}
-            <a href='https://x.com/scrollflix' target='_blank' rel='noreferrer'>
+            <a
+              className='warp-about-credit-link'
+              href='https://x.com/scrollflix'
+              target='_blank'
+              rel='noreferrer'
+            >
               X @scrollflix
             </a>
             .
@@ -5737,13 +5784,6 @@ const PathDrawer = ({
   )
 }
 
-const WATCH_LINKS = [
-  { label: 'Netflix', meta: 'Subscription' },
-  { label: 'Prime Video', meta: 'Rent or buy' },
-  { label: 'Apple TV', meta: 'Rent or buy' },
-  { label: 'YouTube', meta: 'Trailer' },
-]
-
 type WatchLinksDialogProps = {
   motionPhase: MotionPhase
   movie: TestMovie
@@ -5756,50 +5796,65 @@ const WatchLinksDialog = ({
   movie,
   onClose,
   onOpenAbout,
-}: WatchLinksDialogProps) => (
-  <section
-    className='warp-watch-layer'
-    data-motion={motionPhase}
-    aria-label={`${movie.title} watch links`}
-  >
-    <button
-      type='button'
-      className='warp-watch-backdrop'
-      aria-label='Close watch links'
-      onClick={onClose}
-    />
-    <dialog
-      className='warp-watch-card'
-      aria-label={`${movie.title} watch options`}
-      aria-modal='true'
-      open
+}: WatchLinksDialogProps) => {
+  // The YouTube entry opens the film's first trailer that still plays.
+  const movieText = useMovieText(movie)
+  const youtubeHref = youtubeWatchHref(
+    movieText?.trailerKeys?.length ? movieText.trailerKeys : movie.trailerKeys,
+    readDeadTrailers(),
+    movie.title,
+    /^\d{4}$/.test(movie.year) ? movie.year : undefined,
+  )
+  return (
+    <section
+      className='warp-watch-layer'
+      data-motion={motionPhase}
+      aria-label={`${movie.title} watch links`}
     >
       <button
         type='button'
-        className='warp-watch-close'
+        className='warp-watch-backdrop'
         aria-label='Close watch links'
         onClick={onClose}
+      />
+      <dialog
+        className='warp-watch-card'
+        aria-label={`${movie.title} watch options`}
+        aria-modal='true'
+        open
       >
-        Close
-      </button>
-      <p className='warp-watch-kicker'>Watch options</p>
-      <h2>{movie.title}</h2>
-      <p className='warp-watch-meta'>{formatMovieMeta(movie)}</p>
-      <div className='warp-watch-links'>
-        {WATCH_LINKS.map((link) => (
-          <button type='button' key={link.label} disabled>
-            <span>{link.label}</span>
-            <span>{link.meta}</span>
-          </button>
-        ))}
-      </div>
-      <button type='button' className='warp-watch-about' onClick={onOpenAbout}>
-        <Info aria-hidden='true' />
-        About ScrollFlix and where these links come from
-      </button>
-    </dialog>
-  </section>
-)
+        <button
+          type='button'
+          className='warp-watch-close'
+          aria-label='Close watch links'
+          onClick={onClose}
+        >
+          Close
+        </button>
+        <p className='warp-watch-kicker'>Watch options</p>
+        <h2>{movie.title}</h2>
+        <p className='warp-watch-meta'>{formatMovieMeta(movie)}</p>
+        <WatchOptionsList movieId={movie.id} title={movie.title} />
+        <a
+          className='warp-watch-row warp-watch-youtube'
+          href={youtubeHref}
+          target='_blank'
+          rel='noopener noreferrer'
+        >
+          <span>Trailer on YouTube</span>
+        </a>
+        <button
+          type='button'
+          className='warp-watch-about'
+          onClick={onOpenAbout}
+        >
+          <Info aria-hidden='true' />
+          About ScrollFlix and where these links come from
+        </button>
+      </dialog>
+    </section>
+  )
+}
 
 type MovieCardFilter =
   | { kind: 'year'; year: number }
@@ -5823,6 +5878,52 @@ type MovieDetailsCardProps = {
   onApplyFilter: (filter: MovieCardFilter) => void
   onNextSuggestion: () => void
   onWatch: (movie: TestMovie) => void
+}
+
+// Calls onEnd when the user scrolls the element to its end, or pushes upward on
+// it while it already sits at its end (a short card has nothing to scroll).
+const useExpandAtScrollEnd = (
+  ref: RefObject<HTMLElement | null>,
+  active: boolean,
+  onEnd: () => void,
+) => {
+  const onEndRef = useRef(onEnd)
+  onEndRef.current = onEnd
+  useEffect(() => {
+    const element = ref.current
+    if (!active || !element) return
+    const armedAt = performance.now() + 500
+    const atEnd = () =>
+      element.scrollTop + element.clientHeight >= element.scrollHeight - 2
+    let lastTop = element.scrollTop
+    let touchY: number | null = null
+    const handleScroll = () => {
+      const top = element.scrollTop
+      const movedDown = top > lastTop
+      lastTop = top
+      if (performance.now() < armedAt) return
+      if (movedDown && top > 0 && atEnd()) onEndRef.current()
+    }
+    const handleTouchStart = (event: TouchEvent) => {
+      touchY = event.touches[0]?.clientY ?? null
+    }
+    const handleTouchMove = (event: TouchEvent) => {
+      const y = event.touches[0]?.clientY
+      if (touchY === null || y === undefined) return
+      if (touchY - y > 24 && atEnd()) {
+        touchY = null
+        onEndRef.current()
+      }
+    }
+    element.addEventListener('scroll', handleScroll, { passive: true })
+    element.addEventListener('touchstart', handleTouchStart, { passive: true })
+    element.addEventListener('touchmove', handleTouchMove, { passive: true })
+    return () => {
+      element.removeEventListener('scroll', handleScroll)
+      element.removeEventListener('touchstart', handleTouchStart)
+      element.removeEventListener('touchmove', handleTouchMove)
+    }
+  }, [active, ref])
 }
 
 const MovieDetailsCard = ({
@@ -5928,6 +6029,17 @@ const MovieDetailsCard = ({
     finishDrag(event.clientY)
   }
 
+  // On a phone the short card scrolls like any page: reaching its end (or
+  // pushing on past it) opens the long description, no tap on More needed.
+  const copyScrollRef = useRef<HTMLDivElement | null>(null)
+  const copyScrollNodeRef = useCallback((node: HTMLDivElement | null) => {
+    copyScrollRef.current = node
+    return overlayScrollbarRef(node)
+  }, [])
+  useExpandAtScrollEnd(copyScrollRef, !isWide && !isExpanded, () =>
+    setIsExpanded(true),
+  )
+
   const showFullContent = isWide || isExpanded
   const yearNumber = Number.parseInt(movie.year, 10)
   const runtimeBucket = getRuntimeBucket(movie.runtimeMinutes)
@@ -6016,7 +6128,13 @@ const MovieDetailsCard = ({
   const trailerKeys = movieText?.trailerKeys?.length
     ? movieText.trailerKeys
     : (movie.trailerKeys ?? [])
-  const trailerButton = trailerButtonFor(trailerKeys, deadTrailers)
+  // While the film's text is on its way the keys are unknown, so a disabled
+  // placeholder holds the spot and nothing jumps when they arrive.
+  const trailerButton = trailerButtonFor(
+    trailerKeys,
+    deadTrailers,
+    movieText === null,
+  )
   // On phones the trailer entry sits on the poster as a frosted pill, so the
   // action row keeps its three buttons. Wide screens use the row button.
   const trailerPill =
@@ -6026,6 +6144,16 @@ const MovieDetailsCard = ({
         className='warp-details-trailer-pill'
         aria-haspopup='dialog'
         onClick={() => setTrailerOpen(true)}
+      >
+        <Play aria-hidden='true' size={14} strokeWidth={2.6} />
+        Trailer
+      </button>
+    ) : trailerButton.kind === 'loading' ? (
+      <button
+        type='button'
+        className='warp-details-trailer-pill is-loading'
+        disabled
+        aria-busy='true'
       >
         <Play aria-hidden='true' size={14} strokeWidth={2.6} />
         Trailer
@@ -6160,7 +6288,7 @@ const MovieDetailsCard = ({
             poster
           )}
           <div className='warp-details-copy'>
-            <div className='warp-details-copy-scroll' ref={overlayScrollbarRef}>
+            <div className='warp-details-copy-scroll' ref={copyScrollNodeRef}>
               {premiumTier ? (
                 <PremiumPlate tier={premiumTier} mood={premiumMood} />
               ) : null}
@@ -6267,6 +6395,20 @@ const MovieDetailsCard = ({
                     className='warp-details-trailer'
                     aria-haspopup='dialog'
                     onClick={() => setTrailerOpen(true)}
+                  >
+                    <Clapperboard
+                      aria-hidden='true'
+                      size={15}
+                      strokeWidth={2.4}
+                    />
+                    Play trailer
+                  </button>
+                ) : trailerButton.kind === 'loading' ? (
+                  <button
+                    type='button'
+                    className='warp-details-trailer is-loading'
+                    disabled
+                    aria-busy='true'
                   >
                     <Clapperboard
                       aria-hidden='true'

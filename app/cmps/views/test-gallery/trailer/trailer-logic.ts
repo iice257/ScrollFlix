@@ -61,6 +61,8 @@ export const youtubeSearchUrl = (title: string, year?: string) => {
 }
 
 export type TrailerButton =
+  // The film's text has not arrived yet: a disabled placeholder holds the spot.
+  | { kind: 'loading' }
   // Play in the sheet.
   | { kind: 'play' }
   // Every key is dead: skip the sheet and open YouTube.
@@ -71,7 +73,9 @@ export type TrailerButton =
 export const trailerButtonFor = (
   keys: readonly string[] | undefined,
   dead: ReadonlySet<string>,
+  // True while the keys may still arrive (the film's text is being fetched).
+  loading = false,
 ): TrailerButton => {
-  if (!keys?.length) return { kind: 'none' }
+  if (!keys?.length) return loading ? { kind: 'loading' } : { kind: 'none' }
   return nextKey(keys, dead) ? { kind: 'play' } : { kind: 'youtube' }
 }

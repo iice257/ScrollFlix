@@ -585,6 +585,11 @@ export const pickWinner = (
   return winner
 }
 
+// The poster is 2:3; its corners are this share of its width (the detail
+// card's 18 px on a 330 px poster is 5.5%).
+export const POSTER_ASPECT = 1.5
+export const POSTER_CORNER_RADIUS = 0.06
+
 const vertexShaderSource = `#version 300 es
 uniform mat4 uWorldMatrix;
 uniform mat4 uViewMatrix;
@@ -681,10 +686,15 @@ in float vAlpha;
 flat in int vInstanceId;
 flat in vec4 vLod;
 
-float roundedRectMask(vec2 uv) {
-  vec2 q = abs(uv - vec2(0.5)) - vec2(0.34, 0.39);
-  float dist = length(max(q, 0.0)) - 0.11;
-  return 1.0 - smoothstep(0.0, 0.024, dist);
+// Coverage of the poster's own rounded rectangle (poster space, 0..1 across
+// the poster), anti-aliased by one screen pixel at any zoom. Distances are in
+// poster widths, so the corner radius is the same share of the poster as on
+// the detail card.
+float posterMask(vec2 poster) {
+  vec2 q = abs((poster - vec2(0.5)) * vec2(1.0, ${POSTER_ASPECT})) - vec2(0.5, ${POSTER_ASPECT / 2}) + vec2(${POSTER_CORNER_RADIUS});
+  float dist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - ${POSTER_CORNER_RADIUS};
+  float aa = max(fwidth(dist), 0.00001);
+  return clamp(0.5 - dist / aa, 0.0, 1.0);
 }
 
 // Where the whole 2:3 poster sits on the quad: the rounded rectangle shows it
@@ -697,6 +707,9 @@ void main() {
   int itemIndex = vInstanceId % max(1, uItemCount);
   ivec2 cell = ivec2(itemIndex % uAtlasColumns, itemIndex / uAtlasColumns);
   vec2 tileOrigin = vec2(cell) * uAtlasCell + uAtlasGutter;
+  // Base samples stay half a texel inside the poster's own cell, so no
+  // neighbouring poster or gutter can bleed in.
+  vec2 cellInset = vec2(0.5) / (uAtlasSpan * vec2(textureSize(uTex, 0)));
 
   vec4 color;
   vec2 poster = posterUv(vUvs);
@@ -707,12 +720,12 @@ void main() {
     for (int i = 0; i < 6; i++) {
       float t = (float(i) + 0.5) / 6.0 - 0.5;
       vec2 tapUv = clamp(vUvs + vSmear * t, 0.0, 1.0);
-      color += texture(uTex, clamp(posterUv(tapUv), 0.0, 1.0) * uAtlasSpan + tileOrigin);
+      color += texture(uTex, clamp(posterUv(tapUv), cellInset, 1.0 - cellInset) * uAtlasSpan + tileOrigin);
     }
     color /= 6.0;
     color = mix(vec4(0.0196, 0.0196, 0.0196, 1.0), color, color.a);
   } else {
-    color = texture(uTex, poster * uAtlasSpan + tileOrigin);
+    color = texture(uTex, clamp(poster, cellInset, 1.0 - cellInset) * uAtlasSpan + tileOrigin);
     // A cell that has not arrived is empty (alpha 0): it shows as the dark slot.
     color = mix(vec4(0.0196, 0.0196, 0.0196, 1.0), color, color.a);
     // The sharper tiers fade in over the one below them.
@@ -735,7 +748,7 @@ void main() {
       }
     }
   }
-  float mask = roundedRectMask(vUvs);
+  float mask = posterMask(poster);
   outColor = color;
   outColor.rgb *= mix(0.58, 1.12, vAlpha);
   // Shuffle Pro grade: a soft exposure lift and the path's colour washing in.

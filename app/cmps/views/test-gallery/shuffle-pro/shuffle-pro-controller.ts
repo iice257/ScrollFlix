@@ -23,6 +23,7 @@ import {
   angularSpeedAt,
   axisForDragDirection,
   cameraPullback,
+  holdIsMoving,
   holdProgress,
   holdRingSpanMs,
   isKeyHold,
@@ -207,6 +208,8 @@ type Press = {
   rolling: boolean
   // The hold ring is on screen for this press.
   ringShown: boolean
+  // Which clock the ring on screen is running (a drag triggers later).
+  ringMoving: boolean
 }
 
 const SKY_HOLD_LEVEL = 0.6
@@ -301,13 +304,20 @@ export class ShuffleProController {
 
   private syncHoldRing(press: Press) {
     const progress = this.getHoldProgress()
-    if (progress !== null && !press.ringShown) {
+    const moving = holdIsMoving(press.maxMovedPx, press.pointerType)
+    // Shown once, and announced again if the press starts to drag: the trigger
+    // moves later, so the ring restarts on the longer clock.
+    if (
+      progress !== null &&
+      (!press.ringShown || press.ringMoving !== moving)
+    ) {
       press.ringShown = true
+      press.ringMoving = moving
       const ring: HoldRing = {
         nx: press.nx,
         ny: press.ny,
         progress,
-        totalMs: holdRingSpanMs(this.deps.isImmersive()),
+        totalMs: holdRingSpanMs(this.deps.isImmersive(), moving),
       }
       for (const listener of this.holdListeners) listener(ring)
     } else if (progress === null && press.ringShown) {
@@ -475,6 +485,7 @@ export class ShuffleProController {
       pointerType: info.pointerType,
       rolling: false,
       ringShown: false,
+      ringMoving: false,
     }
     this.press = press
     if (this.phase === 'idle') {

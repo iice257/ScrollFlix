@@ -165,6 +165,10 @@ test.describe('Dynamic theme', () => {
     await expect(tip(page)).toBeVisible()
     // ...but the first-open one does not come back after a reload.
     await page.reload()
+    await page
+      .getByRole('button', { name: 'Skip first time load' })
+      .click({ timeout: 3_000 })
+      .catch(() => {})
     await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
     await openMenu(page)
     await page.waitForTimeout(900)
