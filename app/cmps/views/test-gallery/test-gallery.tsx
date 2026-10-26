@@ -210,6 +210,7 @@ import {
 } from './shuffle-pro/use-shuffle-pro'
 import { DESKTOP_GLOBE_COUNT } from './texture-tiers'
 import { useDismissLayer } from './use-dismiss-layer'
+import { WatchOptionsList } from './watch-options'
 import './session-path.css'
 import { AmbientWeather } from './ambient-weather'
 import { AppearanceSetting, useDynamicHint } from './dynamic-theme-setting'
@@ -5480,10 +5481,10 @@ const AboutDrawer = ({
         <section className='warp-about-section'>
           <h3>Watch links</h3>
           <p>
-            Trailers now play right here in the app, and Watch opens the trailer
-            on YouTube. Links to the streaming services are still a work in
-            progress and disabled for now. You can find any movie seen here with
-            a quick Google search.
+            Where to watch lists the legal services that carry a film in your
+            country, from JustWatch through TMDB. Each one opens that service's
+            own search, and the YouTube link opens the film's trailer.
+            ScrollFlix doesn't host or stream any films.
           </p>
         </section>
 
@@ -5783,13 +5784,6 @@ const PathDrawer = ({
   )
 }
 
-const WATCH_LINKS = [
-  { label: 'Netflix', meta: 'Subscription' },
-  { label: 'Prime Video', meta: 'Rent or buy' },
-  { label: 'Apple TV', meta: 'Rent or buy' },
-  { label: 'YouTube', meta: 'Trailer' },
-]
-
 type WatchLinksDialogProps = {
   motionPhase: MotionPhase
   movie: TestMovie
@@ -5840,26 +5834,15 @@ const WatchLinksDialog = ({
         <p className='warp-watch-kicker'>Watch options</p>
         <h2>{movie.title}</h2>
         <p className='warp-watch-meta'>{formatMovieMeta(movie)}</p>
-        <div className='warp-watch-links'>
-          {WATCH_LINKS.map((link) =>
-            link.label === 'YouTube' ? (
-              <a
-                key={link.label}
-                href={youtubeHref}
-                target='_blank'
-                rel='noopener noreferrer'
-              >
-                <span>{link.label}</span>
-                <span>{link.meta}</span>
-              </a>
-            ) : (
-              <button type='button' key={link.label} disabled>
-                <span>{link.label}</span>
-                <span>{link.meta}</span>
-              </button>
-            ),
-          )}
-        </div>
+        <WatchOptionsList movieId={movie.id} title={movie.title} />
+        <a
+          className='warp-watch-row warp-watch-youtube'
+          href={youtubeHref}
+          target='_blank'
+          rel='noopener noreferrer'
+        >
+          <span>Trailer on YouTube</span>
+        </a>
         <button
           type='button'
           className='warp-watch-about'

@@ -1,6 +1,50 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { shareLink } from './share-link'
-import { shareCaption, shareFileName, slugifyTitle } from './share-output'
+import {
+  SHARE_ACTIONS,
+  nativeSharePayload,
+  primaryShareAction,
+  shareCaption,
+  shareFileName,
+  slugifyTitle,
+  warmFilmCard,
+} from './share-output'
+
+describe('sharing a link', () => {
+  const file = new File(['x'], 'a.png', { type: 'image/png' })
+
+  it('puts the link in the text too, because apps drop url beside files', () => {
+    const link = 'https://scrollflix.app/?film=949'
+    const payload = nativeSharePayload(file, 'Heat', link)
+    expect(payload.files).toEqual([file])
+    expect(payload.url).toBe(link)
+    expect(payload.text).toContain(link)
+  })
+
+  it('shares only the file when there is no link', () => {
+    const payload = nativeSharePayload(file, 'Heat')
+    expect(payload.url).toBeUndefined()
+    expect(payload.text).toBeUndefined()
+  })
+
+  it('leads with copying the link', () => {
+    expect(primaryShareAction).toBe('copy-link')
+    expect(SHARE_ACTIONS).toEqual(['copy-link', 'share-image', 'save'])
+  })
+
+  it('warms the film card once, and ignores bad ids', () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(''))
+    vi.stubGlobal('fetch', fetchMock)
+    warmFilmCard('c603', 'https://x.test')
+    warmFilmCard('603', 'https://x.test')
+    warmFilmCard('nope', 'https://x.test')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://x.test/api/og?kind=film&id=603',
+    )
+    vi.unstubAllGlobals()
+  })
+})
 
 describe('share helpers', () => {
   it('slugifies titles for file names', () => {
