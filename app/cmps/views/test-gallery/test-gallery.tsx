@@ -1558,9 +1558,9 @@ export const TestGalleryApp = () => {
             ? currentMovies
             : nextMovies,
         )
-        setActiveMovieId(
-          (currentMovieId) => currentMovieId ?? nextMovies[0]?.id ?? null,
-        )
+        // No default film here: the landing pick (made in the same render the
+        // films arrive in) is the first one shown, so the title never flashes
+        // the catalogue's first film before it.
         setLoadState('ready')
       })
       .catch((error: unknown) => {
@@ -1842,13 +1842,16 @@ export const TestGalleryApp = () => {
 
   useEffect(() => {
     if (mode !== 'wall') return
+    // Until the landing pick is applied (the effect above), there is no film
+    // to replace.
+    if (activeMovieId === null && landingId) return
     if (
       visibleMovies.length > 0 &&
       !visibleMovies.some((movie) => movie.id === activeMovieId)
     ) {
       setActiveMovieId(visibleMovies[0].id)
     }
-  }, [activeMovieId, mode, visibleMovies])
+  }, [activeMovieId, landingId, mode, visibleMovies])
 
   // Sorting comes first: filtering keeps the order, so a keystroke in the
   // search box never re-sorts the whole catalogue, and the list follows the
@@ -1869,13 +1872,12 @@ export const TestGalleryApp = () => {
     }
   }, [activeMovieId, listMovies, mode])
 
-  const activeMovie = useMemo(
-    () =>
-      movies.find((movie) => movie.id === activeMovieId) ??
-      visibleMovies[0] ??
-      null,
-    [activeMovieId, movies, visibleMovies],
-  )
+  const activeMovie = useMemo(() => {
+    const shownId = activeMovieId ?? landingId
+    return (
+      movies.find((movie) => movie.id === shownId) ?? visibleMovies[0] ?? null
+    )
+  }, [activeMovieId, landingId, movies, visibleMovies])
 
   const detailsMovie = useMemo(
     () => movies.find((movie) => movie.id === detailsMovieId) ?? null,

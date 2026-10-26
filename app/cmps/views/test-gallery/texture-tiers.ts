@@ -29,9 +29,12 @@ export type TierConfig = {
 export const DESKTOP_BUDGET_BYTES = 160 * MB
 export const PHONE_BUDGET_BYTES = 80 * MB
 
-// How many posters the globe lays out. Desktop is 2.4x the original 900;
-// phones and lightweight devices keep fewer.
-export const DESKTOP_GLOBE_COUNT = 2160
+// How many posters the globe lays out. Desktop is the catalogue's whole first
+// chunk (2,000 films in vote order), so the rest of the catalogue arriving
+// never changes the globe's films and never rebuilds it (a rebuild used to
+// reset the globe to its default front, always Con Air); phones and
+// lightweight devices keep fewer.
+export const DESKTOP_GLOBE_COUNT = 2000
 export const PHONE_GLOBE_COUNT = 1260
 
 // Bytes of a mip chain of `levels` levels, for a w x h image.

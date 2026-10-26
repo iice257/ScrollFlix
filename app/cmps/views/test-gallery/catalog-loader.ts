@@ -84,7 +84,7 @@ export type MovieText = {
 const CATALOG_URL = '/json/catalog'
 const TMDB_IMAGE_URL = 'https://image.tmdb.org/t/p'
 // Chunks of 2,000 films in vote order: the first one is the globe's top films.
-const DEFAULT_CHUNK_SIZE = 2000
+export const DEFAULT_CHUNK_SIZE = 2000
 
 // Phones and weaker machines load the most-voted 20,000 films up front; the
 // rest comes when the index, search or filters first open.

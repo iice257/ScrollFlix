@@ -6,6 +6,7 @@ import {
   type PickEllipse,
   createPickCandidate,
   ellipseIntersectsQuad,
+  faceTargetFor,
   pickWinner,
   pointToQuadDistance,
   releaseTimeConstant,
@@ -276,5 +277,23 @@ describe('setConstellations', () => {
     expect(held.set(input(['a', 'b']))).toBe(false)
     expect(held.set(input(['a', 'b'], true))).toBe(true)
     expect(held.set(input(['a']))).toBe(true)
+  })
+})
+
+describe('faceTargetFor', () => {
+  const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
+
+  it('faces the landing pick on the first build', () => {
+    expect(faceTargetFor('b', 'a', items)).toBe('b')
+  })
+
+  it('keeps the film on show when the globe is rebuilt', () => {
+    expect(faceTargetFor(null, 'c', items)).toBe('c')
+  })
+
+  it('faces nothing when the new set no longer has the film', () => {
+    expect(faceTargetFor(null, 'z', items)).toBeNull()
+    expect(faceTargetFor('z', null, items)).toBeNull()
+    expect(faceTargetFor(null, null, items)).toBeNull()
   })
 })

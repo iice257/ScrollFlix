@@ -406,6 +406,17 @@ const PRIORITY_OPENED = -1
 const PRIORITY_DETAIL = 5000
 const PRIORITY_MID = 10000
 
+// The film a newly built globe turns to: the landing pick on the first build,
+// then whatever film is on show, if the new set still has it.
+export const faceTargetFor = (
+  initialFaceId: string | null,
+  activeId: string | null,
+  items: readonly { id: string }[],
+) => {
+  const id = initialFaceId ?? activeId
+  return id && items.some((item) => item.id === id) ? id : null
+}
+
 // A poster's TMDB path, from the item or from its thumbnail url.
 const posterPathOf = (item: { posterPath?: string; image: string }) =>
   item.posterPath ?? /\/t\/p\/\w+\/([^/?#]+)\.jpg/.exec(item.image)?.[1] ?? null
@@ -4006,8 +4017,16 @@ export const InfiniteMovieMenu = <T,>({
       portRef.current = shuffleProPort
       shuffleProRef.current?.attachPort(shuffleProPort)
       onEngineAttachedRef.current?.(engineItems)
+      // Every build faces the film on show (the landing pick on the first
+      // one). A rebuild that skipped this opened at the globe's default
+      // front, so the active film jumped to whatever poster sat there.
+      const faceId = faceTargetFor(
+        initialFaceRef.current,
+        activeItemRef.current?.id ?? null,
+        engineItems,
+      )
+      if (faceId) engine.faceItem(faceId)
       if (initialFaceRef.current) {
-        engine.faceItem(initialFaceRef.current)
         initialFaceRef.current = null
         initialFaceUsedRef.current = true
       }
