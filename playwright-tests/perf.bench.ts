@@ -275,7 +275,8 @@ const runScenario = async (page: Page, scenario: Scenario): Promise<Row> => {
           const el = document.querySelector('canvas[data-item-count]')
           return (
             el instanceof HTMLElement &&
-            Number(el.dataset.baseLoaded) >= Number(el.dataset.itemCount)
+            Number(el.dataset.baseLoaded) >= Number(el.dataset.itemCount) &&
+            el.dataset.lodPending === '0'
           )
         },
         undefined,

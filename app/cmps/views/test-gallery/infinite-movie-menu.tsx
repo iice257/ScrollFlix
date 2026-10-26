@@ -389,6 +389,9 @@ const POSTER_REPRIORITISE_MS = 300
 // The posters' LOD is re-planned at most this often while the globe moves,
 // and once more when it settles.
 const LOD_PLAN_INTERVAL_MS = 120
+// Below this angular speed (rad/s) the globe counts as at rest and the idle
+// mid-tier warm-up may run.
+const WARMUP_SPEED_MAX = 0.05
 // Mip chains are rebuilt at most this often while posters land.
 const MIP_BATCH_MS = 150
 // A tier image that failed is not asked for again for this long.
@@ -2638,6 +2641,8 @@ class InfiniteMovieEngine<T> {
     if (this.baseCells.has(index)) return
     this.baseCells.add(index)
     this.canvas.dataset.baseLoaded = String(this.baseCells.size)
+    // The last base cell in: plan once more so the warm-up starts at rest.
+    if (this.baseCells.size >= this.items.length) this.lodStale = true
   }
 
   // Seconds on the reveal clock; always above zero, which means "no reveal".
@@ -2757,6 +2762,8 @@ class InfiniteMovieEngine<T> {
       if (this.disposed || this.contextLost || !this.texture) return
       if (loaded.has(index)) return
       this.paintPlaceholderCell(index)
+      // Counts as settled even without a colour to paint.
+      this.noteBaseCell(index)
     }
 
     // Show the wall once every poster has settled; progress is settled / total.
@@ -3165,9 +3172,15 @@ class InfiniteMovieEngine<T> {
       detailCapacity: this.tiers.detailLayers,
       baseWidth: this.tiers.baseWidth,
       midWidth: this.tiers.midWidth,
+      // Tier 3 warm-up: once every base cell is in and the globe is at rest.
+      warm:
+        this.baseCells.size >= count &&
+        !document.hidden &&
+        this.angularSpeed() < WARMUP_SPEED_MAX,
     })
     this.applyTier('m', plan.mid, now)
     this.applyTier('d', plan.detail, now)
+    this.canvas.dataset.lodPending = String(this.lodInflight.size)
   }
 
   private tierUrls(tier: 'm' | 'd', item: number) {
