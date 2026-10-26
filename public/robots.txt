@@ -1,22 +1,7 @@
-# Allow all crawlers to access the main application
+# ScrollFlix: all crawlers may fetch everything the page needs to render
+# (the JS/CSS bundle in /assets/, the film catalogue in /json/catalog/ and
+# the placeholder art in /media/). Blocking those leaves Google an empty shell.
 User-agent: *
 Allow: /
 
-# Block access to internal data
-Disallow: /json/
-Disallow: /media/
-Disallow: /assets/
-Allow: /api/og
-
-# Common crawl optimizations
-# Crawl-delay: 1
-
-# Sitemap location
 Sitemap: https://scrollflix.app/sitemap.xml
-
-# Block known problematic bots (optional)
-# User-agent: SemrushBot
-# Disallow: /
-# 
-# User-agent: AhrefsBot  
-# Disallow: /

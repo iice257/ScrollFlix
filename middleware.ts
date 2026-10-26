@@ -7,10 +7,11 @@ import {
 } from './api/_lib/meta.js'
 import { fetchFilm } from './api/_lib/tmdb.js'
 
-// Routing Middleware (Node runtime, the default). Link-preview crawlers get a
-// tiny page of Open Graph tags for the shared URL. Everyone else, and any
-// error, continues to the app.
-export const config = { matcher: ['/'] }
+// Routing Middleware on the Node.js runtime, set explicitly (a Vite project
+// without it is built on the deprecated edge runtime). Link-preview crawlers
+// get a tiny page of Open Graph tags for the shared URL. Everyone else, and
+// any error, continues to the app.
+export const config = { matcher: ['/'], runtime: 'nodejs' }
 
 export default async function middleware(request: Request) {
   try {

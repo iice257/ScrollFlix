@@ -92,6 +92,7 @@ for (const device of DEVICE_NAMES) {
         ).toBeVisible()
         await imagesSettled(page, '.warp-details-card img')
         await page.waitForTimeout(1200)
+        await page.mouse.move(1, 1)
         await expect(page).toHaveScreenshot(snap('film-card'))
       })
 
@@ -102,6 +103,7 @@ for (const device of DEVICE_NAMES) {
         await expect(page.getByLabel('Movie list view')).toBeVisible()
         await imagesSettled(page, '.warp-list img')
         await page.waitForTimeout(1200)
+        await page.mouse.move(1, 1)
         await expect(page).toHaveScreenshot(snap('index-rows'))
       })
 
@@ -111,6 +113,7 @@ for (const device of DEVICE_NAMES) {
         await openMenu(page, 'About ScrollFlix')
         await expect(page.getByLabel('About ScrollFlix').last()).toBeVisible()
         await page.waitForTimeout(1200)
+        await page.mouse.move(1, 1)
         await expect(page).toHaveScreenshot(snap('about'))
       })
 
@@ -145,6 +148,7 @@ for (const device of DEVICE_NAMES) {
           .click()
         await expect(page.getByLabel('Session path').last()).toBeVisible()
         await page.waitForTimeout(1200)
+        await page.mouse.move(1, 1)
         await expect(page).toHaveScreenshot(snap('session-path'))
       })
 
@@ -156,6 +160,7 @@ for (const device of DEVICE_NAMES) {
           .click()
         await page.getByRole('button', { name: /share/i }).first().click()
         await page.waitForTimeout(2500)
+        await page.mouse.move(1, 1)
         await expect(page).toHaveScreenshot(snap('share-card'))
       })
     })
