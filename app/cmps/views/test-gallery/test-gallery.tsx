@@ -133,6 +133,7 @@ import {
 import {
   buildTasteProfile,
   leadingMood,
+  pickWeighted,
   tasteWeight,
   topGenres,
 } from './moods/taste'
@@ -169,6 +170,7 @@ import {
 } from './search-facets'
 import { type PathPoint, sessionPathStore } from './session-path'
 import { shareLink } from './share/share-link'
+import { createShufflePreroll } from './shuffle-preroll'
 import { devModeStore } from './shuffle-pro/dev-mode'
 import {
   GoldenHourNote,
@@ -687,6 +689,18 @@ const MoviePoster = (props: MoviePosterProps) => (
 // Posters that have already been decoded in this session. Opening one of them
 // again starts on the sharp image: no placeholder, no thumbnail, no fade.
 const decodedPosters = new Set<string>()
+
+// Warms a film's detail poster the way its card asks for it (same URL, same
+// CORS mode), at low priority. Used by the next-shuffle preroll.
+const preloadDetailPoster = (movie: TestMovie) => {
+  const image = new Image()
+  if (movie.posterDetailUrl) image.crossOrigin = 'anonymous'
+  image.fetchPriority = 'low'
+  image.src = movie.posterPath
+    ? posterUrl(movie.posterPath, 'w500')
+    : (movie.posterDetailUrl ?? movie.posterUrl)
+  return image.decode()
+}
 
 const MoviePosterImage = ({
   movie,
@@ -1793,6 +1807,19 @@ export const TestGalleryApp = () => {
         : undefined,
     [tasteWeights],
   )
+  // The next shuffle's poster is warmed ahead, hidden among two decoys.
+  const weightOfRef = useRef(weightOf)
+  weightOfRef.current = weightOf
+  const preroll = useMemo(
+    () =>
+      createShufflePreroll({
+        candidates: () => visibleMoviesRef.current,
+        preload: preloadDetailPoster,
+        choose: (pool, roll) =>
+          pickWeighted(pool, (m) => weightOfRef.current?.(m) ?? 1, roll),
+      }),
+    [],
+  )
 
   // The first centred movie of a page load is random (and never "Marmaduke").
   // Chosen once, during render, so the globe's first build already faces it.
@@ -2374,12 +2401,11 @@ export const TestGalleryApp = () => {
       setListRandomNonce((nonce) => nonce + 1)
       return
     }
-    const movieId = pickOtherMovie(
-      visibleMovies,
-      activeMovieId,
-      Math.random,
-      weightOf,
-    )
+    const rolled = preroll.take((film) => film.id !== activeMovieId)
+    const movieId =
+      rolled?.id ??
+      pickOtherMovie(visibleMovies, activeMovieId, Math.random, weightOf)
+    preroll.prepare()
     if (!movieId) return
     sessionPathStore.add(movieId)
     // Streak rules decide whether this shuffle becomes a Shuffle Pro run.
@@ -2422,10 +2448,16 @@ export const TestGalleryApp = () => {
     isMobileViewport,
     mode,
     party.phase,
+    preroll,
     shuffleProController,
     visibleMovies,
     weightOf,
   ])
+  // Once the globe is up, and whenever the filters change, roll the next one.
+  useEffect(() => {
+    if (initialGalleryReady && visibleMovies.length) preroll.prepare()
+    else preroll.discard()
+  }, [initialGalleryReady, preroll, visibleMovies])
 
   // Skip finishes a Shuffle Pro run. Ordinary shuffles can't be skipped.
   const handleSkip = useCallback(() => {
