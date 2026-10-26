@@ -674,6 +674,8 @@ uniform vec4 uTint;
 uniform float uLodFade;
 // Per-poster reveal clock: the time each cell's full poster arrived (0 = none).
 uniform sampler2D uRevealTex;
+// Tier 1: one texel per poster, its average colour (alpha 0 = unknown).
+uniform sampler2D uColorTex;
 uniform float uRevealActive;
 uniform float uRevealSeconds;
 uniform float uNow;
@@ -710,6 +712,10 @@ void main() {
   // Base samples stay half a texel inside the poster's own cell, so no
   // neighbouring poster or gutter can bleed in.
   vec2 cellInset = vec2(0.5) / (uAtlasSpan * vec2(textureSize(uTex, 0)));
+  // Tier 1: the poster's average colour, known from the catalogue, stands in
+  // until its picture arrives. No colour (alpha 0) shows the dark slot.
+  vec4 tint1 = texelFetch(uColorTex, ivec2(itemIndex % uRevealSize, itemIndex / uRevealSize), 0);
+  vec4 slot = tint1.a > 0.0 ? vec4(tint1.rgb, 1.0) : vec4(0.0196, 0.0196, 0.0196, 1.0);
 
   vec4 color;
   vec2 poster = posterUv(vUvs);
@@ -723,11 +729,11 @@ void main() {
       color += texture(uTex, clamp(posterUv(tapUv), cellInset, 1.0 - cellInset) * uAtlasSpan + tileOrigin);
     }
     color /= 6.0;
-    color = mix(vec4(0.0196, 0.0196, 0.0196, 1.0), color, color.a);
+    color = mix(slot, color, color.a);
   } else {
     color = texture(uTex, clamp(poster, cellInset, 1.0 - cellInset) * uAtlasSpan + tileOrigin);
-    // A cell that has not arrived is empty (alpha 0): it shows as the dark slot.
-    color = mix(vec4(0.0196, 0.0196, 0.0196, 1.0), color, color.a);
+    // A cell that has not arrived is empty (alpha 0): it shows as its slot.
+    color = mix(slot, color, color.a);
     // The sharper tiers fade in over the one below them.
     if (vLod.x >= 0.0) {
       float fade = clamp((uNow - vLod.z) / uLodFade, 0.0, 1.0);
@@ -744,7 +750,7 @@ void main() {
       if (arrived > 0.0) {
         float progress = clamp((uNow - arrived) / uRevealSeconds, 0.0, 1.0);
         float eased = 1.0 - pow(1.0 - progress, 3.0);
-        color = mix(vec4(0.0196, 0.0196, 0.0196, 1.0), color, eased);
+        color = mix(slot, color, eased);
       }
     }
   }
@@ -758,6 +764,12 @@ void main() {
   if (outColor.a < 0.02) discard;
 }
 `
+
+// "#rrggbb" (the hash is optional) as 0xrrggbb, or null for anything else.
+const parseHexColour = (colour: string | undefined) => {
+  const match = colour ? /^#?([0-9a-f]{6})$/i.exec(colour) : null
+  return match ? Number.parseInt(match[1], 16) : null
+}
 
 const ORIGIN: Vec3 = [0, 0, 0]
 const UP: Vec3 = [0, 1, 0]
@@ -1465,6 +1477,9 @@ class InfiniteMovieEngine<T> {
   private texture: WebGLTexture | null = null
   // One float per poster cell: when its full poster arrived (see the shader).
   private revealTexture: WebGLTexture | null = null
+  private colorTexture: WebGLTexture | null = null
+  // Base cells that show their picture (or a failed poster's colour).
+  private readonly baseCells = new Set<number>()
   private readonly revealEpoch = performance.now()
   private revealUntil = 0
   private revealPending = false
@@ -1682,6 +1697,7 @@ class InfiniteMovieEngine<T> {
       uRevealSize: gl.getUniformLocation(program, 'uRevealSize'),
       uLodFade: gl.getUniformLocation(program, 'uLodFade'),
       uRevealTex: gl.getUniformLocation(program, 'uRevealTex'),
+      uColorTex: gl.getUniformLocation(program, 'uColorTex'),
       uRevealActive: gl.getUniformLocation(program, 'uRevealActive'),
       uRevealSeconds: gl.getUniformLocation(program, 'uRevealSeconds'),
       uNow: gl.getUniformLocation(program, 'uNow'),
@@ -1944,14 +1960,16 @@ class InfiniteMovieEngine<T> {
       if (this.midTexture) this.gl.deleteTexture(this.midTexture)
       if (this.detailTexture) this.gl.deleteTexture(this.detailTexture)
       if (this.revealTexture) this.gl.deleteTexture(this.revealTexture)
+      if (this.colorTexture) this.gl.deleteTexture(this.colorTexture)
       this.geometryBuffers.forEach((buffer) => this.gl.deleteBuffer(buffer))
       if (this.vao) this.gl.deleteVertexArray(this.vao)
       // The program stays cached with the context for the next engine.
     }
     if (this.texture) {
-      debugStats.textures -= 4
+      debugStats.textures -= 5
       debugStats.engines -= 1
     }
+    this.colorTexture = null
     this.texture = null
     this.midTexture = null
     this.detailTexture = null
@@ -2520,8 +2538,10 @@ class InfiniteMovieEngine<T> {
     this.loader = createPosterLoader({ concurrency: LOADER_CONCURRENCY })
 
     this.initRevealTexture()
-    // Four live textures per engine: base, mid, detail and the reveal clock.
-    debugStats.textures += 4
+    this.initColorTexture()
+    // Five live textures per engine: base, mid, detail, the reveal clock and
+    // the colour tier.
+    debugStats.textures += 5
     debugStats.engines += 1
     const bytes = estimateTextureBytes(this.tiers, itemCount)
     this.canvas.dataset.atlasColumns = String(this.atlas.columns)
@@ -2573,6 +2593,51 @@ class InfiniteMovieEngine<T> {
       new Float32Array(this.revealSize * this.revealSize),
     )
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
+  }
+
+  // Tier 1: every poster's average colour in one small texture (4 bytes per
+  // poster, no network), uploaded before any picture is requested. From here
+  // every cell can draw something, which is what data-globe-complete reports.
+  private initColorTexture() {
+    const gl = this.gl
+    const side = this.revealSize
+    const data = new Uint8Array(side * side * 4)
+    this.items.forEach((item, index) => {
+      const rgb = parseHexColour(item.placeholderColor)
+      if (rgb === null) return
+      data[index * 4] = (rgb >> 16) & 255
+      data[index * 4 + 1] = (rgb >> 8) & 255
+      data[index * 4 + 2] = rgb & 255
+      data[index * 4 + 3] = 255
+    })
+    this.colorTexture = gl.createTexture()
+    gl.bindTexture(gl.TEXTURE_2D, this.colorTexture)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA8,
+      side,
+      side,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      data,
+    )
+    gl.bindTexture(gl.TEXTURE_2D, this.texture)
+    this.canvas.dataset.globeComplete = 'true'
+    this.canvas.dataset.baseLoaded = '0'
+    this.canvas.dispatchEvent(new CustomEvent('globecomplete'))
+  }
+
+  // A base cell now shows its picture (or the colour of a poster that failed).
+  private noteBaseCell(index: number) {
+    if (this.baseCells.has(index)) return
+    this.baseCells.add(index)
+    this.canvas.dataset.baseLoaded = String(this.baseCells.size)
   }
 
   // Seconds on the reveal clock; always above zero, which means "no reveal".
@@ -2926,11 +2991,8 @@ class InfiniteMovieEngine<T> {
   // A poster that could not be fetched keeps its slot as its average colour.
   private paintPlaceholderCell(index: number) {
     const item = this.items[index]
-    const colour = item?.placeholderColor
-    if (!colour || !this.texture) return
-    const match = /^#?([0-9a-f]{6})$/i.exec(colour)
-    if (!match) return
-    const rgb = Number.parseInt(match[1], 16)
+    const rgb = parseHexColour(item?.placeholderColor)
+    if (rgb === null || !this.texture) return
     const { cellWidth, cellHeight, columns } = this.atlas
     const data = new Uint8Array(cellWidth * cellHeight * 4)
     for (let at = 0; at < data.length; at += 4) {
@@ -2954,6 +3016,7 @@ class InfiniteMovieEngine<T> {
     )
     this.baseMipsDirty = true
     this.scheduleMips()
+    this.noteBaseCell(index)
     this.markPosterArrived(index)
     this.renderDirty = true
   }
@@ -2981,6 +3044,7 @@ class InfiniteMovieEngine<T> {
     closeImage()
     this.baseMipsDirty = true
     this.scheduleMips()
+    this.noteBaseCell(index)
     this.markPosterArrived(index)
     this.renderDirty = true
   }
@@ -3484,6 +3548,7 @@ class InfiniteMovieEngine<T> {
     gl.uniform1i(this.locations.uRevealTex, 1)
     gl.uniform1i(this.locations.uMidTex, 2)
     gl.uniform1i(this.locations.uDetailTex, 3)
+    gl.uniform1i(this.locations.uColorTex, 4)
     gl.uniform1f(
       this.locations.uRevealActive,
       performance.now() < this.revealUntil || this.heldReveals.size ? 1 : 0,
@@ -3500,6 +3565,8 @@ class InfiniteMovieEngine<T> {
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.midTexture)
     gl.activeTexture(gl.TEXTURE3)
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.detailTexture)
+    gl.activeTexture(gl.TEXTURE4)
+    gl.bindTexture(gl.TEXTURE_2D, this.colorTexture)
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
     if (this.lodDirty) {

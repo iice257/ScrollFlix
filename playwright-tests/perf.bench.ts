@@ -267,6 +267,22 @@ const runScenario = async (page: Page, scenario: Scenario): Promise<Row> => {
 
   let rafPerSecond: number | null = null
   if (scenario.idle) {
+    // "Idle" starts once the posters have stopped arriving: every upload wakes
+    // the loop for a few frames, which is work, not a leak.
+    await page
+      .waitForFunction(
+        () => {
+          const el = document.querySelector('canvas[data-item-count]')
+          return (
+            el instanceof HTMLElement &&
+            Number(el.dataset.baseLoaded) >= Number(el.dataset.itemCount)
+          )
+        },
+        undefined,
+        { timeout: 120_000 },
+      )
+      .catch(() => {})
+    await page.waitForTimeout(2_500)
     await page.evaluate(() => {
       ;(window as unknown as { __rafCalls: number }).__rafCalls = 0
     })
