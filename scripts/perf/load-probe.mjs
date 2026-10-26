@@ -99,6 +99,7 @@ const run = async () => {
   const timeline = []
   const titles = []
   let readyAt = null
+  let loadAtReady = null
   let firstPaintAt = null
   let skipped = false
   const deadline = Date.now() + seconds * 1000
@@ -128,7 +129,12 @@ const run = async () => {
       const lastTitle = titles[titles.length - 1]
       if (state.title && (!lastTitle || lastTitle.title !== state.title))
         titles.push({ t, title: state.title })
-      if (state.ready && readyAt === null) readyAt = t
+      if (state.ready && readyAt === null) {
+        readyAt = t
+        loadAtReady = await page
+          .evaluate(() => window.__scrollflixDebug?.load?.() ?? null)
+          .catch(() => null)
+      }
       if (
         skipAt !== null &&
         !skipped &&
@@ -212,6 +218,7 @@ const run = async () => {
     slow: flag('slow'),
     firstPaintAt,
     readyAt,
+    loadAtReady,
     timeline,
     titles,
     images: Object.fromEntries([...images].map(([k, v]) => [k, toKB(v)])),

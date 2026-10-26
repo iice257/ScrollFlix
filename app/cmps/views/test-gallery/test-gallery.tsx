@@ -120,7 +120,7 @@ import {
   pickRandomRow,
   visibleGenreTags,
 } from './list-scroll'
-import { useLoaderState } from './loader-state'
+import { loadTarget, useLoaderState, useSmartProgress } from './loader-state'
 import { MoodFunnel, MoodLine, MoodNudge } from './moods/mood-entry'
 import { landMoodRun } from './moods/mood-run-plan'
 import type { MoodPick } from './moods/mood-runs'
@@ -1419,7 +1419,11 @@ export const TestGalleryApp = () => {
   const moodNudgeSpentRef = useRef(readSessionFlag(MOOD_NUDGE_STORAGE_KEY))
   const [aboutMaximized, setAboutMaximized] = useState(false)
   const [initialGalleryReady, setInitialGalleryReady] = useState(false)
-  const [galleryLoadPercent, setGalleryLoadPercent] = useState(0)
+  // The Smart Loader's milestones: the first catalogue chunk's download
+  // (0..1), and the share of on-screen posters settled (null until the globe
+  // is built).
+  const [catalogProgress, setCatalogProgress] = useState(0)
+  const [postersPercent, setPostersPercent] = useState<number | null>(null)
   const [loadState, setLoadState] = useState<LoadState>(
     getCachedFirstChunk() ? 'ready' : 'loading',
   )
@@ -1555,7 +1559,9 @@ export const TestGalleryApp = () => {
   useEffect(() => {
     let cancelled = false
 
-    loadFirstChunk()
+    loadFirstChunk((fraction) => {
+      if (!cancelled) setCatalogProgress(fraction)
+    })
       .then((nextMovies) => {
         if (cancelled) return
         setMovies((currentMovies) =>
@@ -1828,21 +1834,33 @@ export const TestGalleryApp = () => {
 
   const handleGalleryReady = useCallback(() => {
     if (loadState === 'ready' && visibleMovies.length) {
-      setGalleryLoadPercent(100)
       setInitialGalleryReady(true)
     }
   }, [loadState, visibleMovies.length])
 
   const handleGalleryLoadProgress = useCallback((percent: number) => {
-    setGalleryLoadPercent(Math.round(percent))
-    if (percent >= 100) setInitialGalleryReady(true)
+    setPostersPercent(percent)
   }, [])
 
-  // No auto-dismiss: the screen stays until the gallery is ready or the
-  // visitor skips. After 6 s without progress it turns amber and says so.
+  // No auto-dismiss: the screen stays until the posters on screen are in or
+  // the visitor skips (every slot already shows a placeholder, so Skip never
+  // reveals an empty globe). The bar follows real milestones; after 6 s with
+  // no real progress it turns amber and says so.
+  const loadMilestones = {
+    catalog: catalogProgress,
+    catalogDone: loadState === 'ready',
+    globeBuilt: postersPercent !== null,
+    posters: (postersPercent ?? 0) / 100,
+  }
+  const loaderActive = mode === 'wall' && !initialGalleryReady
+  const galleryLoadPercent = useSmartProgress(
+    loaderActive,
+    loadMilestones,
+    initialGalleryReady,
+  )
   const loaderState = useLoaderState(
-    mode === 'wall' && !initialGalleryReady,
-    galleryLoadPercent,
+    loaderActive,
+    Math.round(loadTarget(loadMilestones).target),
   )
 
   useEffect(() => {

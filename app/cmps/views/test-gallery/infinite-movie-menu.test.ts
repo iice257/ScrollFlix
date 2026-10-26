@@ -7,8 +7,8 @@ import {
   createPickCandidate,
   ellipseIntersectsQuad,
   faceTargetFor,
-  placeholderRgb,
   pickWinner,
+  placeholderRgb,
   pointToQuadDistance,
   releaseTimeConstant,
 } from './infinite-movie-menu'

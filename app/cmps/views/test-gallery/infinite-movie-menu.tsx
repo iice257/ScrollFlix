@@ -85,6 +85,8 @@ type InfiniteMovieMenuProps<T> = {
   loadState: 'loading' | 'ready' | 'error'
   scale?: number
   onActiveItemChange: (item: InfiniteMovieMenuItem<T>) => void
+  // Share (0-100) of the posters on screen that have settled, while the
+  // globe's first load runs.
   onLoadProgress?: (percent: number) => void
   isActive?: boolean
   onMovingChange?: (moving: boolean) => void
@@ -314,17 +316,15 @@ const isTypingTarget = (target: EventTarget | null) =>
     ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
 const FALLBACK_ITEM_COUNT = 128
 const INITIAL_TEXTURE_LOAD_CONCURRENCY = 24
-// The globe is revealed once every poster has settled (loaded, or failed after
-// its quick retries and fallen back to the placeholder), or after the safety
-// net so a stalled request can never hold the page hostage.
+// The globe is ready once every poster on screen has settled (loaded, or
+// failed after its quick retries and kept its placeholder); the rest of the
+// globe fills in behind the loader's back. The safety net ends the wait for a
+// stalled request without claiming the posters arrived.
 const POSTER_SETTLE_RETRY_DELAYS_MS = [800, 2400]
 const GLOBE_READY_SAFETY_NET_MS = 25000
-// Open early: when this share of the posters has settled and this long has
-// passed, or at the later time with a smaller share.
-const GLOBE_READY_EARLY_FRACTION = 0.92
-const GLOBE_READY_EARLY_MIN_MS = 4000
-const GLOBE_READY_LATE_FRACTION = 0.75
-const GLOBE_READY_LATE_MS = 9000
+// Without a measured frame (a paused engine), this share of the posters
+// nearest the front stands in for the ones on screen.
+const FALLBACK_VISIBLE_SHARE = 0.15
 // Longest stretch of texture uploads before handing the thread back.
 const UPLOAD_SLICE_MS = 8
 // A poster fades in from its empty slot, once, in this long (shorter with
@@ -464,6 +464,8 @@ declare global {
       textures: number
       engines: number
       lod?: () => unknown
+      // The first load: posters on screen, how many settled, which are left.
+      load?: () => unknown
     }
   }
 }
@@ -1655,6 +1657,8 @@ class InfiniteMovieEngine<T> {
   private frameTimeCount = 0
   private statsEnabled = false
   onSpinActive: ((active: boolean) => void) | null = null
+  // The posters on screen have settled (or the safety net ended the wait).
+  onGlobeReady: (() => void) | null = null
   // Told when the globe is turning very fast because it was flicked.
   onFlick: ((speed: number, direction: number) => void) | null = null
   private lastFlickAt = 0
@@ -2632,8 +2636,6 @@ class InfiniteMovieEngine<T> {
     if (window.__scrollflixDebug)
       window.__scrollflixDebug.lod = () => this.lodStats()
 
-    this.reportProgress(3)
-    this.reportProgress(8)
     void this.loadTextureImages().catch((error) => {
       if (this.disposed || this.contextLost) return
       this.onFatalError(
@@ -2814,50 +2816,61 @@ class InfiniteMovieEngine<T> {
         window.requestAnimationFrame(() => resolve()),
       )
     if (this.disposed || this.contextLost) return
+    this.sortByFacing(indices, 0)
 
-    // Show the wall once every poster has settled; progress is settled / total.
-    const total = Math.max(1, indices.length)
+    // The posters on screen now (measured by the first LOD pass) are the
+    // ones the loader waits for; progress is how many of them have settled.
+    const onScreen = new Set(
+      this.lastLodAt > 0
+        ? indices.filter((index) => this.lodWidth[index] > 0)
+        : indices.slice(
+            0,
+            Math.max(1, Math.ceil(indices.length * FALLBACK_VISIBLE_SHARE)),
+          ),
+    )
+    const total = Math.max(1, onScreen.size)
     let settled = 0
     let ready = false
-    const markReady = () => {
+    const settledSet = new Set<number>()
+    const loadStartedAt = performance.now()
+    if (window.__scrollflixDebug)
+      window.__scrollflixDebug.load = () => ({
+        onScreen: onScreen.size,
+        settled,
+        ready,
+        ms: Math.round(performance.now() - loadStartedAt),
+        left: [...onScreen].filter((index) => !settledSet.has(index)),
+        pending: this.loader?.pending ?? 0,
+      })
+    const markReady = (complete: boolean) => {
       if (ready || this.disposed || this.contextLost) return
       ready = true
       this.lodStale = true
       window.clearTimeout(safetyNet)
       this.canvas.dataset.webglState = 'ready'
-      this.reportProgress(100)
+      if (complete) this.reportProgress(100)
+      this.onGlobeReady?.()
       // Backstop for the wall-visible watcher: never leave posters held.
       window.setTimeout(() => {
         if (!this.revealGateOpen && !this.disposed) this.openRevealGate()
       }, 900)
     }
-    const safetyNet = window.setTimeout(markReady, GLOBE_READY_SAFETY_NET_MS)
-    // Slow posters shouldn't hold everyone back: once most have settled the
-    // globe opens, and the rest fill in as they arrive.
-    const startedAt = performance.now()
-    const mostlyThere = window.setTimeout(() => {
-      if (settled / total >= GLOBE_READY_LATE_FRACTION) markReady()
-    }, GLOBE_READY_LATE_MS)
-    this.cleanupCallbacks.push(() => {
-      window.clearTimeout(safetyNet)
-      window.clearTimeout(mostlyThere)
-    })
-    const countSettled = () => {
+    const safetyNet = window.setTimeout(
+      () => markReady(false),
+      GLOBE_READY_SAFETY_NET_MS,
+    )
+    this.cleanupCallbacks.push(() => window.clearTimeout(safetyNet))
+    const countSettled = (index: number) => {
+      if (ready || !onScreen.has(index)) return
+      settledSet.add(index)
       settled += 1
-      if (ready) return
       if (settled >= total) {
-        window.requestAnimationFrame(markReady)
+        window.requestAnimationFrame(() => markReady(true))
         return
       }
-      if (
-        settled / total >= GLOBE_READY_EARLY_FRACTION &&
-        performance.now() - startedAt >= GLOBE_READY_EARLY_MIN_MS
-      ) {
-        window.requestAnimationFrame(markReady)
-        return
-      }
-      this.reportProgress(8 + (settled / total) * 91)
+      this.reportProgress((settled / total) * 100)
     }
+    this.reportProgress(0)
     const onLoaded = (index: number, image: PosterImage) =>
       this.uploadPosterCell(index, image)
 
@@ -2869,10 +2882,10 @@ class InfiniteMovieEngine<T> {
       INITIAL_TEXTURE_LOAD_CONCURRENCY,
       (index, image) => {
         onLoaded(index, image)
-        countSettled()
+        countSettled(index)
       },
       // A poster that could not be fetched keeps its placeholder.
-      () => countSettled(),
+      (index) => countSettled(index),
       POSTER_SETTLE_RETRY_DELAYS_MS,
     )
 
@@ -2880,7 +2893,7 @@ class InfiniteMovieEngine<T> {
     await new Promise<void>((resolve) =>
       window.requestAnimationFrame(() => resolve()),
     )
-    markReady()
+    markReady(true)
     this.retryFailedPosters(failed, onLoaded)
   }
 
@@ -2994,8 +3007,9 @@ class InfiniteMovieEngine<T> {
     return failed
   }
 
-  // Reorders queue[from..] so the posters nearest the front of the globe come
-  // first (the same facing the first load uses).
+  // Reorders queue[from..]: the posters on screen now first (the rim ones
+  // too, which face the viewer least but are still seen), then the rest,
+  // each group nearest the front of the globe first.
   private sortByFacing(queue: number[], from: number) {
     if (queue.length - from < 2) return
     const target = transformQuat3(
@@ -3008,8 +3022,11 @@ class InfiniteMovieEngine<T> {
       const item = instance % itemCount
       facing[item] = Math.max(facing[item], dot3(target, position))
     })
+    const measured = this.lastLodAt > 0
+    const shown = (index: number) =>
+      measured && this.lodWidth[index] > 0 ? 0 : 1
     const rest = queue.splice(from)
-    rest.sort((a, b) => facing[b] - facing[a])
+    rest.sort((a, b) => shown(a) - shown(b) || facing[b] - facing[a])
     queue.push(...rest)
   }
 
@@ -3026,7 +3043,9 @@ class InfiniteMovieEngine<T> {
     }
     const onScreen = this.lastLodAt === 0 || this.lodWidth[index] > 0
     const priority = onScreen ? rank : PRIORITY_OFFSCREEN_BASE + rank
-    const midUrls = this.wantsMidWithBase(index) ? this.tierUrls('m', index) : null
+    const midUrls = this.wantsMidWithBase(index)
+      ? this.tierUrls('m', index)
+      : null
     if (midUrls) {
       // One download fills both the atlas cell and the poster's mid layer.
       this.combinedInflight.add(index)
@@ -4084,6 +4103,7 @@ export const InfiniteMovieMenu = <T,>({
         zoomRef.current,
       )
       engineRef.current = engine
+      engine.onGlobeReady = () => onReady?.()
       engine.setPosterScale(posterScaleRef.current)
       engine.onSpinActive = (active) => onSpinActiveChangeRef.current?.(active)
       engine.onFlick = (speed, direction) =>
