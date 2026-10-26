@@ -26,7 +26,7 @@ import {
   prewarmHoneycombLayout,
 } from './honeycomb-layout'
 import { createLayerPool } from './layer-pool'
-import { type LodPoster, planLod } from './lod-scheduler'
+import { type LodPoster, SHARPNESS_SLACK, planLod } from './lod-scheduler'
 import { perfProbe } from './perf-probe'
 import { buildPosterIndex } from './poster-index'
 import {
@@ -405,11 +405,14 @@ const LOD_FADE_MS = 150
 // this share of the quad's width, and the visible rounded rectangle covers it
 // from 0.11 to 0.89 of the quad's height.
 const POSTER_WIDTH_OF_QUAD = 0.766
-// Loader priorities: the base tier first, then the opened poster's detail,
-// then whatever the LOD plan ranks.
+// Loader priorities (lower first): the opened poster, the base tier of the
+// posters on screen (by facing), the detail and mid tiers the LOD plan ranks,
+// and last the base tier of the posters out of view, so the posters being
+// looked at sharpen before the back of the globe fills in.
 const PRIORITY_OPENED = -1
 const PRIORITY_DETAIL = 5000
 const PRIORITY_MID = 10000
+const PRIORITY_OFFSCREEN_BASE = 20000
 
 // Muted colours for films the catalogue has no average colour for.
 const PLACEHOLDER_PALETTE = [
@@ -1613,7 +1616,12 @@ class InfiniteMovieEngine<T> {
   private lodBuffer: WebGLBuffer | null = null
   private lodDirty = false
   private lodStale = true
-  private lodEnabled = false
+  // On from the first frame: the posters in view get their sharper tier in
+  // the first pass instead of after the whole globe has loaded.
+  private lodEnabled = true
+  // Posters whose first request also fills their mid layer (one download
+  // for both), so the LOD plan does not ask for it again.
+  private readonly combinedInflight = new Set<number>()
   private lastLodAt = 0
   private openedItem: number | null = null
   private readonly lodInflight = new Set<string>()
@@ -2799,6 +2807,13 @@ class InfiniteMovieEngine<T> {
       .map((_, index) => index)
       .sort((a, b) => facing[b] - facing[a])
     this.watchWallVisible()
+    // Two frames, so the first LOD pass has measured which posters are on
+    // screen and how large: those load at their display tier straight away.
+    for (let frame = 0; frame < 2; frame += 1)
+      await new Promise<void>((resolve) =>
+        window.requestAnimationFrame(() => resolve()),
+      )
+    if (this.disposed || this.contextLost) return
 
     // Show the wall once every poster has settled; progress is settled / total.
     const total = Math.max(1, indices.length)
@@ -2807,7 +2822,6 @@ class InfiniteMovieEngine<T> {
     const markReady = () => {
       if (ready || this.disposed || this.contextLost) return
       ready = true
-      this.lodEnabled = true
       this.lodStale = true
       window.clearTimeout(safetyNet)
       this.canvas.dataset.webglState = 'ready'
@@ -3001,9 +3015,42 @@ class InfiniteMovieEngine<T> {
 
   // The globe's base tier for one poster: its small 2:3 cell, with the
   // best size first and smaller ones as fallbacks for a 404.
-  private requestBase(index: number, priority: number): Promise<PosterImage> {
+  private requestBase(index: number, rank: number): Promise<PosterImage> {
     const item = this.items[index]
     const path = posterPathOf(item)
+    const loader = this.loader as PosterLoader
+    const cell: CellSpec = {
+      width: this.tiers.baseWidth,
+      height: this.tiers.baseHeight,
+      gutter: this.tiers.gutter,
+    }
+    const onScreen = this.lastLodAt === 0 || this.lodWidth[index] > 0
+    const priority = onScreen ? rank : PRIORITY_OFFSCREEN_BASE + rank
+    const midUrls = this.wantsMidWithBase(index) ? this.tierUrls('m', index) : null
+    if (midUrls) {
+      // One download fills both the atlas cell and the poster's mid layer.
+      this.combinedInflight.add(index)
+      return loader
+        .requestCells(`b:${index}`, midUrls, priority, [
+          cell,
+          {
+            width: this.tiers.midWidth,
+            height: this.tiers.midHeight,
+            gutter: 0,
+          },
+        ])
+        .then(
+          ([base, mid]) => {
+            this.combinedInflight.delete(index)
+            this.placeMidImage(index, mid)
+            return base
+          },
+          (error) => {
+            this.combinedInflight.delete(index)
+            throw error
+          },
+        )
+    }
     const urls = path
       ? [
           posterUrl(path, 'w92'),
@@ -3012,17 +3059,47 @@ class InfiniteMovieEngine<T> {
         ]
       : [item.image]
     if (item.fallbackImage) urls.push(item.fallbackImage)
-    const cell: CellSpec = {
-      width: this.tiers.baseWidth,
-      height: this.tiers.baseHeight,
-      gutter: this.tiers.gutter,
-    }
-    return (this.loader as PosterLoader).request(
-      `b:${index}`,
-      urls,
-      priority,
-      cell,
+    return loader.request(`b:${index}`, urls, priority, cell)
+  }
+
+  // True when the poster is drawn large enough on screen to need its mid
+  // tier, and the mid pool has room for it.
+  private wantsMidWithBase(index: number) {
+    return (
+      this.lodEnabled &&
+      this.tiers.midLayers > 0 &&
+      this.lodWidth[index] > this.tiers.baseWidth * SHARPNESS_SLACK &&
+      this.midLayerOf[index] < 0 &&
+      !this.lodInflight.has(`m:${index}`) &&
+      this.midPool.size < this.tiers.midLayers
     )
+  }
+
+  // A mid image that came with the poster's first download takes the layer
+  // the LOD plan gave the poster, or a free one.
+  private placeMidImage(index: number, image: PosterImage) {
+    const close = () => {
+      if ('close' in image) image.close()
+    }
+    if (this.disposed || this.contextLost || this.midLayerOf[index] >= 0) {
+      close()
+      return
+    }
+    const key = this.itemKeys[index]
+    let layer = this.midPool.layerOf(key)
+    if (layer === null) {
+      const acquired = this.midPool.acquire(key, performance.now())
+      if (acquired.evicted !== null)
+        this.dropTierLayer('m', Number(acquired.evicted))
+      layer = acquired.layer
+    }
+    if (layer < 0) {
+      close()
+      return
+    }
+    const runId = `m:${index}`
+    if (this.lodInflight.delete(runId)) this.loader?.cancel(runId)
+    this.onTierImage('m', index, layer, image)
   }
 
   private uploadPosterCell(index: number, image: PosterImage) {
@@ -3177,11 +3254,17 @@ class InfiniteMovieEngine<T> {
     const path = posterPathOf(this.items[item])
     if (!path) return null
     if (tier === 'm')
-      return [
-        posterUrl(path, 'w185'),
-        posterUrl(path, 'w154'),
-        posterUrl(path, 'w92'),
-      ]
+      return this.tiers.desktop
+        ? [
+            posterUrl(path, 'w185'),
+            posterUrl(path, 'w154'),
+            posterUrl(path, 'w92'),
+          ]
+        : [
+            posterUrl(path, 'w154'),
+            posterUrl(path, 'w185'),
+            posterUrl(path, 'w92'),
+          ]
     // The opened poster is fetched sharper still on a dense screen, and
     // scaled into its layer.
     return item === this.openedItem && this.pxScale >= 1.5
@@ -3215,6 +3298,7 @@ class InfiniteMovieEngine<T> {
       if (layer < 0) return
       if (evicted !== null) this.dropTierLayer(tier, Number(evicted))
       if (layerOf[item] === layer) return
+      if (tier === 'm' && this.combinedInflight.has(item)) return
       const runId = `${tier}:${key}`
       const priority = item === this.openedItem ? PRIORITY_OPENED : base + rank
       if (this.lodInflight.has(runId)) {

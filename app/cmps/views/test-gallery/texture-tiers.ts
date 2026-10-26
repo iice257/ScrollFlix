@@ -139,10 +139,14 @@ export const tierConfig = (desktop: boolean): TierConfig =>
         baseHeight: 72,
         gutter: 2,
         baseMipLevels: 4,
-        midWidth: 154,
-        midHeight: 231,
+        // A lighter mid tier (from TMDB's w154): phone posters are drawn at
+        // most ~90 device px wide (the canvas caps DPR at 2), so a 104 px
+        // layer is sharp, costs a third of a 154 px one, and leaves room for
+        // more of them.
+        midWidth: 104,
+        midHeight: 156,
         midMipLevels: 3,
-        midLayers: 96,
+        midLayers: 160,
         detailWidth: 342,
         detailHeight: 513,
         detailMipLevels: 4,

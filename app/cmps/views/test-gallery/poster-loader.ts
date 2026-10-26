@@ -3,7 +3,7 @@ import {
   type DecodeDeps,
   type PosterImage,
   type WorkerOut,
-  decodeFirst,
+  decodeFirstCells,
   realDeps,
 } from './poster-decode'
 import { createPriorityQueue } from './priority-queue'
@@ -29,6 +29,14 @@ export type PosterLoader = {
     priority: number,
     cell?: CellSpec,
   ): Promise<PosterImage>
+  // One download drawn into several cells (in the order given), so a poster
+  // can fill its atlas cell and a sharper layer from a single request.
+  requestCells(
+    key: string,
+    urls: readonly string[],
+    priority: number,
+    cells: readonly CellSpec[],
+  ): Promise<PosterImage[]>
   reprioritise(key: string, priority: number): void
   cancel(key: string): void
   // Number of requests queued or in flight.
@@ -38,10 +46,10 @@ export type PosterLoader = {
 
 type Job = {
   urls: readonly string[]
-  cell: CellSpec | null
-  resolve: (image: PosterImage) => void
+  cells: CellSpec[] | null
+  resolve: (images: PosterImage[]) => void
   reject: (error: unknown) => void
-  promise: Promise<PosterImage>
+  promise: Promise<PosterImage[]>
   abort: AbortController | null
   running: boolean
   // The id the worker knows this run by, so a late reply to a cancelled run
@@ -86,14 +94,18 @@ export const createPosterLoader = (
     job.running = false
   }
 
-  const finish = (key: string, image: PosterImage | null) => {
+  const closeAll = (images: PosterImage[]) => {
+    for (const image of images) if ('close' in image) image.close()
+  }
+
+  const finish = (key: string, images: PosterImage[] | null) => {
     const job = jobs.get(key)
     if (!job) {
-      if (image && 'close' in image) image.close()
+      if (images) closeAll(images)
       return
     }
     settle(key, job)
-    if (image) job.resolve(image)
+    if (images) job.resolve(images)
     else job.reject(new Error(`poster failed: ${key}`))
     pump()
   }
@@ -103,10 +115,10 @@ export const createPosterLoader = (
     const key = keyOfRun.get(message.key)
     keyOfRun.delete(message.key)
     if (key === undefined) {
-      if (message.t === 'ok') message.bitmap.close()
+      if (message.t === 'ok') closeAll(message.bitmaps)
       return
     }
-    finish(key, message.t === 'ok' ? message.bitmap : null)
+    finish(key, message.t === 'ok' ? message.bitmaps : null)
   })
   worker?.addEventListener('error', () => {
     // A crashed worker: fail what it held and carry on on the main thread.
@@ -126,19 +138,19 @@ export const createPosterLoader = (
         t: 'load',
         key: job.runId,
         urls: [...job.urls],
-        cell: job.cell,
+        cells: job.cells,
       })
       return
     }
     const abort = new AbortController()
     job.abort = abort
-    decodeFirst(job.urls, job.cell, deps, abort.signal).then(
-      (image) => {
+    decodeFirstCells(job.urls, job.cells, deps, abort.signal).then(
+      (images) => {
         if (abort.signal.aborted) {
-          if ('close' in image) image.close()
+          closeAll(images)
           return
         }
-        finish(key, image)
+        finish(key, images)
       },
       () => {
         if (!abort.signal.aborted) finish(key, null)
@@ -154,33 +166,46 @@ export const createPosterLoader = (
     }
   }
 
+  const requestCells = (
+    key: string,
+    urls: readonly string[],
+    priority: number,
+    cells: readonly CellSpec[] | null,
+  ) => {
+    const existing = jobs.get(key)
+    if (existing) {
+      if (!existing.running) queue.update(key, priority)
+      return existing.promise
+    }
+    let resolve!: Job['resolve']
+    let reject!: Job['reject']
+    const promise = new Promise<PosterImage[]>((res, rej) => {
+      resolve = res
+      reject = rej
+    })
+    jobs.set(key, {
+      urls,
+      cells: cells ? [...cells] : null,
+      resolve,
+      reject,
+      promise,
+      abort: null,
+      running: false,
+      runId: null,
+    })
+    queue.push(key, priority)
+    pump()
+    return promise
+  }
+
   return {
-    request(key, urls, priority, cell) {
-      const existing = jobs.get(key)
-      if (existing) {
-        if (!existing.running) queue.update(key, priority)
-        return existing.promise
-      }
-      let resolve!: Job['resolve']
-      let reject!: Job['reject']
-      const promise = new Promise<PosterImage>((res, rej) => {
-        resolve = res
-        reject = rej
-      })
-      jobs.set(key, {
-        urls,
-        cell: cell ?? null,
-        resolve,
-        reject,
-        promise,
-        abort: null,
-        running: false,
-        runId: null,
-      })
-      queue.push(key, priority)
-      pump()
-      return promise
-    },
+    request: (key, urls, priority, cell) =>
+      requestCells(key, urls, priority, cell ? [cell] : null).then((images) => {
+        closeAll(images.slice(1))
+        return images[0]
+      }),
+    requestCells: (key, urls, priority, cells) =>
+      requestCells(key, urls, priority, cells),
     reprioritise(key, priority) {
       const job = jobs.get(key)
       if (job && !job.running) queue.update(key, priority)
