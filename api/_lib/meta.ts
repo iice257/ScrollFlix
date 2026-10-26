@@ -1,3 +1,4 @@
+import { summarizePartyCode } from './party-meta.js'
 import type { Film } from './tmdb.js'
 
 export const SITE = 'https://scrollflix.app'
@@ -6,10 +7,15 @@ export const SITE = 'https://scrollflix.app'
 // app, not the stub. iMessage unfurls with the Facebook and Twitter tokens,
 // so it matches below.
 const BOTS =
-  /facebookexternalhit|facebot|twitterbot|slackbot|slack-imgproxy|whatsapp|telegrambot|discordbot|linkedinbot|pinterest|redditbot|embedly|skypeuripreview|applebot|vkshare/i
+  /facebookexternalhit|facebot|twitterbot|slackbot|slack-imgproxy|whatsapp|telegrambot|discordbot|linkedinbot|pinterest|redditbot|embedly|skypeuripreview|applebot|vkshare|mastodon|bluesky|cardyb|iframely|viber|tumblr|flipboard/i
 
 export const isPreviewBot = (ua: string | null | undefined) =>
   !!ua && BOTS.test(ua)
+
+// The card PNG is drawn at 0.6 of 1200x630 so it stays under what WhatsApp
+// will show (api/_lib/og-cards.ts OG_SCALE; a test keeps these in step).
+export const OG_IMAGE_WIDTH = 720
+export const OG_IMAGE_HEIGHT = 378
 
 export type Preview = {
   title: string
@@ -38,6 +44,25 @@ const clip = (text: string, max: number) =>
 export const filmIdFromUrl = (url: URL) => {
   const id = url.searchParams.get('film')
   return id && /^\d{1,9}$/.test(id) ? id : null
+}
+
+// A Pass the Globe link: ?party=<code>. Null when there is no usable code.
+export const partyCodeFromUrl = (url: URL) => {
+  const code = url.searchParams.get('party')
+  return code && /^[A-Za-z0-9_-]{8,4000}$/.test(code) ? code : null
+}
+
+export const previewForParty = (url: URL): Preview | null => {
+  const code = partyCodeFromUrl(url)
+  const summary = code ? summarizePartyCode(code) : null
+  if (!code || !summary) return null
+  return {
+    title: `${summary.headline} - Pass the Globe on ScrollFlix`,
+    description: `${summary.detail}. Open the link to play your turn.`,
+    image: `${url.origin}/api/og?kind=party&code=${code}`,
+    imageAlt: `Pass the Globe: ${summary.headline}`,
+    url: `${url.origin}/?party=${code}`,
+  }
 }
 
 export const previewFor = (url: URL, film: Film | null): Preview => {
@@ -80,11 +105,12 @@ export const renderMetaHtml = (p: Preview) => `<!doctype html>
 <meta property="og:description" content="${esc(p.description)}">
 <meta property="og:url" content="${esc(p.url)}">
 <meta property="og:image" content="${esc(p.image)}">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
+<meta property="og:image:width" content="${OG_IMAGE_WIDTH}">
+<meta property="og:image:height" content="${OG_IMAGE_HEIGHT}">
 <meta property="og:image:alt" content="${esc(p.imageAlt)}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@scrollflix">
+<meta name="twitter:creator" content="@scrollflix">
 <meta name="twitter:title" content="${esc(p.title)}">
 <meta name="twitter:description" content="${esc(p.description)}">
 <meta name="twitter:image" content="${esc(p.image)}">
