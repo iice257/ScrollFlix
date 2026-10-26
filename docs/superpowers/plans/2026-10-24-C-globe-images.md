@@ -33,11 +33,35 @@ letterbox non-2:3 in renderCell. No atlas change needed.
 ## C.3 measurements (current, desktop 2160 posters / phone 1260)
 - Desktop textureBytes 160,235,240 (152.8 MB: atlas 3876x3800 78.6, mid 320 x 154x231, detail 24 x 342x513). At budget.
 - Phone 52,424,740 (50 MB of 80). Room for a sharper base on phone only.
-- perf before: pending (npm run perf).
+- Decision: desktop base cell 64x96 -> 72x108 (atlas 4332x4256, 156.1 MB, mid pool 320 -> 233 by `fitTierConfig`);
+  phone 48x72 -> 64x96 (68.1 MB of 80, mid 96 and detail 8 unchanged). 80x120 was rejected: it leaves 136 mid layers.
+- perf before / after: see the PR body.
+
+## Idle rAF (root cause)
+Not the sky and not the twinkle. At rest the engine sleeps (0 rAF/s measured 60 s after load, twinkle ticks draw
+straight from a timer). The 32-56 rAF/s in `idle-all-on` was poster arrivals: every upload wakes the loop for a few
+drawn frames, and the bench started counting 2.5 s after `ready` while posters were still landing. The bench now
+waits for `data-base-loaded == data-item-count` and `data-lod-pending == 0` first.
+
+## Engine signals (canvas data attributes, for workstream D's loader)
+- `data-globe-complete="true"`: set in `initTexture`, before any picture is requested. Every cell can draw (tier 1,
+  its average colour, from the catalogue; no colour = the dark slot). Also fires a `globecomplete` event on the canvas.
+- `data-base-loaded`: how many base cells show a picture (or the colour of a poster that failed). Equals
+  `data-item-count` when tier 2 is in.
+- `data-lod-pending`: mid / detail requests in flight (updated on each LOD pass).
+- `data-webgl-state="ready"` keeps its old meaning (most pictures in).
+A loader that must not wait on a bad connection can open on `data-globe-complete` instead.
+
+## Tier 3 warm-up
+When `baseCells >= items`, the tab is visible and the globe is at rest (< 0.05 rad/s), `planLod({ warm: true })`
+gives mid layers to visible posters too small to need them yet, nearest the focus first, capped by the mid pool.
+Requests keep the loader's priority and concurrency (12), so frame cost is the same as any mid load. Loaded layers
+stay; leaving rest only cancels what has not landed.
 
 ## C.6
-`shuffle-preroll.ts` (+test): pick plus 2 decoys, same call, random order, seed
-in closure. Call-site wiring after release.
+`shuffle-preroll.ts` (+test): pick plus 2 decoys, same call, random order, seed in closure, drawn through the
+shuffle's own weighted chooser. Call-site in `test-gallery.tsx`: one `useMemo`, a `take()` in `handleShuffle`,
+one effect to `prepare()` once the globe is ready and when the filters change.
 
 ## C.10 headers (vercel.json, for workstream A)
 ```json
