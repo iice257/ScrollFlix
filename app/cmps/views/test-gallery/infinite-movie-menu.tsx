@@ -394,7 +394,7 @@ const POSTER_REPRIORITISE_MS = 300
 // The posters' LOD is re-planned at most this often while the globe moves,
 // and once more when it settles.
 const LOD_PLAN_INTERVAL_MS = 120
-// Mip chains are rebuilt at most this often while posters land.
+// The base atlas's mip chain is rebuilt at most this often while posters land.
 const MIP_BATCH_MS = 150
 // A tier image that failed is not asked for again for this long.
 const LOD_RETRY_MS = 30000
@@ -444,6 +444,10 @@ export const placeholderRgb = (
       (Math.imul(index, 2654435761) >>> 0) % PLACEHOLDER_PALETTE.length
     ]
   return [r, g, b]
+}
+
+const closeImages = (images: readonly PosterImage[]) => {
+  for (const image of images) if ('close' in image) image.close()
 }
 
 // The film a newly built globe turns to: the landing pick on the first build,
@@ -789,7 +793,8 @@ void main() {
 
   vec4 color;
   vec2 poster = posterUv(vUvs);
-  vec4 empty = placeholder(poster, itemIndex);
+  // The placeholder is only worked out where it shows: a poster that has
+  // arrived costs nothing extra.
   if (dot(vSmear, vSmear) > 0.0) {
     // Six taps along the smear, clamped to this poster's own tile so
     // neighbouring posters never bleed in.
@@ -800,11 +805,11 @@ void main() {
       color += texture(uTex, clamp(posterUv(tapUv), cellInset, 1.0 - cellInset) * uAtlasSpan + tileOrigin);
     }
     color /= 6.0;
-    color = mix(empty, color, color.a);
+    if (color.a < 0.999) color = mix(placeholder(poster, itemIndex), color, color.a);
   } else {
     color = texture(uTex, clamp(poster, cellInset, 1.0 - cellInset) * uAtlasSpan + tileOrigin);
     // A cell that has not arrived is empty (alpha 0): it shows its placeholder.
-    color = mix(empty, color, color.a);
+    if (color.a < 0.999) color = mix(placeholder(poster, itemIndex), color, color.a);
     // The sharper tiers fade in over the one below them.
     if (vLod.x >= 0.0) {
       float fade = clamp((uNow - vLod.z) / uLodFade, 0.0, 1.0);
@@ -821,7 +826,7 @@ void main() {
       if (arrived > 0.0) {
         float progress = clamp((uNow - arrived) / uRevealSeconds, 0.0, 1.0);
         float eased = 1.0 - pow(1.0 - progress, 3.0);
-        color = mix(empty, color, eased);
+        if (eased < 0.999) color = mix(placeholder(poster, itemIndex), color, eased);
       }
     }
   }
@@ -1634,8 +1639,6 @@ class InfiniteMovieEngine<T> {
   private readonly lodFailedAt = new Map<string, number>()
   private mipTimer: number | null = null
   private baseMipsDirty = false
-  private midMipsDirty = false
-  private detailMipsDirty = false
   private lastReportedProgress = -1
   private readonly sphereRadius: number
   private cameraRestZ: number
@@ -2901,6 +2904,9 @@ class InfiniteMovieEngine<T> {
       window.requestAnimationFrame(() => resolve()),
     )
     markReady(true)
+    // Every poster has settled now, even if the safety net opened the globe
+    // before the ones on screen were all in.
+    this.reportProgress(100)
     this.retryFailedPosters(failed, onLoaded)
   }
 
@@ -3059,14 +3065,10 @@ class InfiniteMovieEngine<T> {
       return loader
         .requestCells(`b:${index}`, midUrls, priority, [
           cell,
-          {
-            width: this.tiers.midWidth,
-            height: this.tiers.midHeight,
-            gutter: 0,
-          },
+          ...this.tierCells('m'),
         ])
         .then(
-          ([base, mid]) => {
+          ([base, ...mid]) => {
             this.combinedInflight.delete(index)
             this.placeMidImage(index, mid)
             return base
@@ -3103,10 +3105,8 @@ class InfiniteMovieEngine<T> {
 
   // A mid image that came with the poster's first download takes the layer
   // the LOD plan gave the poster, or a free one.
-  private placeMidImage(index: number, image: PosterImage) {
-    const close = () => {
-      if ('close' in image) image.close()
-    }
+  private placeMidImage(index: number, images: PosterImage[]) {
+    const close = () => closeImages(images)
     if (this.disposed || this.contextLost || this.midLayerOf[index] >= 0) {
       close()
       return
@@ -3125,7 +3125,23 @@ class InfiniteMovieEngine<T> {
     }
     const runId = `m:${index}`
     if (this.lodInflight.delete(runId)) this.loader?.cancel(runId)
-    this.onTierImage('m', index, layer, image)
+    this.onTierImage('m', index, layer, images)
+  }
+
+  // A tier layer and its mip levels, each drawn by the worker from the one
+  // download. Uploading every level per layer means the array is never
+  // re-mipped as a whole: generateMipmap on a 320-layer array, every time a
+  // poster landed, stalled the GPU (and with software GL, the page).
+  private tierCells(tier: 'm' | 'd'): CellSpec[] {
+    const width = tier === 'm' ? this.tiers.midWidth : this.tiers.detailWidth
+    const height = tier === 'm' ? this.tiers.midHeight : this.tiers.detailHeight
+    const levels =
+      tier === 'm' ? this.tiers.midMipLevels : this.tiers.detailMipLevels
+    return Array.from({ length: levels }, (_, level) => ({
+      width: Math.max(1, width >> level),
+      height: Math.max(1, height >> level),
+      gutter: 0,
+    }))
   }
 
   private uploadPosterCell(index: number, image: PosterImage) {
@@ -3163,8 +3179,9 @@ class InfiniteMovieEngine<T> {
     this.onLoadProgress(nextPercent)
   }
 
-  // Mip chains are rebuilt in batches: one generateMipmap per tier covers
-  // every upload that landed meanwhile.
+  // The base atlas's mip chain is rebuilt in batches: one generateMipmap
+  // covers every cell that landed meanwhile. (Mid and detail layers arrive
+  // with their own mip levels.)
   private scheduleMips() {
     if (this.mipTimer !== null) return
     this.mipTimer = window.setTimeout(() => {
@@ -3180,17 +3197,7 @@ class InfiniteMovieEngine<T> {
       gl.bindTexture(gl.TEXTURE_2D, this.texture)
       gl.generateMipmap(gl.TEXTURE_2D)
     }
-    if (this.midMipsDirty && this.midTexture) {
-      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.midTexture)
-      gl.generateMipmap(gl.TEXTURE_2D_ARRAY)
-    }
-    if (this.detailMipsDirty && this.detailTexture) {
-      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.detailTexture)
-      gl.generateMipmap(gl.TEXTURE_2D_ARRAY)
-    }
     this.baseMipsDirty = false
-    this.midMipsDirty = false
-    this.detailMipsDirty = false
     this.renderDirty = true
   }
 
@@ -3305,8 +3312,6 @@ class InfiniteMovieEngine<T> {
     if (!loader) return
     const pool = tier === 'm' ? this.midPool : this.detailPool
     const layerOf = tier === 'm' ? this.midLayerOf : this.detailLayerOf
-    const width = tier === 'm' ? this.tiers.midWidth : this.tiers.detailWidth
-    const height = tier === 'm' ? this.tiers.midHeight : this.tiers.detailHeight
     const base = tier === 'm' ? PRIORITY_MID : PRIORITY_DETAIL
     const wanted = new Set(keys)
     // What the plan still wants keeps its layer through this pass.
@@ -3336,8 +3341,8 @@ class InfiniteMovieEngine<T> {
         return
       }
       this.lodInflight.add(runId)
-      loader.request(runId, urls, priority, { width, height, gutter: 0 }).then(
-        (image) => this.onTierImage(tier, item, layer, image),
+      loader.requestCells(runId, urls, priority, this.tierCells(tier)).then(
+        (images) => this.onTierImage(tier, item, layer, images),
         (error) => {
           this.lodInflight.delete(runId)
           if (error instanceof DOMException && error.name === 'AbortError')
@@ -3361,18 +3366,17 @@ class InfiniteMovieEngine<T> {
     }
   }
 
+  // `images` is the layer's mip chain, largest first (see tierCells).
   private onTierImage(
     tier: 'm' | 'd',
     item: number,
     layer: number,
-    image: PosterImage,
+    images: PosterImage[],
   ) {
     this.lodInflight.delete(`${tier}:${item}`)
     const pool = tier === 'm' ? this.midPool : this.detailPool
     const texture = tier === 'm' ? this.midTexture : this.detailTexture
-    const close = () => {
-      if ('close' in image) image.close()
-    }
+    const close = () => closeImages(images)
     if (
       this.disposed ||
       this.contextLost ||
@@ -3383,31 +3387,28 @@ class InfiniteMovieEngine<T> {
       return
     }
     const gl = this.gl
-    const width = tier === 'm' ? this.tiers.midWidth : this.tiers.detailWidth
-    const height = tier === 'm' ? this.tiers.midHeight : this.tiers.detailHeight
+    const cells = this.tierCells(tier)
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture)
-    gl.texSubImage3D(
-      gl.TEXTURE_2D_ARRAY,
-      0,
-      0,
-      0,
-      layer,
-      width,
-      height,
-      1,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      image,
-    )
+    cells.forEach((cell, level) => {
+      const image = images[level]
+      if (!image) return
+      gl.texSubImage3D(
+        gl.TEXTURE_2D_ARRAY,
+        level,
+        0,
+        0,
+        layer,
+        cell.width,
+        cell.height,
+        1,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        image,
+      )
+    })
     close()
-    if (tier === 'm') {
-      this.midLayerOf[item] = layer
-      this.midMipsDirty = true
-    } else {
-      this.detailLayerOf[item] = layer
-      this.detailMipsDirty = true
-    }
-    this.scheduleMips()
+    if (tier === 'm') this.midLayerOf[item] = layer
+    else this.detailLayerOf[item] = layer
     // The new tier fades in over the one below; the clock is the reveal's.
     const start = this.reducedMotion()
       ? this.revealNow() - 10

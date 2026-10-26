@@ -40,6 +40,15 @@ const openGallery = async (
   await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
   // The loader fades out over the globe; a press must not land on it.
   await expect(page.locator('.warp-gallery-preloader')).toBeHidden()
+  // These specs time a hold to the second. While the posters on screen are
+  // still streaming in, software WebGL (CI) stalls whole frames, so a press
+  // made then is timed against an uneven clock; wait for the globe's own
+  // ready (every poster on screen settled) first.
+  await expect(page.locator('canvas[data-webgl-state]')).toHaveAttribute(
+    'data-webgl-state',
+    'ready',
+    { timeout: 60_000 },
+  )
 }
 
 const pressGlobe = async (page: Page) => {

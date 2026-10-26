@@ -328,6 +328,8 @@ const NO_IDS: readonly string[] = []
 const NO_PATH: readonly PathPoint[] = []
 // How long a mood run waits for the globe to be rebuilt for the new films.
 const MOOD_RUN_WAIT_MS = 4000
+// How often a catalogue merge waiting for the globe to be still looks again.
+const CATALOG_STILL_RETRY_MS = 400
 // The shuffle pool's top-ups: a beat after each shuffle (its card loads
 // first), and a little after the globe is up.
 const SHUFFLE_REFILL_DELAY_MS = 1500
@@ -1752,32 +1754,57 @@ export const TestGalleryApp = () => {
     !prefersSavedData() || browsingCatalog || linkedNeedsCatalog
   const fullCatalogWanted =
     !detectLightweightDevice() || browsingCatalog || linkedNeedsCatalog
+  // Parsing the rest of the catalogue and re-rendering the page with it takes
+  // the main thread for a while (over a second on a slow device), so it waits
+  // until the globe is still: no press, no spin, no Shuffle Pro run. A freeze
+  // in the middle of a hold or a spin is what a visitor would feel.
+  const globeBusyRef = useRef<() => boolean>(() => false)
   useEffect(() => {
     if (!initialGalleryReady || loadState !== 'ready' || !catalogWanted) return
     let cancelled = false
-    const timer = window.setTimeout(() => {
-      loadAllMovies({
-        lightweight: detectLightweightDevice(),
-        full: fullCatalogWanted,
-      })
-        .then((allMovies) => {
-          if (cancelled) return
-          setMovies((currentMovies) =>
-            currentMovies.length >= allMovies.length
-              ? currentMovies
-              : allMovies,
-          )
-          if (fullCatalogWanted) setCatalogComplete(true)
-        })
-        .catch(() => {
-          // The first chunk still works on its own; the rest is extra.
-        })
-    }, 400)
+    let timer = 0
+    const whenStill = (run: () => void) => {
+      if (cancelled) return
+      if (globeBusyRef.current() && !browsingCatalog) {
+        timer = window.setTimeout(() => whenStill(run), CATALOG_STILL_RETRY_MS)
+        return
+      }
+      run()
+    }
+    timer = window.setTimeout(
+      () =>
+        whenStill(() => {
+          loadAllMovies({
+            lightweight: detectLightweightDevice(),
+            full: fullCatalogWanted,
+          })
+            .then((allMovies) =>
+              whenStill(() => {
+                setMovies((currentMovies) =>
+                  currentMovies.length >= allMovies.length
+                    ? currentMovies
+                    : allMovies,
+                )
+                if (fullCatalogWanted) setCatalogComplete(true)
+              }),
+            )
+            .catch(() => {
+              // The first chunk still works on its own; the rest is extra.
+            })
+        }),
+      400,
+    )
     return () => {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [catalogWanted, fullCatalogWanted, initialGalleryReady, loadState])
+  }, [
+    browsingCatalog,
+    catalogWanted,
+    fullCatalogWanted,
+    initialGalleryReady,
+    loadState,
+  ])
 
   const genreSummaries = useMemo(() => getGenreSummaries(movies), [movies])
 
@@ -1933,7 +1960,13 @@ export const TestGalleryApp = () => {
     }
   }, [loadState, visibleMovies.length])
 
+  // Only the loader shows this: once the gallery is up (ready or skipped),
+  // the globe's later progress is not page state, since every update would
+  // re-render the whole page while the rest of the globe loads.
+  const initialGalleryReadyRef = useRef(initialGalleryReady)
+  initialGalleryReadyRef.current = initialGalleryReady
   const handleGalleryLoadProgress = useCallback((percent: number) => {
+    if (initialGalleryReadyRef.current) return
     setPostersPercent(percent)
   }, [])
 
@@ -2166,6 +2199,11 @@ export const TestGalleryApp = () => {
     }
     wasShuffleSpinning.current = shuffleSpinning
   }, [shuffleSpinning, shuffleProController])
+  const isGlobeMovingRef = useRef(isGlobeMoving)
+  isGlobeMovingRef.current = isGlobeMoving
+  globeBusyRef.current = () =>
+    isGlobeMovingRef.current ||
+    shuffleProController.getSnapshot().phase !== 'idle'
 
   const toggleGenre = useCallback((genre: string) => {
     setSelectedGenres((currentGenres) =>

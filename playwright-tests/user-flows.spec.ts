@@ -202,9 +202,10 @@ test.describe('Gallery user flows', () => {
     const card = page.locator('.warp-details-card')
     await expect(card).toBeVisible()
 
-    // The card asks for the sharp size (srcset picks w500 to w780).
+    // The card asks for its sharp size: w342 first (w500 follows only on a
+    // dense desktop screen, once w342 is showing).
     await expect
-      .poll(() => requested.some((url) => /\/(w500|w780)\//.test(url)))
+      .poll(() => requested.some((url) => /\/w342\//.test(url)))
       .toBe(true)
     const backdrop = await card
       .locator('.warp-details-ambient')
