@@ -317,8 +317,13 @@ const DevStreakChip = import.meta.env.DEV
 const SPIN_HINT_STORAGE_KEY = 'wtw:spin-hint-seen'
 const FULLSCREEN_HINT_STORAGE_KEY = 'wtw:fullscreen-hint-seen'
 const THEME_STORAGE_KEY = 'wtw:theme'
-// Phones sit the globe a little closer; applied as a camera change.
-const MOBILE_GLOBE_ZOOM = 1.085
+// Phones show about twice as many films at a glance as the 1,260-poster
+// globe first did (138 against 62 posters drawn at least half the size of the
+// largest, on a 390x844 phone): the camera sits a touch further back and
+// each poster is drawn larger against its spacing, so the grid reads tight
+// rather than sparse while the posters stay about the same size.
+const MOBILE_GLOBE_ZOOM = 0.97
+export const MOBILE_POSTER_SCALE = 1.42
 // Nothing to draw: stable empties for the globe's line layer.
 const NO_IDS: readonly string[] = []
 const NO_PATH: readonly PathPoint[] = []
@@ -2959,6 +2964,7 @@ export const TestGalleryApp = () => {
         onUserSpin={handleUserSpin}
         spinRequest={spinRequest}
         zoom={isMobileViewport ? MOBILE_GLOBE_ZOOM : 1}
+        posterScale={isMobileViewport ? MOBILE_POSTER_SCALE : 1}
         initialFaceId={landingId}
         shufflePro={shuffleProController}
         controlRef={menuControlRef}
@@ -3581,6 +3587,7 @@ type WarpWallProps = {
   onUserSpin: () => void
   spinRequest: SpinRequest | null
   zoom: number
+  posterScale: number
   initialFaceId: string | null
   shufflePro: ShuffleProController
   controlRef: { current: InfiniteMovieMenuControl | null }
@@ -3604,6 +3611,7 @@ const WarpWall = ({
   onUserSpin,
   spinRequest,
   zoom,
+  posterScale,
   initialFaceId,
   shufflePro,
   controlRef,
@@ -3667,6 +3675,7 @@ const WarpWall = ({
         onUserSpin={onUserSpin}
         scale={0.9}
         zoom={zoom}
+        posterScale={posterScale}
         initialFaceId={initialFaceId}
         shufflePro={shufflePro}
         controlRef={controlRef}

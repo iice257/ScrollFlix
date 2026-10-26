@@ -190,6 +190,12 @@ const run = async () => {
             detailResident: stats.detailResident,
             inflight: stats.inflight,
             visiblePosters: stats.widths.length,
+            // Posters drawn at least half as wide as the largest one: what
+            // reads as "on screen" rather than squeezed at the globe's rim.
+            mainPosters: stats.widths.filter(
+              (width) => width >= 0.5 * Math.max(...stats.widths),
+            ).length,
+            maxWidthPx: Math.round(Math.max(...stats.widths)),
             medianWidthPx: stats.widths.sort((a, b) => a - b)[
               Math.floor(stats.widths.length / 2)
             ],

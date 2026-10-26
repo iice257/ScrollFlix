@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { mapCatalogRow } from './catalog-loader'
+import { createHoneycombSpherePositions } from './honeycomb-layout'
+import {
+  ICON_FLOOR_SCALE,
+  POSTER_HALF_HEIGHT,
+  POSTER_HALF_WIDTH,
+} from './infinite-movie-menu'
 import {
   DEFAULT_SORT_RULES,
   type GalleryKeyState,
+  MOBILE_POSTER_SCALE,
   applySortDirection,
   applySortToggle,
   compareListGroups,
@@ -29,6 +36,7 @@ import {
   sortMoviesForList,
   withWeightedRatings,
 } from './test-gallery'
+import { PHONE_GLOBE_COUNT } from './texture-tiers'
 
 const CHINESE_COMEDY_TITLE = '分手大师'
 
@@ -560,5 +568,37 @@ describe('similar movies', () => {
   it('caps the result and skips the film itself', () => {
     const result = getSimilarMovies(source, pool, 1)
     expect(result.map((item) => item.id)).toEqual(['a'])
+  })
+})
+
+describe('phone globe density', () => {
+  it('draws posters larger against their spacing without them touching', () => {
+    const count = PHONE_GLOBE_COUNT
+    const positions = createHoneycombSpherePositions(
+      count,
+      2.58 * Math.sqrt(count / 900),
+    )
+    let nearest = Number.POSITIVE_INFINITY
+    for (let left = 0; left < positions.length; left += 1) {
+      for (let right = left + 1; right < positions.length; right += 1) {
+        nearest = Math.min(
+          nearest,
+          Math.hypot(
+            positions[left][0] - positions[right][0],
+            positions[left][1] - positions[right][1],
+            positions[left][2] - positions[right][2],
+          ),
+        )
+      }
+    }
+    // The drawn poster (its rounded rectangle) of a front-facing poster at
+    // rest: 0.766 of the quad's width, 0.78 of its height.
+    const scale = ICON_FLOOR_SCALE * MOBILE_POSTER_SCALE
+    const width = 2 * POSTER_HALF_WIDTH * 0.766 * scale
+    const height = 2 * POSTER_HALF_HEIGHT * 0.78 * scale
+    expect(MOBILE_POSTER_SCALE).toBeGreaterThan(1)
+    // Two neighbours can only overlap when the gap between their centres is
+    // shorter than a poster's diagonal.
+    expect(nearest).toBeGreaterThan(Math.hypot(width, height))
   })
 })
