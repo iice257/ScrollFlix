@@ -38,9 +38,17 @@ function findKey() {
   return key
 }
 
-function sitemapUrls() {
-  const xml = readFileSync(resolve('public/sitemap.xml'), 'utf8')
+function locs(file) {
+  const xml = readFileSync(resolve('public', file), 'utf8')
   return [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1])
+}
+
+// public/sitemap.xml is a sitemap index; follow it to the page sitemaps.
+function sitemapUrls() {
+  const root = locs('sitemap.xml')
+  const children = root.filter((loc) => loc.endsWith('.xml'))
+  if (children.length === 0) return root
+  return children.flatMap((loc) => locs(loc.split('/').pop()))
 }
 
 const key = findKey()

@@ -27,6 +27,10 @@ describe('isPreviewBot', () => {
     'LinkedInBot/1.0 (compatible; Mozilla/5.0; Apache-HttpClient +http://www.linkedin.com)',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15 Applebot/0.1',
     'Mozilla/5.0 (compatible; redditbot/1.0; +http://www.reddit.com/feedback)',
+    'facebookexternalhit/1.1 Facebot Twitterbot/1.0',
+    'WhatsApp/2.23.20.0 A',
+    'WhatsApp/2.24.1.78 i',
+    'Mozilla/5.0 (compatible; Bluesky Cardyb/1.1; +mailto:support@bsky.app)',
   ])('matches %s', (ua) => expect(isPreviewBot(ua)).toBe(true))
 
   it.each([
@@ -94,7 +98,8 @@ describe('renderMetaHtml', () => {
     expect(html).toContain('Tom &amp; Jerry&#39;s &lt;b&gt;')
     expect(html).toContain('twitter:card" content="summary_large_image"')
     expect(html).toContain('twitter:site" content="@scrollflix"')
+    expect(html).toContain('twitter:creator" content="@scrollflix"')
     expect(html).toContain('rel="canonical"')
-    expect(html).toContain('og:image:width" content="1200"')
+    expect(html).toContain('og:image:width" content="720"')
   })
 })

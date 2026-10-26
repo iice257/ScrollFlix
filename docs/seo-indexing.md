@@ -32,7 +32,7 @@ npm run seo:validate
 IndexNow lets the site push "this URL changed" to search engines instead of waiting to be crawled.
 
 - Ownership key: `public/<key>.txt` (the file contains its own name). It is served from the site root, which is how engines verify the submission.
-- `scripts/indexnow.mjs` submits every URL in `public/sitemap.xml` (or the URLs you pass) to `https://api.indexnow.org/indexnow`.
+- `scripts/indexnow.mjs` submits every page URL listed in the sitemap index (`public/sitemap.xml` and the sitemaps it points to) (or the URLs you pass) to `https://api.indexnow.org/indexnow`.
 - `smoke-deployed.yml` runs it automatically after a healthy production deploy.
 - By hand: `npm run seo:indexnow` (add `-- --dry-run` to preview). Confirm receipt in Bing Webmaster Tools.
 - Google does not support IndexNow; use Search Console for Google.

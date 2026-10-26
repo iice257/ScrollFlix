@@ -12,16 +12,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     
     <!-- SEO Meta Tags -->
-    <title>ScrollFlix</title>
-    <meta name="description" content="ScrollFlix is an interactive movie discovery gallery with visual browsing of 100k+ films, filters, and a cinematic movie index." />
-    <meta name="keywords" content="ScrollFlix, movies, films, movie discovery, interactive, WebGL, cinema, recommendations" />
+    <title>ScrollFlix: Spin a Globe of 100k+ Movies for Tonight's Pick</title>
+    <meta name="description" content="Spin a 3D globe of 100k+ movie posters to discover films, pick by mood, shuffle for a surprise and watch trailers. Find tonight's watch on ScrollFlix." />
     <meta name="author" content="ICE" />
     <link rel="canonical" href="https://scrollflix.app/" />
     
     <!-- Open Graph / Social Media -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="ScrollFlix - Interactive Movie Discovery" />
-    <meta property="og:description" content="ScrollFlix is an interactive movie discovery gallery with visual browsing of 100k+ films, filters, and a cinematic movie index." />
+    <meta property="og:title" content="ScrollFlix: Spin a Globe of 100k+ Movies for Tonight's Pick" />
+    <meta property="og:description" content="Spin a 3D globe of 100k+ movie posters to discover films, pick by mood, shuffle for a surprise and watch trailers. Find tonight's watch on ScrollFlix." />
     <meta property="og:url" content="https://scrollflix.app/" />
     <meta property="og:site_name" content="ScrollFlix" />
     <meta property="og:image" content="https://scrollflix.app/api/og?kind=default" />
@@ -32,8 +31,8 @@
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@scrollflix" />
-    <meta name="twitter:title" content="ScrollFlix - Interactive Movie Discovery" />
-    <meta name="twitter:description" content="ScrollFlix is an interactive movie discovery gallery with visual browsing of 100k+ films, filters, and a cinematic movie index." />
+    <meta name="twitter:title" content="ScrollFlix: Spin a Globe of 100k+ Movies for Tonight's Pick" />
+    <meta name="twitter:description" content="Spin a 3D globe of 100k+ movie posters to discover films, pick by mood, shuffle for a surprise and watch trailers. Find tonight's watch on ScrollFlix." />
     <meta name="twitter:image" content="https://scrollflix.app/api/og?kind=default" />
     <meta name="twitter:image:alt" content="ScrollFlix: a globe of film posters" />
     
@@ -44,6 +43,50 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="ScrollFlix" />
     
+    <!-- Structured data. TODO: append TikTok, YouTube, Instagram and Reddit to Organization.sameAs once those accounts exist. -->
+    <script type="application/ld+json" id="structured-data">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://scrollflix.app/#website",
+            "url": "https://scrollflix.app/",
+            "name": "ScrollFlix",
+            "description": "Spin a 3D globe of 100k+ movie posters to discover films, pick by mood, shuffle for a surprise and watch trailers. Find tonight's watch on ScrollFlix.",
+            "inLanguage": "en",
+            "publisher": { "@id": "https://scrollflix.app/#organization" }
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://scrollflix.app/#organization",
+            "name": "ScrollFlix",
+            "url": "https://scrollflix.app/",
+            "logo": {
+              "@type": "ImageObject",
+              "url": "https://scrollflix.app/icon-512.png",
+              "width": 512,
+              "height": 512
+            },
+            "sameAs": ["https://x.com/scrollflix"]
+          },
+          {
+            "@type": "WebApplication",
+            "@id": "https://scrollflix.app/#app",
+            "name": "ScrollFlix",
+            "url": "https://scrollflix.app/",
+            "description": "Spin a 3D globe of 100k+ movie posters to discover films, pick by mood, shuffle for a surprise and watch trailers. Find tonight's watch on ScrollFlix.",
+            "applicationCategory": "EntertainmentApplication",
+            "operatingSystem": "Any",
+            "browserRequirements": "Requires a browser with WebGL2",
+            "isAccessibleForFree": true,
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "publisher": { "@id": "https://scrollflix.app/#organization" }
+          }
+        ]
+      }
+    </script>
+
     <!-- Robots -->
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
   </head>

@@ -52,3 +52,30 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  # The visual gate: pixel baselines for the globe and its screens, in its own
+  # job so it reports even when another e2e test fails. See
+  # playwright-tests/visual/README.md.
+  visual:
+    name: Visual baselines
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      # Uses the runner's installed Google Chrome, a mocked catalogue and mocked posters.
+      - run: npm run test:visual
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: visual-diffs
+          path: |
+            test-results/visual/
+            playwright-report/visual/
+          retention-days: 14
