@@ -1,20 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
-        http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
-  
-  <!-- Main application - Interactive movie discovery visualization -->
-  <url>
-    <loc>https://scrollflix.app/</loc>
-    <lastmod>2025-08-09</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>1.0</priority>
-  </url>
-  
-  <!-- Note: This is a SPA (Single Page Application) with dynamic content.
-       Individual films are discovered through the interactive visualization
-       rather than traditional URL routes. Search engines will primarily
-       index the main application interface. -->
-  
-</urlset>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap>
+    <loc>https://scrollflix.app/sitemap-pages.xml</loc>
+    <lastmod>2026-10-24</lastmod>
+  </sitemap>
+</sitemapindex>
