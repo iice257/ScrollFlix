@@ -600,25 +600,40 @@ describe('ShuffleProController: hold ring', () => {
     expect(earlySeen).toEqual([])
   })
 
-  it('goes when the pointer wanders off, with a touch allowance of 24px', () => {
+  it('restarts on the longer clock when the pointer wanders off (touch allows 24px)', () => {
     const mouse = setup()
-    const seen: unknown[] = []
+    const seen: Array<{ totalMs: number } | null> = []
     mouse.controller.subscribeHold((ring) => seen.push(ring))
     press(mouse)
     mouse.advance(1700)
     expect(seen).toHaveLength(1)
+    expect(seen[0]?.totalMs).toBe(1500)
     mouse.controller.pressMove(12, 5, 5)
     mouse.advance(40)
+    // The effect still triggers (later), so the ring stays and re-announces.
     expect(seen).toHaveLength(2)
-    expect(seen[1]).toBeNull()
-    expect(mouse.controller.getHoldProgress()).toBeNull()
+    expect(seen[1]?.totalMs).toBe(4500)
+    expect(mouse.controller.getHoldProgress()).not.toBeNull()
 
     const touch = setup()
+    const touchSeen: Array<{ totalMs: number } | null> = []
+    touch.controller.subscribeHold((ring) => touchSeen.push(ring))
     press(touch, { pointerType: 'touch' })
     touch.advance(1700)
     touch.controller.pressMove(12, 5, 5)
     touch.advance(40)
-    expect(touch.controller.getHoldProgress()).not.toBeNull()
+    expect(touchSeen).toHaveLength(1)
+  })
+
+  it('shows the ring for a press that was dragged from the start', () => {
+    const h = setup()
+    const seen: Array<{ totalMs: number } | null> = []
+    h.controller.subscribeHold((ring) => seen.push(ring))
+    press(h)
+    h.controller.pressMove(40, 30, 20)
+    h.advance(1700)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.totalMs).toBe(4500)
   })
 
   it('never shows for a held Space', () => {

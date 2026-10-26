@@ -46,15 +46,15 @@
   background:
     linear-gradient(
       112deg,
-      transparent 37%,
-      rgb(var(--ts-g1) / 0.06) 40%,
-      rgb(var(--ts-g1) / 0.2) 43.5%,
-      rgb(var(--ts-g1) / 0.38) 46.5%,
-      rgb(var(--ts-core) / 0.62) 49.5%,
-      rgb(var(--ts-g2) / 0.4) 52.5%,
-      rgb(var(--ts-g2) / 0.2) 55.5%,
-      rgb(var(--ts-g2) / 0.06) 59%,
-      transparent 62%
+      transparent 31%,
+      rgb(var(--ts-g1) / 0.04) 35%,
+      rgb(var(--ts-g1) / 0.12) 39.5%,
+      rgb(var(--ts-g1) / 0.26) 44%,
+      rgb(var(--ts-core) / 0.46) 49.5%,
+      rgb(var(--ts-g2) / 0.28) 55%,
+      rgb(var(--ts-g2) / 0.12) 59.5%,
+      rgb(var(--ts-g2) / 0.04) 64%,
+      transparent 68%
     ),
     linear-gradient(
       112deg,
