@@ -117,8 +117,8 @@ export const tierConfig = (desktop: boolean): TierConfig =>
   desktop
     ? {
         desktop,
-        baseWidth: 64,
-        baseHeight: 96,
+        baseWidth: 72,
+        baseHeight: 108,
         gutter: 2,
         baseMipLevels: 4,
         midWidth: 154,
@@ -132,8 +132,8 @@ export const tierConfig = (desktop: boolean): TierConfig =>
       }
     : {
         desktop,
-        baseWidth: 48,
-        baseHeight: 72,
+        baseWidth: 64,
+        baseHeight: 96,
         gutter: 2,
         baseMipLevels: 4,
         midWidth: 154,
