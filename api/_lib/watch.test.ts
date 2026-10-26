@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { handleWatch, normalizeRegion, parseWatch, providerUrl } from './watch'
+import {
+  type WatchReply,
+  handleWatch,
+  normalizeRegion,
+  parseWatch,
+  providerUrl,
+} from './watch'
 
 const body = {
   results: {
@@ -82,7 +88,7 @@ describe('handleWatch', () => {
     )
     expect(load).toHaveBeenCalledWith('movie/27205/watch/providers')
     expect(res.headers.get('Cache-Control')).toContain('s-maxage=86400')
-    expect((await res.json()).region).toBe('GB')
+    expect(((await res.json()) as WatchReply).region).toBe('GB')
   })
 
   it('lets the query override the country', async () => {
@@ -91,7 +97,9 @@ describe('handleWatch', () => {
       ask('id=27205&region=US', { 'x-vercel-ip-country': 'GB' }),
       load,
     )
-    expect((await res.json()).providers.length).toBeGreaterThan(0)
+    expect(((await res.json()) as WatchReply).providers.length).toBeGreaterThan(
+      0,
+    )
   })
 
   it('answers 502 when TMDB is unreachable or unconfigured', async () => {

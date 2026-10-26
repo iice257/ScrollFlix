@@ -52,7 +52,7 @@ const KINDS: [keyof TmdbRegion, ProviderKind][] = [
 // A search is the best a public link can do: no service publishes a stable
 // per-film deep link without a partner agreement.
 const q = (title: string) => encodeURIComponent(title)
-const SEARCH: Record<number, (title: string) => string> = {
+const SEARCH: Partial<Record<number, (title: string) => string>> = {
   8: (t) => `https://www.netflix.com/search?q=${q(t)}`,
   9: (t) => `https://www.amazon.com/s?k=${q(t)}&i=instant-video`,
   119: (t) => `https://www.amazon.com/s?k=${q(t)}&i=instant-video`,
