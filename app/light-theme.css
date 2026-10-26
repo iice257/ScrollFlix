@@ -750,6 +750,10 @@
   color: rgb(33 26 16 / 0.42);
 }
 
+.warp-shell[data-theme="light"] .warp-watch-opens {
+  color: rgb(33 26 16 / 0.46);
+}
+
 .warp-shell[data-theme="light"] a.warp-watch-row:hover,
 .warp-shell[data-theme="light"] a.warp-watch-row:focus-visible {
   border-color: rgb(33 26 16 / 0.28);
@@ -867,6 +871,11 @@
   background: rgb(33 26 16);
   color: rgb(243 236 221);
   box-shadow: 0 14px 40px rgb(110 78 34 / 0.189);
+}
+
+.warp-shell[data-theme="light"] .warp-watch-badges img {
+  border: 2px solid rgb(33 26 16);
+  background: rgb(47 40 30);
 }
 
 .warp-shell[data-theme="light"] .warp-details-watch:focus-visible {

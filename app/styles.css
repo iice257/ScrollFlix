@@ -3127,6 +3127,15 @@
     color: rgb(255 255 255 / 0.42);
   }
 
+  /* What a row's link opens (the service's search, or the TMDB listing). */
+  .warp-watch-opens {
+    flex: none;
+    color: rgb(255 255 255 / 0.46);
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: 0.01em;
+  }
+
   a.warp-watch-row:hover,
   a.warp-watch-row:focus-visible {
     outline: none;
@@ -3546,6 +3555,42 @@
 
   .warp-details-watch:hover {
     transform: translateY(-1px);
+  }
+
+  /* The services the film is confirmed on, as a tight overlapping stack on
+     the button: real listings only, faded in when they arrive. */
+  .warp-watch-badges {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 4px;
+    margin-right: -10px;
+    animation: warp-watch-badges-in 260ms ease-out both;
+  }
+
+  .warp-watch-badges img {
+    width: 22px;
+    height: 22px;
+    border: 2px solid #fff;
+    border-radius: 7px;
+    background: #eee;
+    object-fit: cover;
+  }
+
+  .warp-watch-badges img + img {
+    margin-left: -7px;
+  }
+
+  @keyframes warp-watch-badges-in {
+    from {
+      opacity: 0;
+      transform: translateX(-4px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .warp-watch-badges {
+      animation: none;
+    }
   }
 
   .warp-details-watch:focus-visible {
@@ -6256,6 +6301,11 @@
       height: 38px;
       padding-inline: 18px;
       font-size: 13px;
+    }
+
+    .warp-watch-badges img {
+      width: 20px;
+      height: 20px;
     }
 
     .warp-details-next-mobile {

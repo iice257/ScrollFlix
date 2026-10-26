@@ -209,7 +209,7 @@ import {
 } from './shuffle-pro/use-shuffle-pro'
 import { DESKTOP_GLOBE_COUNT } from './texture-tiers'
 import { useDismissLayer } from './use-dismiss-layer'
-import { WatchOptionsList } from './watch-options'
+import { WatchBadges, WatchOptionsList, useWatchBadges } from './watch-options'
 import './session-path.css'
 import { AmbientWeather } from './ambient-weather'
 import { AppearanceSetting, useDynamicHint } from './dynamic-theme-setting'
@@ -5644,10 +5644,12 @@ const AboutDrawer = ({
         <section className='warp-about-section'>
           <h3>Watch links</h3>
           <p>
-            Where to watch lists the legal services that carry a film in your
-            country, from JustWatch through TMDB. Each one opens that service's
-            own search, and the YouTube link opens the film's trailer.
-            ScrollFlix doesn't host or stream any films.
+            Watch lists the legal services that carry a film in your country,
+            from JustWatch's listings through TMDB; the logos beside the button
+            are the ones it confirms for streaming or free. Each opens that
+            service's own search (or the film's TMDB listing), and the YouTube
+            link opens the trailer. With no listing, ScrollFlix makes no claim.
+            It doesn't host or stream any films.
           </p>
         </section>
 
@@ -6284,6 +6286,7 @@ const MovieDetailsCard = ({
     '--details-backdrop': `url(${JSON.stringify(detailsBackdropUrl(movie))})`,
   } as CSSProperties
   const movieText = useMovieText(movie)
+  const watchBadges = useWatchBadges(movie.id, movie.title)
   const originalTitle = movieText?.originalTitle || movie.originalTitle || ''
   const titleTranslation = useTitleTranslation(movie.title, {
     hasOriginalTitle: Boolean(originalTitle),
@@ -6547,10 +6550,16 @@ const MovieDetailsCard = ({
                 <button
                   type='button'
                   className='warp-details-watch'
+                  aria-label={
+                    watchBadges.length
+                      ? `Watch: on ${watchBadges.map((provider) => provider.name).join(', ')}`
+                      : 'Watch'
+                  }
                   onClick={() => onWatch(movie)}
                 >
                   <Play aria-hidden='true' size={15} strokeWidth={2.6} />
-                  Where to watch
+                  Watch
+                  <WatchBadges providers={watchBadges} />
                 </button>
                 {!isWide ? null : trailerButton.kind === 'play' ? (
                   <button
