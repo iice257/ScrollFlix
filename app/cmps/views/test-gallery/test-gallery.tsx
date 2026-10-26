@@ -168,6 +168,7 @@ import {
 } from './search-facets'
 import { type PathPoint, sessionPathStore } from './session-path'
 import { shareLink } from './share/share-link'
+import { type ShufflePool, createShufflePool } from './shuffle-pool'
 import { devModeStore } from './shuffle-pro/dev-mode'
 import {
   GoldenHourNote,
@@ -328,6 +329,25 @@ const NO_IDS: readonly string[] = []
 const NO_PATH: readonly PathPoint[] = []
 // How long a mood run waits for the globe to be rebuilt for the new films.
 const MOOD_RUN_WAIT_MS = 4000
+// The shuffle pool's top-ups: a beat after each shuffle (its card loads
+// first), and a little after the globe is up.
+const SHUFFLE_REFILL_DELAY_MS = 1500
+const SHUFFLE_FIRST_FILL_DELAY_MS = 2500
+
+// Fetches and decodes a poster at low priority, with CORS (the URL is shared
+// with the globe and the card).
+const preloadPosterImage = (url: string) =>
+  new Promise<void>((resolve, reject) => {
+    const image = new Image()
+    image.crossOrigin = 'anonymous'
+    image.decoding = 'async'
+    image.fetchPriority = 'low'
+    image.onload = () => {
+      image.decode().then(resolve, resolve)
+    }
+    image.onerror = reject
+    image.src = url
+  })
 
 type Theme = 'dark' | 'light'
 // `quiet` lands the globe on the film without a card following it.
@@ -1836,6 +1856,8 @@ export const TestGalleryApp = () => {
         : undefined,
     [tasteWeights],
   )
+  const weightOfRef = useRef(weightOf)
+  weightOfRef.current = weightOf
 
   // The first centred movie of a page load is random (and never "Marmaduke").
   // Chosen once, during render, so the globe's first build already faces it.
@@ -2420,6 +2442,55 @@ export const TestGalleryApp = () => {
     [clearAllFilters, countForMoods, shuffleProController],
   )
 
+  // The next shuffle's candidates, with their card posters loaded ahead (see
+  // shuffle-pool.ts). Topped up a beat after each shuffle, so the refills
+  // never compete with the card that shuffle opens.
+  const shufflePoolRef = useRef<ShufflePool | null>(null)
+  shufflePoolRef.current ??= createShufflePool((id) => {
+    const movie = visibleMoviesRef.current.find((film) => film.id === id)
+    return movie?.posterPath
+      ? preloadPosterImage(posterUrl(movie.posterPath, 'w342'))
+      : Promise.resolve()
+  })
+  const refillTimerRef = useRef(0)
+  const scheduleShuffleRefill = useCallback(
+    (excludeId: string | null, delayMs = SHUFFLE_REFILL_DELAY_MS) => {
+      window.clearTimeout(refillTimerRef.current)
+      refillTimerRef.current = window.setTimeout(() => {
+        shufflePoolRef.current?.refill(() =>
+          pickOtherMovie(
+            visibleMoviesRef.current,
+            excludeId,
+            Math.random,
+            weightOfRef.current,
+          ),
+        )
+      }, delayMs)
+    },
+    [],
+  )
+  useEffect(() => () => window.clearTimeout(refillTimerRef.current), [])
+  // A shuffle's film: a loaded candidate from the pool when there is one,
+  // else a fresh draw with the same rules.
+  const pickShuffleMovie = useCallback(() => {
+    const onGlobe = new Set(visibleMovies.map((movie) => movie.id))
+    const movieId =
+      shufflePoolRef.current?.take(
+        activeMovieId,
+        (id) => onGlobe.has(id),
+        Math.random,
+      ) ?? pickOtherMovie(visibleMovies, activeMovieId, Math.random, weightOf)
+    scheduleShuffleRefill(movieId)
+    return movieId
+  }, [activeMovieId, scheduleShuffleRefill, visibleMovies, weightOf])
+  // The first candidates load once the globe is up, and again when the
+  // films on it change (not on every new active film).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: visibleMovies is the trigger
+  useEffect(() => {
+    if (!initialGalleryReady) return
+    scheduleShuffleRefill(null, SHUFFLE_FIRST_FILL_DELAY_MS)
+  }, [initialGalleryReady, scheduleShuffleRefill, visibleMovies])
+
   const handleShuffle = useCallback(() => {
     unlockAudio()
     if (mode === 'list') {
@@ -2428,12 +2499,7 @@ export const TestGalleryApp = () => {
       setListRandomNonce((nonce) => nonce + 1)
       return
     }
-    const movieId = pickOtherMovie(
-      visibleMovies,
-      activeMovieId,
-      Math.random,
-      weightOf,
-    )
+    const movieId = pickShuffleMovie()
     if (!movieId) return
     sessionPathStore.add(movieId)
     // Streak rules decide whether this shuffle becomes a Shuffle Pro run.
@@ -2470,15 +2536,13 @@ export const TestGalleryApp = () => {
       }),
     })
   }, [
-    activeMovieId,
     detailsMovieId,
     immersive,
     isMobileViewport,
     mode,
     party.phase,
+    pickShuffleMovie,
     shuffleProController,
-    visibleMovies,
-    weightOf,
   ])
 
   // Skip finishes a Shuffle Pro run. Ordinary shuffles can't be skipped.
