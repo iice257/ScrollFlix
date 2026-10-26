@@ -21,8 +21,8 @@ const countWeatherRequests = (page: Page) => {
   return seen
 }
 
-// The loader stays until the gallery is ready or the visitor skips it.
-const skipLoader = async (page: Page) => {
+const load = async (page: Page, query = '') => {
+  await page.goto(`/${query}`)
   await expect(
     page.getByRole('region', { name: 'Warp Wall movie gallery' }),
   ).toBeVisible()
@@ -31,11 +31,6 @@ const skipLoader = async (page: Page) => {
     .click({ timeout: 3_000 })
     .catch(() => {})
   await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
-}
-
-const load = async (page: Page, query = '') => {
-  await page.goto(`/${query}`)
-  await skipLoader(page)
 }
 
 const shell = (page: Page) => page.locator('main.warp-shell')
@@ -170,7 +165,11 @@ test.describe('Dynamic theme', () => {
     await expect(tip(page)).toBeVisible()
     // ...but the first-open one does not come back after a reload.
     await page.reload()
-    await skipLoader(page)
+    await page
+      .getByRole('button', { name: 'Skip first time load' })
+      .click({ timeout: 3_000 })
+      .catch(() => {})
+    await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
     await openMenu(page)
     await page.waitForTimeout(900)
     await expect(tip(page)).toHaveCount(0)

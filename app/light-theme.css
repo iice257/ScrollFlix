@@ -716,32 +716,51 @@
   color: rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"] .warp-watch-links button,
-.warp-shell[data-theme="light"] .warp-watch-links a {
-  border: 1px solid rgb(33 26 16 / 0.12);
-  background: rgb(33 26 16 / 0.06);
-  color: rgb(33 26 16);
-}
-
-.warp-shell[data-theme="light"] .warp-watch-links a:hover,
-.warp-shell[data-theme="light"] .warp-watch-links a:focus-visible {
-  border-color: rgb(33 26 16 / 0.32);
-  background: rgb(33 26 16 / 0.14);
-}
-
-.warp-shell[data-theme="light"] .warp-watch-links a:focus-visible {
-  outline: 2px solid rgb(33 26 16);
-}
-
 .warp-shell[data-theme="light"] .warp-watch-close:hover,
 .warp-shell[data-theme="light"] .warp-watch-close:focus-visible {
   background: rgb(33 26 16 / 0.16);
   color: rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"] .warp-watch-links button span:last-child,
-.warp-shell[data-theme="light"] .warp-watch-links a span:last-child {
+.warp-shell[data-theme="light"] .warp-watch-group h3 {
   color: rgb(33 26 16 / 0.42);
+}
+
+.warp-shell[data-theme="light"] .warp-watch-row {
+  border: 1px solid rgb(33 26 16 / 0.1);
+  background: rgb(33 26 16 / 0.05);
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-watch-row img,
+.warp-shell[data-theme="light"] .warp-watch-logo-blank {
+  background: rgb(33 26 16 / 0.08);
+}
+
+.warp-shell[data-theme="light"] .warp-watch-row svg {
+  color: rgb(33 26 16 / 0.42);
+}
+
+.warp-shell[data-theme="light"] a.warp-watch-row:hover,
+.warp-shell[data-theme="light"] a.warp-watch-row:focus-visible {
+  border-color: rgb(33 26 16 / 0.28);
+  background: rgb(33 26 16 / 0.1);
+}
+
+.warp-shell[data-theme="light"] .warp-watch-skeleton {
+  background: rgb(33 26 16 / 0.06);
+}
+
+.warp-shell[data-theme="light"] .warp-watch-note {
+  color: rgb(33 26 16 / 0.62);
+}
+
+.warp-shell[data-theme="light"] .warp-watch-credit {
+  color: rgb(33 26 16 / 0.42);
+}
+
+.warp-shell[data-theme="light"] .warp-watch-credit a {
+  color: rgb(33 26 16 / 0.8);
 }
 
 .warp-shell[data-theme="light"] .warp-details-backdrop {

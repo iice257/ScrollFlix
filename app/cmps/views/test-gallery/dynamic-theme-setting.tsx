@@ -13,6 +13,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '../../ui/tooltip'
+import { dismissStack } from './dismiss-stack'
 
 // The one-time tip by the Dynamic option, the first time the menu opens, saying
 // what Dynamic is. Like the other first-open tips it is a courtesy: storage
@@ -151,8 +152,13 @@ export const AppearanceSetting = ({
                   side='top'
                   sideOffset={8}
                   aria-label={DYNAMIC_TIP}
-                  // Esc belongs to the menu behind the tip, not to the tip.
-                  onEscapeKeyDown={(event) => event.preventDefault()}
+                  // Esc belongs to the menu behind the tip, not to the tip. Holding
+                  // the tip open marks the key as handled, which the dismiss stack
+                  // then skips, so close the topmost layer from here.
+                  onEscapeKeyDown={(event) => {
+                    event.preventDefault()
+                    dismissStack.dismissTop()
+                  }}
                   onPointerDownOutside={hint.dismiss}
                 >
                   <p>{DYNAMIC_TIP}</p>
