@@ -206,6 +206,7 @@ import {
   useShuffleProController,
 } from './shuffle-pro/use-shuffle-pro'
 import { DESKTOP_GLOBE_COUNT } from './texture-tiers'
+import { WatchOptionsList } from './watch-options'
 import './session-path.css'
 import { AmbientWeather } from './ambient-weather'
 import { AppearanceSetting, useDynamicHint } from './dynamic-theme-setting'
@@ -5447,8 +5448,9 @@ const AboutDrawer = ({
         <section className='warp-about-section'>
           <h3>Watch links</h3>
           <p>
-            Links are a work in progress and are disabled for now. You can find
-            any movie seen here with a quick Google search.
+            Where to watch lists the legal services that carry a film in your
+            country, from JustWatch through TMDB. Each one opens that service's
+            own search. ScrollFlix doesn't host or stream any films.
           </p>
         </section>
 
@@ -5737,13 +5739,6 @@ const PathDrawer = ({
   )
 }
 
-const WATCH_LINKS = [
-  { label: 'Netflix', meta: 'Subscription' },
-  { label: 'Prime Video', meta: 'Rent or buy' },
-  { label: 'Apple TV', meta: 'Rent or buy' },
-  { label: 'YouTube', meta: 'Trailer' },
-]
-
 type WatchLinksDialogProps = {
   motionPhase: MotionPhase
   movie: TestMovie
@@ -5785,14 +5780,7 @@ const WatchLinksDialog = ({
       <p className='warp-watch-kicker'>Watch options</p>
       <h2>{movie.title}</h2>
       <p className='warp-watch-meta'>{formatMovieMeta(movie)}</p>
-      <div className='warp-watch-links'>
-        {WATCH_LINKS.map((link) => (
-          <button type='button' key={link.label} disabled>
-            <span>{link.label}</span>
-            <span>{link.meta}</span>
-          </button>
-        ))}
-      </div>
+      <WatchOptionsList movieId={movie.id} title={movie.title} />
       <button type='button' className='warp-watch-about' onClick={onOpenAbout}>
         <Info aria-hidden='true' />
         About ScrollFlix and where these links come from
