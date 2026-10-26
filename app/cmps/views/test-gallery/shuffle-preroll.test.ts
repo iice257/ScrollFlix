@@ -37,6 +37,25 @@ describe('shuffle preroll', () => {
     expect(preroll.take()).toBeNull()
   })
 
+  it('draws the pick and the decoys through the shuffle’s own chooser', () => {
+    const calls: unknown[][] = []
+    const heavy = films[7]
+    let asked = 0
+    const preroll = createShufflePreroll({
+      candidates: () => films,
+      preload: (...args: unknown[]) => {
+        calls.push(args)
+      },
+      // A chooser that always leans to film 7 first, then falls back to random.
+      choose: (pool, random) =>
+        asked++ === 0 ? heavy : pool[Math.floor(random() * pool.length)],
+    })
+    preroll.prepare()
+    expect(calls).toHaveLength(3)
+    expect(new Set(calls.map((args) => args[0])).size).toBe(3)
+    expect(calls.some((args) => args[0] === heavy)).toBe(true)
+  })
+
   it('does not return a pick the filters no longer allow', () => {
     const { preroll } = setup()
     preroll.prepare()

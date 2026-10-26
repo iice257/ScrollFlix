@@ -19,6 +19,9 @@ export type PrerollOptions<T> = {
   // Loads and decodes the film's full-size poster. Called with the film and
   // nothing else for the pick and for both decoys.
   preload: (film: T) => unknown
+  // How one film is drawn from the pool. Pass the shuffle's own (weighted)
+  // pick so the pick and the decoys follow the same odds. Default: uniform.
+  choose?: (pool: readonly T[], random: () => number) => T | null
   // Test seam: a source of 32-bit entropy for the fresh seed.
   entropy?: () => number
 }
@@ -71,24 +74,28 @@ export const createShufflePreroll = <T>(
       return
     }
     const random = seededRandom(entropy())
-    const draw = (taken: Set<number>) => {
+    const choose =
+      options.choose ??
+      ((films: readonly T[], roll: () => number) =>
+        films[Math.floor(roll() * films.length)] ?? null)
+    const draw = (taken: Set<T>) => {
       for (let tries = 0; tries < 8; tries += 1) {
-        const at = Math.floor(random() * pool.length)
-        if (!taken.has(at)) {
-          taken.add(at)
-          return pool[at]
+        const film = choose(pool, random)
+        if (film !== null && !taken.has(film)) {
+          taken.add(film)
+          return film
         }
       }
-      // A small pool: take the first free slot.
-      for (let at = 0; at < pool.length; at += 1) {
-        if (!taken.has(at)) {
-          taken.add(at)
-          return pool[at]
+      // A small pool: take the first free film.
+      for (const film of pool) {
+        if (!taken.has(film)) {
+          taken.add(film)
+          return film
         }
       }
       return null
     }
-    const taken = new Set<number>()
+    const taken = new Set<T>()
     const chosen = draw(taken)
     if (chosen === null) return
     const batch: T[] = [chosen]
