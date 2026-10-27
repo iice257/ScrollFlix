@@ -30,6 +30,9 @@ export type LodInput = {
   // Pixel widths of the tiers below, for the "is this tier needed" rule.
   baseWidth?: number
   midWidth?: number
+  // Warm-up: the globe is complete and at rest, so the mid layers also go to
+  // visible posters too small to need them yet, nearest the focus first.
+  warm?: boolean
 }
 
 const byFocus = (a: LodPoster, b: LodPoster) =>
@@ -47,7 +50,8 @@ export const planLod = (input: LodInput): LodPlan => {
 
   for (const poster of input.posters) {
     if (!poster.visible) continue
-    if (!fastForMid && poster.deviceWidthPx > midNeeded) mid.push(poster)
+    if (!fastForMid && (input.warm || poster.deviceWidthPx > midNeeded))
+      mid.push(poster)
     if (
       !fastForDetail &&
       poster.deviceWidthPx > detailNeeded &&
