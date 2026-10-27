@@ -460,10 +460,10 @@ export const searchMovies = (
   movies: readonly TestMovie[],
   rawQuery: string,
 ): TestMovie[] | null => {
-  // Preparing every film (once) also builds the dictionary typos use.
-  for (const movie of movies) prepare(movie)
   const query = parseQuery(rawQuery)
   if (!query) return null
+  // Preparing every film (once) also builds the dictionary typos use.
+  for (const movie of movies) prepare(movie)
   const all = needed(query)
   let hits: Scored[] = []
   for (const movie of movies) {
