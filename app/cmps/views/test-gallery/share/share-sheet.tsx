@@ -461,14 +461,7 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
               </span>
             </button>
 
-            <output className='warp-share-note'>
-              {notice || (
-                <>
-                  <Check aria-hidden='true' /> Made on your device. Nothing is
-                  uploaded.
-                </>
-              )}
-            </output>
+            <output className='warp-share-note'>{notice}</output>
           </div>
         </div>
       </dialog>

@@ -2085,11 +2085,6 @@
     font-weight: 650;
   }
 
-  .warp-share-note svg {
-    width: 13px;
-    height: 13px;
-  }
-
   @media (max-width: 720px) {
     .warp-share-layer {
       place-items: end center;
