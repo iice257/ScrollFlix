@@ -3,7 +3,6 @@ import {
   backdropUrl,
   pickBackdropSize,
   pickPosterSize,
-  posterSrcSet,
   posterUrl,
 } from './poster-sizes'
 
@@ -27,11 +26,5 @@ describe('poster-sizes', () => {
   it('picks backdrop sizes', () => {
     expect(pickBackdropSize(700)).toBe('w780')
     expect(pickBackdropSize(1600)).toBe('w1280')
-  })
-
-  it('builds the detail srcset', () => {
-    expect(posterSrcSet('abc')).toBe(
-      'https://image.tmdb.org/t/p/w342/abc.jpg 342w, https://image.tmdb.org/t/p/w500/abc.jpg 500w, https://image.tmdb.org/t/p/w780/abc.jpg 780w',
-    )
   })
 })

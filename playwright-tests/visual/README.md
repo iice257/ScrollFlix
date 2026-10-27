@@ -12,7 +12,7 @@ Run: `npm run test:visual` (config: `playwright.visual.config.ts`, project
 
 Desktop 1440x900 and phone 390x844, light and dark (4 variants), each with:
 globe at rest after full load, globe mid-spin (frame-locked), opened film card,
-index rows, About, loader (normal), session path panel, share card. The amber
+index rows, About, loader (normal), history panel, share card. The amber
 "slow" loader is a `test.fixme` until workstream D lands `data-loader-state="slow"`.
 
 PNGs live in `__screenshots__/`, named `<state>-<device>-<scheme>.png`.
@@ -62,9 +62,9 @@ Keep these stable, or change them together with this spec:
 `canvas[aria-label="Infinite movie poster menu"]` with `data-webgl-state`,
 `data-texture-progress`, `data-item-count`; `.warp-gallery-preloader[data-state]`;
 `[data-gallery-ready]`; `.warp-shell[data-theme]` driven by localStorage
-`wtw:theme`; localStorage `wtw:session-path-lines` and sessionStorage
+`wtw:theme`; localStorage `wtw:session-path-lines` and
 `wtw:session-path:v1`; the loader's `data-loader-state="slow"`; button labels
-"Movie index", "About ScrollFlix", "Open details for ...", "Session path, N
-films"; storage keys `wtw:spin-hint-seen`, `wtw:fullscreen-hint-seen`,
+"Movie index", "About ScrollFlix", "Open details for ...", "History and
+favourites"; storage keys `wtw:spin-hint-seen`, `wtw:fullscreen-hint-seen`,
 `wtw:mood-nudge-seen`; catalogue under `/json/catalog/` (manifest + chunk
 format); posters from `image.tmdb.org/t/p/wNN/<path>.jpg`.
