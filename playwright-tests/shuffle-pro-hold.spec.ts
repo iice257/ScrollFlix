@@ -2,7 +2,8 @@ import { type Page, expect, test } from '@playwright/test'
 import { waitForGlobeQuiet } from './globe-quiet'
 
 const STORE_KEY = 'wtw:shuffle-pro:v1'
-// Dev mode exists only on the dev server, which is what these specs run on.
+// Dev mode exists only on the dev server: CI runs the @dev specs against it
+// (E2E_SERVER=dev) and everything else against the production build.
 const DEV_MODE_KEY = 'wtw:shuffle-pro:dev-mode'
 const entry = { count: 3, firstAt: 1, lastAt: 2 }
 const ALL_FOUND = { frost: entry, amethyst: entry, jade: entry, gold: entry }
@@ -115,7 +116,9 @@ test.describe('Dev mode', () => {
     await expect(page.locator('.warp-demo-chip')).toHaveCount(0)
   })
 
-  test('shows a streak counter that follows shuffles', async ({ page }) => {
+  test('shows a streak counter that follows shuffles @dev', async ({
+    page,
+  }) => {
     await openGallery(page, { devMode: true, timed: false })
     const chip = page.locator('.warp-demo-chip')
     await expect(chip).toBeVisible()

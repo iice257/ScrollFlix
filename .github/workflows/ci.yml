@@ -5,6 +5,9 @@ on:
     branches: [main, staging]
   pull_request:
     branches: [main, staging]
+  # Also started by the "Update visual baselines" workflow: pushes made with
+  # GITHUB_TOKEN never trigger push/pull_request runs, but this can be dispatched.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -27,9 +30,26 @@ jobs:
       - run: npm run test:unit
       - run: npm run build
 
+  # End-to-end tests: one job per Playwright project, each split into shards,
+  # all running in parallel against a production build served by `vite preview`.
+  # Every job builds for itself (about 15 s, catalogue pull included), which is
+  # quicker than waiting on the checks job to hand over an artifact.
   e2e:
-    name: End-to-end tests
+    name: E2E ${{ matrix.project }} (${{ matrix.shard }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [firefox, Google Chrome, Mobile Chrome, Mobile Safari]
+        shard: [1/3, 2/3, 3/3]
+        include:
+          # Chrome comes preinstalled on the runner; only these two browsers
+          # are downloaded, and only on their own jobs.
+          - project: firefox
+            browser: firefox
+          - project: Mobile Safari
+            browser: webkit
     steps:
       - uses: actions/checkout@v4
 
@@ -39,19 +59,78 @@ jobs:
           cache: npm
 
       - run: npm ci
-      # The app loads the film catalogue from public/json/catalog, which is
-      # published as a release asset rather than kept in the repository.
-      - run: npm run catalog:pull
-      # Chrome projects use the runner's installed Google Chrome; Firefox and WebKit come from Playwright.
-      - run: npx playwright install --with-deps firefox webkit
-      - run: npm run test:e2e
+
+      # Builds dist/. This also pulls the film catalogue release into
+      # public/json/catalog, so there is no separate catalog:pull step.
+      - run: npm run build
+
+      - name: Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        if: matrix.browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-${{ matrix.browser }}
+
+      # On a cache hit the download is skipped; the system packages are still installed.
+      - name: Install browser
+        if: matrix.browser
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run tests
+        run: npx playwright test --project="${{ matrix.project }}" --shard=${{ matrix.shard }} --grep-invert @dev
 
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-report
+          name: playwright-report-${{ strategy.job-index }}
           path: playwright-report/
           retention-days: 7
+
+  # Specs tagged @dev need dev-only features (Shuffle Pro dev mode), which a
+  # production build compiles away, so they run against the dev server. Chrome
+  # only: Firefox and WebKit have no WebGL2 on the runner and skip them anyway.
+  e2e-dev:
+    name: E2E dev-mode specs
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      # The dev server reads the catalogue from public/json/catalog.
+      - run: npm run catalog:pull
+      - run: npx playwright test --project="Google Chrome" --project="Mobile Chrome" --grep @dev
+        env:
+          E2E_SERVER: dev
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-dev
+          path: playwright-report/
+          retention-days: 7
+
+  # The required check. Its name stays "End-to-end tests" while the real work
+  # is spread over the jobs above; it fails if any of them did not succeed.
+  e2e-gate:
+    name: End-to-end tests
+    runs-on: ubuntu-latest
+    needs: [e2e, e2e-dev]
+    if: always()
+    steps:
+      - run: |
+          echo "e2e: ${{ needs.e2e.result }}, e2e-dev: ${{ needs.e2e-dev.result }}"
+          test "${{ needs.e2e.result }}" = success
+          test "${{ needs.e2e-dev.result }}" = success
 
   # The visual gate: pixel baselines for the globe and its screens, in its own
   # job so it reports even when another e2e test fails. See
