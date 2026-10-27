@@ -914,6 +914,11 @@
   color: rgb(33 26 16);
 }
 
+.warp-shell[data-theme="light"] .warp-details-more-pill {
+  border: 1px solid rgb(33 26 16 / 0.18);
+  background: rgb(222 215 201 / 0.88);
+}
+
 .warp-shell[data-theme="light"] .warp-details-similar {
   border-top: 1px solid rgb(33 26 16 / 0.12);
 }

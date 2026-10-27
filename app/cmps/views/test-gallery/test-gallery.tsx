@@ -39,7 +39,6 @@ import {
   type CSSProperties,
   Fragment,
   type ReactNode,
-  type PointerEvent as ReactPointerEvent,
   type RefObject,
   Suspense,
   type SyntheticEvent,
@@ -219,6 +218,7 @@ import {
 } from './shuffle-pro/use-shuffle-pro'
 import { DESKTOP_GLOBE_COUNT } from './texture-tiers'
 import { useDismissLayer } from './use-dismiss-layer'
+import { useSheetDrag } from './use-sheet-drag'
 import { WatchBadges, WatchOptionsList, useWatchBadges } from './watch-options'
 import './session-path.css'
 import { AmbientWeather } from './ambient-weather'
@@ -299,9 +299,8 @@ const SORT_POPUP_SELECTOR = '.warp-sort-panel, .warp-sort-button'
 const closestElement = (node: Node, selector: string) =>
   (node instanceof Element ? node : node.parentElement)?.closest(selector)
 
-const DETAILS_EXPAND_DRAG_PX = 42
-const DETAILS_CLOSE_DRAG_PX = 68
-const DETAILS_COMPACT_DRAG_PX = 38
+// The phone sheet's layer leaves 54 px above the card and 10 px below it.
+const DETAILS_SHEET_GUTTER_PX = 64
 const EXIT_ANIMATION_MS = 220
 // Loaded when someone first shares, so the artwork code stays out of the
 // initial bundle.
@@ -6246,8 +6245,7 @@ type MovieDetailsCardProps = {
   onWatch: (movie: TestMovie) => void
 }
 
-// Calls onEnd when the user scrolls the element to its end, or pushes upward on
-// it while it already sits at its end (a short card has nothing to scroll).
+// Calls onEnd when scrolling carries the element to its end.
 const useExpandAtScrollEnd = (
   ref: RefObject<HTMLElement | null>,
   active: boolean,
@@ -6262,7 +6260,9 @@ const useExpandAtScrollEnd = (
     const atEnd = () =>
       element.scrollTop + element.clientHeight >= element.scrollHeight - 2
     let lastTop = element.scrollTop
-    let touchY: number | null = null
+    // Momentum or a wheel that reaches the end opens the long description; a
+    // finger pulling on past the end is followed by the sheet itself (see
+    // useSheetContentDrag).
     const handleScroll = () => {
       const top = element.scrollTop
       const movedDown = top > lastTop
@@ -6270,25 +6270,8 @@ const useExpandAtScrollEnd = (
       if (performance.now() < armedAt) return
       if (movedDown && top > 0 && atEnd()) onEndRef.current()
     }
-    const handleTouchStart = (event: TouchEvent) => {
-      touchY = event.touches[0]?.clientY ?? null
-    }
-    const handleTouchMove = (event: TouchEvent) => {
-      const y = event.touches[0]?.clientY
-      if (touchY === null || y === undefined) return
-      if (touchY - y > 24 && atEnd()) {
-        touchY = null
-        onEndRef.current()
-      }
-    }
     element.addEventListener('scroll', handleScroll, { passive: true })
-    element.addEventListener('touchstart', handleTouchStart, { passive: true })
-    element.addEventListener('touchmove', handleTouchMove, { passive: true })
-    return () => {
-      element.removeEventListener('scroll', handleScroll)
-      element.removeEventListener('touchstart', handleTouchStart)
-      element.removeEventListener('touchmove', handleTouchMove)
-    }
+    return () => element.removeEventListener('scroll', handleScroll)
   }, [active, ref])
 }
 
@@ -6340,64 +6323,34 @@ const MovieDetailsCard = ({
   const [isExpanded, setIsExpanded] = useState(startExpanded)
   const startExpandedRef = useRef(startExpanded)
   startExpandedRef.current = startExpanded
-  const [dragOffset, setDragOffset] = useState(0)
-  const dragStartYRef = useRef<number | null>(null)
-  const dragPointerIdRef = useRef<number | null>(null)
+  const cardRef = useRef<HTMLDialogElement | null>(null)
+  const copyScrollRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (movie.id) {
       setIsExpanded(startExpandedRef.current)
-      setDragOffset(0)
     }
   }, [movie.id])
 
-  const handleDragStart = (event: ReactPointerEvent<HTMLElement>) => {
-    dragStartYRef.current = event.clientY
-    dragPointerIdRef.current = event.pointerId
-    event.currentTarget.setPointerCapture?.(event.pointerId)
-  }
-
-  const handleDragMove = (event: ReactPointerEvent<HTMLElement>) => {
-    if (dragPointerIdRef.current !== event.pointerId) return
-    const startY = dragStartYRef.current
-    if (startY === null) return
-
-    const nextOffset = Math.max(-120, Math.min(140, event.clientY - startY))
-    setDragOffset(nextOffset)
-  }
-
-  const finishDrag = (clientY: number) => {
-    const startY = dragStartYRef.current
-    if (startY === null) return
-
-    const deltaY = clientY - startY
-    dragStartYRef.current = null
-    dragPointerIdRef.current = null
-    setDragOffset(0)
-
-    if (deltaY < -DETAILS_EXPAND_DRAG_PX) {
-      setIsExpanded(true)
-      return
-    }
-
-    if (isExpanded && deltaY > DETAILS_COMPACT_DRAG_PX) {
-      setIsExpanded(false)
-      return
-    }
-
-    if (deltaY > DETAILS_CLOSE_DRAG_PX) {
-      onClose()
-    }
-  }
-
-  const handleDragEnd = (event: ReactPointerEvent<HTMLElement>) => {
-    if (dragPointerIdRef.current !== event.pointerId) return
-    finishDrag(event.clientY)
-  }
+  // The sheet follows the finger and settles on a resting height (see
+  // sheet-drag.ts); a flick or a pull past compact closes it.
+  const { drag, grip } = useSheetDrag({
+    enabled: !isWide,
+    cardRef,
+    contentRef: copyScrollRef,
+    expanded: isExpanded,
+    limits: () => ({
+      compact: Math.min(window.innerHeight * 0.76, 680),
+      expanded: window.innerHeight - DETAILS_SHEET_GUTTER_PX,
+    }),
+    onSnap: (snap) => {
+      if (snap === 'close') onClose()
+      else setIsExpanded(snap === 'expanded')
+    },
+  })
 
   // On a phone the short card scrolls like any page: reaching its end (or
   // pushing on past it) opens the long description, no tap on More needed.
-  const copyScrollRef = useRef<HTMLDivElement | null>(null)
   const copyScrollNodeRef = useCallback((node: HTMLDivElement | null) => {
     copyScrollRef.current = node
     return overlayScrollbarRef(node)
@@ -6477,7 +6430,8 @@ const MovieDetailsCard = ({
     </button>
   )
   const detailsStyle = {
-    '--details-drag-y': `${dragOffset}px`,
+    '--details-drag-y': `${drag?.offset ?? 0}px`,
+    ...(drag ? { '--details-drag-h': `${drag.height}px` } : null),
     // A mood run dresses the card in the colours of the worlds it was made from.
     ...(premiumMood ? moodCardVars(premiumMood.palette) : null),
     // CSS images are fetched without CORS. A copy cached from such a request
@@ -6607,10 +6561,11 @@ const MovieDetailsCard = ({
         />
         <dialog
           open
+          ref={cardRef}
           className={cn(
             'warp-details-card',
             isExpanded && 'is-expanded',
-            dragOffset !== 0 && 'is-dragging',
+            drag && 'is-dragging',
           )}
           style={detailsStyle}
           aria-modal='true'
@@ -6636,13 +6591,7 @@ const MovieDetailsCard = ({
           </button>
           {isWide ? null : mobileReshuffleButton}
           {isWide ? null : (
-            <div
-              className='warp-details-grip-zone'
-              onPointerCancel={handleDragEnd}
-              onPointerDown={handleDragStart}
-              onPointerMove={handleDragMove}
-              onPointerUp={handleDragEnd}
-            >
+            <div className='warp-details-grip-zone' {...grip}>
               <span className='warp-details-handle' />
             </div>
           )}
@@ -6898,12 +6847,18 @@ const MovieDetailsCard = ({
               aria-expanded={isExpanded}
               onClick={() => setIsExpanded((expanded) => !expanded)}
             >
-              <span>{isExpanded ? 'Less' : 'More'}</span>
-              {isExpanded ? (
-                <ChevronsUp aria-hidden='true' size={17} strokeWidth={2.8} />
-              ) : (
-                <ChevronsDown aria-hidden='true' size={17} strokeWidth={2.8} />
-              )}
+              <span className='warp-details-more-pill'>
+                <span>{isExpanded ? 'Less' : 'More'}</span>
+                {isExpanded ? (
+                  <ChevronsUp aria-hidden='true' size={17} strokeWidth={2.8} />
+                ) : (
+                  <ChevronsDown
+                    aria-hidden='true'
+                    size={17}
+                    strokeWidth={2.8}
+                  />
+                )}
+              </span>
             </button>
           )}
         </dialog>
