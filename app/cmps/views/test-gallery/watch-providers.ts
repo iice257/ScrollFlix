@@ -67,22 +67,31 @@ export const providerBrand = (name: string) =>
     .replace(/(\+|\s+plus)(\s.*)?$/, '')
     .trim()
 
-export const badgeProviders = (options: WatchOptions, limit = 3) => {
+// Every service confirmed for streaming or free, one per brand. Services are
+// not exclusive: a film on Netflix and Prime Video lists both.
+export const badgeBrandProviders = (options: WatchOptions) => {
   const brands = new Set<string>()
-  return options.providers
-    .filter((provider) => {
-      if (
-        !BADGE_KINDS.has(provider.kind) ||
-        !provider.logoPath ||
-        !(provider.url ?? options.link)
-      )
-        return false
-      const brand = providerBrand(provider.name)
-      if (brands.has(brand)) return false
-      brands.add(brand)
-      return true
-    })
-    .slice(0, limit)
+  return options.providers.filter((provider) => {
+    if (
+      !BADGE_KINDS.has(provider.kind) ||
+      !provider.logoPath ||
+      !(provider.url ?? options.link)
+    )
+      return false
+    const brand = providerBrand(provider.name)
+    if (brands.has(brand)) return false
+    brands.add(brand)
+    return true
+  })
+}
+
+export const badgeProviders = (options: WatchOptions, limit = 3) =>
+  badgeBrandProviders(options).slice(0, limit)
+
+// The first few as badges, and how many more there are ("+N").
+export const badgeSummary = (options: WatchOptions, limit = 3) => {
+  const all = badgeBrandProviders(options)
+  return { shown: all.slice(0, limit), more: Math.max(0, all.length - limit) }
 }
 
 // The options for a film if they have already been fetched this visit.

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   type WatchProvider,
   badgeProviders,
+  badgeSummary,
   clearWatchCache,
   groupByKind,
   loadWatchOptions,
@@ -131,5 +132,50 @@ describe('providerBrand', () => {
       providerBrand('HBO Max'),
     )
     expect(providerBrand('Netflix')).not.toBe(providerBrand('Disney Plus'))
+  })
+})
+
+describe('badgeSummary', () => {
+  const logo = (id: number, name: string, kind: WatchProvider['kind']) => ({
+    ...provider(id, kind),
+    name,
+    logoPath: `/${id}.jpg`,
+    url: 'https://x',
+  })
+
+  it('shows services side by side, never hiding one because another is on', () => {
+    const options = {
+      region: 'US',
+      link: null,
+      providers: [
+        logo(8, 'Netflix', 'stream'),
+        logo(9, 'Amazon Prime Video', 'stream'),
+        logo(337, 'Disney Plus', 'stream'),
+        logo(384, 'Max', 'stream'),
+        logo(73, 'Tubi TV', 'free'),
+        logo(2, 'Apple TV', 'rent'),
+      ],
+    }
+    const { shown, more } = badgeSummary(options)
+    expect(shown.map((p) => p.name)).toEqual([
+      'Netflix',
+      'Amazon Prime Video',
+      'Disney Plus',
+    ])
+    // Max and Tubi are also confirmed; rent is left to the sheet.
+    expect(more).toBe(2)
+  })
+
+  it('has nothing to add when three or fewer are confirmed', () => {
+    const options = {
+      region: 'US',
+      link: null,
+      providers: [
+        logo(8, 'Netflix', 'stream'),
+        logo(9, 'Amazon Prime Video', 'ads'),
+      ],
+    }
+    expect(badgeSummary(options).more).toBe(0)
+    expect(badgeSummary(options).shown).toHaveLength(2)
   })
 })

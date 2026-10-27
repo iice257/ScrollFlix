@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import {
   type WatchOptions,
   type WatchProvider,
-  badgeProviders,
+  badgeSummary,
   getCachedWatchOptions,
   groupByKind,
   loadWatchOptions,
@@ -168,43 +168,52 @@ const preloadLogo = (url: string) =>
 // The services the card's Watch button shows for a film: confirmed listings
 // in the visitor's country, with a link (see badgeProviders). Empty until
 // known, and empty when nothing is confirmed: no badge is ever a guess.
-export const useWatchBadges = (movieId: string, title: string) => {
-  const [providers, setProviders] = useState<WatchProvider[]>(() => {
+export type WatchBadgeState = { providers: WatchProvider[]; more: number }
+const NO_BADGES: WatchBadgeState = { providers: [], more: 0 }
+
+export const useWatchBadges = (
+  movieId: string,
+  title: string,
+): WatchBadgeState => {
+  const [badges, setBadges] = useState<WatchBadgeState>(() => {
     const cached = getCachedWatchOptions(movieId)
-    return cached ? badgeProviders(cached) : []
+    if (!cached) return NO_BADGES
+    const { shown, more } = badgeSummary(cached)
+    return { providers: shown, more }
   })
   // biome-ignore lint/correctness/useExhaustiveDependencies: the id is the trigger
   useEffect(() => {
     const cached = getCachedWatchOptions(movieId)
     if (cached) {
-      setProviders(badgeProviders(cached))
+      const { shown, more } = badgeSummary(cached)
+      setBadges({ providers: shown, more })
       return
     }
-    setProviders([])
+    setBadges(NO_BADGES)
     if (!tmdbIdOfMovie(movieId)) return
     let cancelled = false
     const timer = window.setTimeout(() => {
       loadWatchOptions(movieId, title)
         .then((options) => {
-          const providers = badgeProviders(options)
+          const { shown, more } = badgeSummary(options)
           // The badges appear together, once their logos are decoded: never
           // as empty slots, and the button changes width only once.
           return Promise.all(
-            providers.map((provider) =>
+            shown.map((provider) =>
               preloadLogo(providerLogoUrl(provider.logoPath ?? '')).then(
                 () => provider,
                 () => null,
               ),
             ),
-          )
+          ).then((ready) => ({
+            providers: ready.filter(
+              (provider): provider is WatchProvider => provider !== null,
+            ),
+            more,
+          }))
         })
-        .then((ready) => {
-          if (!cancelled)
-            setProviders(
-              ready.filter(
-                (provider): provider is WatchProvider => provider !== null,
-              ),
-            )
+        .then((next) => {
+          if (!cancelled) setBadges(next)
         })
         .catch(() => {
           // No badges; the sheet tries again when opened.
@@ -215,15 +224,11 @@ export const useWatchBadges = (movieId: string, title: string) => {
       window.clearTimeout(timer)
     }
   }, [movieId])
-  return providers
+  return badges
 }
 
 // Small logos of the services a film is confirmed on, overlapping.
-export const WatchBadges = ({
-  providers,
-}: {
-  providers: readonly WatchProvider[]
-}) =>
+export const WatchBadges = ({ providers, more }: WatchBadgeState) =>
   providers.length ? (
     <span className='warp-watch-badges' aria-hidden='true'>
       {providers.map((provider) =>
@@ -232,12 +237,13 @@ export const WatchBadges = ({
             key={provider.id}
             src={providerLogoUrl(provider.logoPath)}
             alt=''
-            width={20}
-            height={20}
+            width={26}
+            height={26}
             decoding='async'
             crossOrigin='anonymous'
           />
         ) : null,
       )}
+      {more > 0 ? <b className='warp-watch-more'>+{more}</b> : null}
     </span>
   ) : null

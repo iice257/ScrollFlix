@@ -6618,15 +6618,15 @@ const MovieDetailsCard = ({
                   type='button'
                   className='warp-details-watch'
                   aria-label={
-                    watchBadges.length
-                      ? `Watch: on ${watchBadges.map((provider) => provider.name).join(', ')}`
+                    watchBadges.providers.length
+                      ? `Watch: on ${watchBadges.providers.map((provider) => provider.name).join(', ')}${watchBadges.more ? ` and ${watchBadges.more} more` : ''}`
                       : 'Watch'
                   }
                   onClick={() => onWatch(movie)}
                 >
                   <Play aria-hidden='true' size={15} strokeWidth={2.6} />
                   Watch
-                  <WatchBadges providers={watchBadges} />
+                  <WatchBadges {...watchBadges} />
                 </button>
                 {!isWide ? null : trailerButton.kind === 'play' ? (
                   <button
