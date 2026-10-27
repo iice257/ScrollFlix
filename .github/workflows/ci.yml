@@ -91,7 +91,9 @@ jobs:
 
       - name: Run tests
         run: |
-          read -r kind shard <<< "${{ matrix.part }}"
+          set -- ${{ matrix.part }}
+          kind=$1
+          shard=$2
           if [ "$kind" = heavy ]; then
             npx playwright test --project="${{ matrix.project }}" --shard="$shard" --grep @heavy --grep-invert @dev --pass-with-no-tests
           else
