@@ -26,11 +26,20 @@ test('loads the gallery without application console errors', async ({
     }
   })
 
+  // The browser's "Failed to load resource" console line has no URL; keep the
+  // failing ones so a failure says which request it was.
+  const failedRequests: string[] = []
+  page.on('response', (res) => {
+    if (res.status() >= 400) failedRequests.push(`${res.status()} ${res.url()}`)
+  })
+
   await page.goto('/')
 
   await expect(
     page.getByRole('region', { name: 'Warp Wall movie gallery' }),
   ).toBeVisible()
+
+  expect(failedRequests).toEqual([])
 
   const criticalErrors = consoleErrors.filter(
     (error) =>

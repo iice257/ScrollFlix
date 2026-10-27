@@ -38,18 +38,17 @@ jobs:
     name: E2E ${{ matrix.project }} (${{ matrix.shard }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # Chrome comes preinstalled on the runner; only Firefox and WebKit are
+      # downloaded, and only on their own jobs.
+      BROWSER: ${{ matrix.project == 'firefox' && 'firefox' || matrix.project == 'Mobile Safari' && 'webkit' || '' }}
     strategy:
       fail-fast: false
       matrix:
-        project: [firefox, Google Chrome, Mobile Chrome, Mobile Safari]
-        shard: [1/3, 2/3, 3/3]
-        include:
-          # Chrome comes preinstalled on the runner; only these two browsers
-          # are downloaded, and only on their own jobs.
-          - project: firefox
-            browser: firefox
-          - project: Mobile Safari
-            browser: webkit
+        # Pull requests run one desktop and one mobile engine; pushes to
+        # staging/main (which gate promotion) and manual runs run all four.
+        project: ${{ fromJSON(github.event_name == 'pull_request' && '["Google Chrome","Mobile Safari"]' || '["firefox","Google Chrome","Mobile Chrome","Mobile Safari"]') }}
+        shard: [1/6, 2/6, 3/6, 4/6, 5/6, 6/6]
     steps:
       - uses: actions/checkout@v4
 
@@ -69,19 +68,19 @@ jobs:
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
-        if: matrix.browser
+        if: env.BROWSER != ''
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-${{ matrix.browser }}
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-${{ env.BROWSER }}
 
       # On a cache hit the download is skipped; the system packages are still installed.
       - name: Install browser
-        if: matrix.browser
-        run: npx playwright install --with-deps ${{ matrix.browser }}
+        if: env.BROWSER != ''
+        run: npx playwright install --with-deps ${{ env.BROWSER }}
 
       - name: Run tests
-        run: npx playwright test --project="${{ matrix.project }}" --shard=${{ matrix.shard }} --grep-invert @dev
+        run: npx playwright test --project="${{ matrix.project }}" --shard="${{ matrix.shard }}" --grep-invert @dev
 
       - uses: actions/upload-artifact@v4
         if: failure()
