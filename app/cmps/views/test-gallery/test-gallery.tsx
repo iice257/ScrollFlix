@@ -6198,7 +6198,14 @@ const WatchLinksDialog = ({
           target='_blank'
           rel='noopener noreferrer'
         >
+          <span className='warp-watch-youtube-mark' aria-hidden='true'>
+            <svg viewBox='0 0 28 20' focusable='false'>
+              <rect width='28' height='20' rx='5.5' fill='#f00' />
+              <path d='M11.2 5.8v8.4L18.6 10z' fill='#fff' />
+            </svg>
+          </span>
           <span>Trailer on YouTube</span>
+          <ExternalLink aria-hidden='true' size={14} />
         </a>
         <button
           type='button'
@@ -6206,7 +6213,7 @@ const WatchLinksDialog = ({
           onClick={onOpenAbout}
         >
           <Info aria-hidden='true' />
-          About ScrollFlix and where these links come from
+          About ScrollFlix and these links
         </button>
       </dialog>
     </section>
