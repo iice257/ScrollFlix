@@ -50,7 +50,7 @@ jobs:
         # Pull requests run one desktop and one mobile engine; pushes to
         # staging/main (which gate promotion) and manual runs run all four.
         project: ${{ fromJSON(github.event_name == 'pull_request' && '["Google Chrome","Mobile Safari"]' || '["firefox","Google Chrome","Mobile Chrome","Mobile Safari"]') }}
-        shard: [1/8, 2/8, 3/8, 4/8, 5/8, 6/8, 7/8, 8/8]
+        shard: [1/12, 2/12, 3/12, 4/12, 5/12, 6/12, 7/12, 8/12, 9/12, 10/12, 11/12, 12/12]
     steps:
       - uses: actions/checkout@v4
 
@@ -125,8 +125,13 @@ jobs:
   # job so it reports even when another e2e test fails. See
   # playwright-tests/visual/README.md.
   visual:
-    name: Visual baselines
+    name: Visual (${{ matrix.shard }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/4, 2/4, 3/4, 4/4]
     steps:
       - uses: actions/checkout@v4
 
@@ -137,13 +142,22 @@ jobs:
 
       - run: npm ci
       # Uses the runner's installed Google Chrome, a mocked catalogue and mocked posters.
-      - run: npm run test:visual
+      - run: npm run test:visual -- --shard="${{ matrix.shard }}"
 
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: visual-diffs
+          name: visual-diffs-${{ strategy.job-index }}
           path: |
             test-results/visual/
             playwright-report/visual/
           retention-days: 14
+
+  # The required check for the visual shards above; the name is unchanged.
+  visual-gate:
+    name: Visual baselines
+    runs-on: ubuntu-latest
+    needs: [visual]
+    if: always()
+    steps:
+      - run: test "${{ needs.visual.result }}" = success
