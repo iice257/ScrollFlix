@@ -588,10 +588,11 @@ export const pickWinner = (
   return winner
 }
 
-// The poster is 2:3; its corners are this share of its width (the detail
-// card's 18 px on a 330 px poster is 5.5%).
+// The poster is 2:3; its corners are this share of its width. The detail card
+// uses 5.5%; on the globe the posters are small, so a rounder 9% keeps them
+// from reading as rectangles (past about 11% they start to look like pills).
 export const POSTER_ASPECT = 1.5
-export const POSTER_CORNER_RADIUS = 0.06
+export const POSTER_CORNER_RADIUS = 0.09
 
 const vertexShaderSource = `#version 300 es
 uniform mat4 uWorldMatrix;
