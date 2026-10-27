@@ -151,6 +151,12 @@ import {
   usesNowPlayingBar,
 } from './now-playing'
 import { NowPlayingBar, type NowPlayingFilm } from './now-playing-bar'
+import {
+  ORIGIN_GROUPS,
+  type OriginId,
+  countOrigins,
+  filterMoviesByOrigins,
+} from './origin-groups'
 import { PartyLayer } from './party/party-layer'
 import type { PartyMovieInfo } from './party/party-parts'
 import { toPartyFilm, usePartyGame } from './party/use-party'
@@ -258,6 +264,7 @@ type ListGrouping =
   | 'runtime'
   | 'popularity'
   | 'votes'
+  | 'country'
 type LoadState = 'loading' | 'ready' | 'error'
 type ContentFilter = 'all' | 'movies' | 'series'
 export type RuntimeFilter =
@@ -1094,6 +1101,7 @@ export type SortRule = { key: ListGrouping; direction: SortDirection | null }
 
 export const DEFAULT_SORT_DIRECTION: Record<ListGrouping, SortDirection> = {
   alpha: 'asc',
+  country: 'desc',
   popularity: 'desc',
   rating: 'desc',
   runtime: 'asc',
@@ -1142,6 +1150,17 @@ const compareMoviesByRule = (
 ) => {
   const sign = direction === 'desc' ? -1 : 1
   if (key === 'alpha') return sign * compareTitleKeys(movieA, movieB)
+  if (key === 'country') {
+    // Films with no country always come last.
+    if (!movieA.countries || !movieB.countries) {
+      return movieA.countries === movieB.countries
+        ? 0
+        : movieA.countries
+          ? -1
+          : 1
+    }
+    return sign * movieA.countries.localeCompare(movieB.countries)
+  }
   const valueA = getSortValue(movieA, key)
   const valueB = getSortValue(movieB, key)
   if (valueA === null || valueB === null) {
@@ -1325,6 +1344,10 @@ export const groupMoviesByRuntime = (movies: TestMovie[]) =>
 export const groupMoviesByVotes = (movies: TestMovie[]) =>
   groupBy(movies, getVotesGroupKey)
 
+// Films with no country share the "Unknown" group.
+export const groupMoviesByCountry = (movies: TestMovie[]) =>
+  groupBy(movies, (movie) => movie.countries || UNKNOWN_GROUP)
+
 export const groupMoviesByPopularity = (movies: TestMovie[]) => {
   const groups = getPopularityGroups(movies)
   return groupBy(movies, (movie) => groups.get(movie.id) ?? UNKNOWN_GROUP)
@@ -1345,6 +1368,8 @@ export const groupMoviesForList = (
       return groupMoviesByPopularity(movies)
     case 'votes':
       return groupMoviesByVotes(movies)
+    case 'country':
+      return groupMoviesByCountry(movies)
     default:
       return groupMoviesByYear(movies)
   }
@@ -1362,17 +1387,24 @@ const getGroupOrder = (group: string, grouping: ListGrouping) => {
 }
 
 // Group headers follow the sort direction; unknown groups always come last.
+// Countries are ordered by how many films each holds (`sizes`), then by name.
 export const compareListGroups = (
   groupA: string,
   groupB: string,
   grouping: ListGrouping,
   direction: SortDirection,
+  sizes?: { a: number; b: number },
 ) => {
   const unknownA = isUnknownGroup(groupA)
   const unknownB = isUnknownGroup(groupB)
   if (unknownA || unknownB) return Number(unknownA) - Number(unknownB)
   const sign = direction === 'desc' ? -1 : 1
   if (grouping === 'alpha') return sign * groupA.localeCompare(groupB)
+  if (grouping === 'country') {
+    return (
+      sign * ((sizes?.a ?? 0) - (sizes?.b ?? 0)) || groupA.localeCompare(groupB)
+    )
+  }
   return (
     sign * (getGroupOrder(groupA, grouping) - getGroupOrder(groupB, grouping))
   )
@@ -1410,6 +1442,12 @@ const SORT_OPTIONS: Array<{
     asc: 'Fewest votes',
     desc: 'Most votes',
   },
+  {
+    key: 'country',
+    label: 'Country',
+    asc: 'Fewest films first',
+    desc: 'Most films first',
+  },
 ]
 const SORT_LABELS = Object.fromEntries(
   SORT_OPTIONS.map((option) => [option.key, option.label]),
@@ -1433,6 +1471,8 @@ const getMovieListGroupKey = (
       return getVotesGroupKey(movie)
     case 'popularity':
       return popularityGroups?.get(movie.id) ?? UNKNOWN_GROUP
+    case 'country':
+      return movie.countries || UNKNOWN_GROUP
     default:
       return movie.year || '----'
   }
@@ -1526,6 +1566,7 @@ export const TestGalleryApp = () => {
     CollectionId[]
   >([])
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null)
+  const [selectedOrigins, setSelectedOrigins] = useState<OriginId[]>([])
   const [contentFilter, setContentFilter] = useState<ContentFilter>('all')
   const [listSearchQuery, setListSearchQuery] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
@@ -1852,6 +1893,8 @@ export const TestGalleryApp = () => {
 
   const countrySummaries = useMemo(() => getCountrySummaries(movies), [movies])
 
+  const originCounts = useMemo(() => countOrigins(movies), [movies])
+
   // Same lists the Filters page renders, so the About figure follows them.
   const genreAndFilterCount = useMemo(
     () =>
@@ -1864,6 +1907,7 @@ export const TestGalleryApp = () => {
           RATING_PRESETS,
           MOOD_FILTERS,
           COLLECTION_FILTERS,
+          ORIGIN_GROUPS,
           countrySummaries
             .slice(0, COUNTRY_CHIPS_SHOWN)
             .map((summary) => summary.country),
@@ -1874,14 +1918,24 @@ export const TestGalleryApp = () => {
 
   const baseMovies = useMemo(
     () =>
-      filterMoviesByCountry(
-        filterMoviesByCollections(
-          filterMoviesByYearAndRating(movies, selectedYear, ratingMin),
-          selectedCollections,
+      filterMoviesByOrigins(
+        filterMoviesByCountry(
+          filterMoviesByCollections(
+            filterMoviesByYearAndRating(movies, selectedYear, ratingMin),
+            selectedCollections,
+          ),
+          selectedCountry,
         ),
-        selectedCountry,
+        selectedOrigins,
       ),
-    [movies, selectedYear, ratingMin, selectedCollections, selectedCountry],
+    [
+      movies,
+      selectedYear,
+      ratingMin,
+      selectedCollections,
+      selectedCountry,
+      selectedOrigins,
+    ],
   )
 
   const genreFilteredMovies = useMemo(
@@ -1907,6 +1961,7 @@ export const TestGalleryApp = () => {
     (selectedYear ? 1 : 0) +
     (ratingMin !== null ? 1 : 0) +
     selectedCollections.length +
+    selectedOrigins.length +
     (selectedCountry ? 1 : 0) +
     (contentFilter !== 'all' ? 1 : 0)
 
@@ -2274,6 +2329,7 @@ export const TestGalleryApp = () => {
     setRatingMin(null)
     setSelectedCollections([])
     setSelectedCountry(null)
+    setSelectedOrigins([])
     setSelectedGenres([])
     setSelectedMoodFilters([])
     setSelectedRuntimeFilter(null)
@@ -2293,6 +2349,14 @@ export const TestGalleryApp = () => {
 
   const toggleCollection = useCallback((id: CollectionId) => {
     setSelectedCollections((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id],
+    )
+  }, [])
+
+  const toggleOrigin = useCallback((id: OriginId) => {
+    setSelectedOrigins((current) =>
       current.includes(id)
         ? current.filter((item) => item !== id)
         : [...current, id],
@@ -2401,6 +2465,8 @@ export const TestGalleryApp = () => {
     allActive: selectedFilterCount === 0,
     contentFilter,
     countries: countrySummaries,
+    originCounts,
+    selectedOrigins,
     decades: decadeOptions,
     genres: genreSummaries,
     ratingMin,
@@ -2416,6 +2482,7 @@ export const TestGalleryApp = () => {
     onSelectContentFilter: selectContentFilter,
     onToggleCollection: toggleCollection,
     onToggleCountry: toggleCountry,
+    onToggleOrigin: toggleOrigin,
     onToggleGenre: toggleGenre,
     onToggleMoodFilter: toggleMoodFilter,
     onToggleRating: toggleRatingMin,
@@ -2795,6 +2862,7 @@ export const TestGalleryApp = () => {
     ratingMin,
     selectedCollections,
     selectedCountry,
+    selectedOrigins,
     contentFilter,
     sortRules,
     listSearchQuery,
@@ -4301,8 +4369,11 @@ const WarpList = ({
   const groupedMovies = useMemo(
     () =>
       Object.entries(groupMoviesForList(movies, grouping)).sort(
-        ([groupA], [groupB]) =>
-          compareListGroups(groupA, groupB, grouping, groupDirection),
+        ([groupA, filmsA], [groupB, filmsB]) =>
+          compareListGroups(groupA, groupB, grouping, groupDirection, {
+            a: filmsA.length,
+            b: filmsB.length,
+          }),
       ),
     [groupDirection, grouping, movies],
   )
@@ -5020,6 +5091,8 @@ type FilterSectionsProps = {
   allActive: boolean
   contentFilter: ContentFilter
   countries: CountrySummary[]
+  originCounts: ReadonlyMap<OriginId, number>
+  selectedOrigins: OriginId[]
   decades: number[]
   genres: GenreSummary[]
   ratingMin: number | null
@@ -5035,6 +5108,7 @@ type FilterSectionsProps = {
   onSelectContentFilter: (contentFilter: ContentFilter) => void
   onToggleCollection: (id: CollectionId) => void
   onToggleCountry: (country: string) => void
+  onToggleOrigin: (id: OriginId) => void
   onToggleGenre: (genre: string) => void
   onToggleMoodFilter: (moodFilter: MoodFilter) => void
   onToggleRating: (min: number) => void
@@ -5047,6 +5121,8 @@ const FilterSections = ({
   allActive,
   contentFilter,
   countries,
+  originCounts,
+  selectedOrigins,
   decades,
   genres,
   ratingMin,
@@ -5062,6 +5138,7 @@ const FilterSections = ({
   onSelectContentFilter,
   onToggleCollection,
   onToggleCountry,
+  onToggleOrigin,
   onToggleGenre,
   onToggleMoodFilter,
   onToggleRating,
@@ -5197,6 +5274,30 @@ const FilterSections = ({
               <span>{filter.label}</span>
             </button>
           ))}
+        </div>
+      </section>
+      <section className='warp-fs-section' data-section='origins'>
+        <p>Origin and style</p>
+        <div className='warp-fs-chips'>
+          {ORIGIN_GROUPS.map((group) => {
+            const count = originCounts.get(group.id) ?? 0
+            return (
+              <button
+                type='button'
+                className={cn(
+                  'warp-fs-chip',
+                  selectedOrigins.includes(group.id) && 'is-active',
+                )}
+                key={group.id}
+                title={group.hint}
+                aria-pressed={selectedOrigins.includes(group.id)}
+                onClick={() => onToggleOrigin(group.id)}
+              >
+                <span>{group.label}</span>
+                <span>{formatGenreCount(count)}</span>
+              </button>
+            )
+          })}
         </div>
       </section>
       <section className='warp-fs-section' data-section='collections'>

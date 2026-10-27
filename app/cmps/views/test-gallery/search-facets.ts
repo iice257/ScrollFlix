@@ -61,6 +61,8 @@ const SORT_WORDS: Record<string, string[]> = {
   'popularity:desc': ['popular', 'trending', 'famous', 'most popular'],
   'popularity:asc': ['hidden gems', 'obscure', 'least popular', 'underrated'],
   'votes:desc': ['most votes', 'most voted'],
+  'country:desc': ['by country', 'country', 'origin', 'nationality'],
+  'country:asc': ['smallest countries', 'rarest countries'],
   'alpha:asc': ['alphabetical', 'a to z', 'a-z'],
   'alpha:desc': ['z to a', 'z-a'],
 }
