@@ -399,6 +399,16 @@ const MIP_BATCH_MS = 150
 // A tier image that failed is not asked for again for this long.
 const LOD_RETRY_MS = 30000
 const LOADER_CONCURRENCY = 12
+// Once the posters on screen are in, the rest of the globe (the back) fills in
+// behind the visitor: few at a time, only while nothing is moving, and with
+// the atlas's mips rebuilt rarely. Otherwise a slow GPU spends the first
+// seconds of every spin on work nobody is looking at.
+const LOADER_CONCURRENCY_BACKGROUND = 4
+// While the visitor is pressing or spinning, the background drops to this.
+const LOADER_CONCURRENCY_BUSY = 1
+const BACKGROUND_PAUSE_MS = 250
+const MIP_BATCH_BACKGROUND_MS = 700
+const MIP_BATCH_BUSY_MS = 1500
 // While a card is open the globe's own loading keeps to a few slots, so the
 // card's poster (and the opened poster's sharp tier, which jumps the queue)
 // is not competing with a dozen background downloads.
@@ -1583,6 +1593,9 @@ class InfiniteMovieEngine<T> {
   private lastRenderedCameraZ = Number.NaN
   private contextLost = false
   private movementActive = false
+  // True once the posters on screen have settled: from then on the rest of
+  // the globe loads in the background (see LOADER_CONCURRENCY_BACKGROUND).
+  private backgroundPhase = false
   private smoothRotationVelocity = 0
   private nearestVertexIndex = 0
   private detailProgress = 0
@@ -1993,6 +2006,30 @@ class InfiniteMovieEngine<T> {
 
   // Pulls the camera in or out (zoom > 1 is closer). Applied in 3D so posters
   // stay crisp and the hold-primed CSS scale keeps working on top of it.
+  // How many downloads may run: few while a card is open or the rest of the
+  // globe is still filling in, all of them otherwise.
+  private applyLoaderConcurrency() {
+    const cardOpen = this.detailTargetProgress > 0
+    this.loader?.setConcurrency(
+      cardOpen
+        ? LOADER_CONCURRENCY_CARD_OPEN
+        : this.backgroundPhase
+          ? this.isBusy()
+            ? LOADER_CONCURRENCY_BUSY
+            : LOADER_CONCURRENCY_BACKGROUND
+          : LOADER_CONCURRENCY,
+    )
+  }
+
+  // The visitor is pressing, spinning or reading a card: background work waits.
+  private isBusy() {
+    return (
+      this.control.isPointerDown ||
+      this.movementActive ||
+      this.detailTargetProgress > 0
+    )
+  }
+
   // Poster size relative to the spacing between posters (1 = desktop).
   setPosterScale(posterScale: number) {
     if (posterScale === this.posterScale) return
@@ -2155,9 +2192,7 @@ class InfiniteMovieEngine<T> {
 
     this.detailTargetProgress = open ? 1 : 0
     if (!open) this.detailVertexIndex = null
-    this.loader?.setConcurrency(
-      open ? LOADER_CONCURRENCY_CARD_OPEN : LOADER_CONCURRENCY,
-    )
+    this.applyLoaderConcurrency()
     this.renderDirty = true
   }
 
@@ -2855,6 +2890,8 @@ class InfiniteMovieEngine<T> {
     const markReady = (complete: boolean) => {
       if (ready || this.disposed || this.contextLost) return
       ready = true
+      this.backgroundPhase = true
+      this.applyLoaderConcurrency()
       this.lodStale = true
       window.clearTimeout(safetyNet)
       this.canvas.dataset.webglState = 'ready'
@@ -2975,6 +3012,21 @@ class InfiniteMovieEngine<T> {
       while (!this.disposed && !this.contextLost) {
         if (performance.now() - lastSort > POSTER_REPRIORITISE_MS) {
           lastSort = performance.now()
+          this.sortByFacing(queue, cursor)
+        }
+        // Background work (posters not on screen) waits for a still moment;
+        // whatever is on screen is always asked for.
+        while (
+          this.backgroundPhase &&
+          this.isBusy() &&
+          queue[cursor] !== undefined &&
+          this.lodWidth[queue[cursor]] <= 0 &&
+          !this.disposed &&
+          !this.contextLost
+        ) {
+          await new Promise<void>((resolve) =>
+            window.setTimeout(resolve, BACKGROUND_PAUSE_MS),
+          )
           this.sortByFacing(queue, cursor)
         }
         const index = queue[cursor]
@@ -3184,10 +3236,17 @@ class InfiniteMovieEngine<T> {
   // with their own mip levels.)
   private scheduleMips() {
     if (this.mipTimer !== null) return
-    this.mipTimer = window.setTimeout(() => {
-      this.mipTimer = null
-      this.flushMips()
-    }, MIP_BATCH_MS)
+    this.mipTimer = window.setTimeout(
+      () => {
+        this.mipTimer = null
+        this.flushMips()
+      },
+      this.backgroundPhase
+        ? this.isBusy()
+          ? MIP_BATCH_BUSY_MS
+          : MIP_BATCH_BACKGROUND_MS
+        : MIP_BATCH_MS,
+    )
   }
 
   private flushMips() {
@@ -3773,6 +3832,7 @@ class InfiniteMovieEngine<T> {
 
     if (isMoving !== this.movementActive) {
       this.movementActive = isMoving
+      this.applyLoaderConcurrency()
       this.onMovementChange(isMoving)
     }
 
