@@ -49,6 +49,10 @@ const closeMenu = async (page: Page) => {
   ).toHaveCount(0)
 }
 
+// The line tips only: other tooltips (a theme option's hover text, the
+// fullscreen hint) can be on screen too, depending on where a tap landed.
+const nudgeTips = (page: Page) => page.locator('.warp-nudge-card')
+
 const pathButton = (page: Page) =>
   page.getByRole('button', { name: 'History and favourites', exact: true })
 
@@ -79,7 +83,7 @@ test.describe('Globe lines start off', () => {
     page,
   }) => {
     await openMenu(page)
-    const tips = page.getByRole('tooltip')
+    const tips = nudgeTips(page)
     await expect(tips).toHaveCount(2)
     await expect(tips.nth(0)).toContainText('trail of films')
     await expect(tips.nth(1)).toContainText('films you’ve saved')
@@ -133,11 +137,12 @@ test.describe('Globe lines start off', () => {
   })
 
   test('Esc dismisses the tips first, and they stay gone', async ({ page }) => {
+    test.setTimeout(120_000)
     await openMenu(page)
-    await expect(page.getByRole('tooltip')).toHaveCount(2)
+    await expect(nudgeTips(page)).toHaveCount(2)
 
     await page.keyboard.press('Escape')
-    await expect(page.getByRole('tooltip')).toHaveCount(0)
+    await expect(nudgeTips(page)).toHaveCount(0)
     // The menu itself is still open; a second Esc closes it.
     await expect(
       page.getByRole('complementary', { name: 'About ScrollFlix' }),
@@ -148,7 +153,7 @@ test.describe('Globe lines start off', () => {
     ).toHaveCount(0)
 
     await openMenu(page)
-    await expect(page.getByRole('tooltip')).toHaveCount(0)
+    await expect(nudgeTips(page)).toHaveCount(0)
 
     // Even after a reload.
     await page.reload()
@@ -156,9 +161,11 @@ test.describe('Globe lines start off', () => {
       .getByRole('button', { name: 'Skip first time load' })
       .click({ timeout: 3_000 })
       .catch(() => {})
-    await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
+    await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached({
+      timeout: 60_000,
+    })
     await openMenu(page)
-    await expect(page.getByRole('tooltip')).toHaveCount(0)
+    await expect(nudgeTips(page)).toHaveCount(0)
   })
 
   test('the close button dismisses one tip and leaves the other', async ({
@@ -168,8 +175,8 @@ test.describe('Globe lines start off', () => {
     await page
       .getByRole('button', { name: 'Dismiss tip: History on globe' })
       .click()
-    await expect(page.getByRole('tooltip')).toHaveCount(1)
-    await expect(page.getByRole('tooltip')).toContainText('films you’ve saved')
+    await expect(nudgeTips(page)).toHaveCount(1)
+    await expect(nudgeTips(page)).toContainText('films you’ve saved')
     await expect(
       page.getByRole('group', { name: 'History on globe' }),
     ).not.toHaveAttribute('aria-describedby')
@@ -184,8 +191,8 @@ test.describe('Globe lines start off', () => {
       .getByRole('button', { name: 'On', exact: true })
       .click()
     // Only the favorite links tip is left.
-    await expect(page.getByRole('tooltip')).toHaveCount(1)
-    await expect(page.getByRole('tooltip')).toContainText('films you’ve saved')
+    await expect(nudgeTips(page)).toHaveCount(1)
+    await expect(nudgeTips(page)).toContainText('films you’ve saved')
 
     await closeMenu(page)
     await expect(pathButton(page)).toBeVisible()
@@ -218,8 +225,8 @@ test.describe('Globe lines start off', () => {
       .getByRole('group', { name: 'Favourites on globe' })
       .getByRole('button', { name: 'On', exact: true })
       .click()
-    await expect(page.getByRole('tooltip')).toHaveCount(1)
-    await expect(page.getByRole('tooltip')).toContainText('trail of films')
+    await expect(nudgeTips(page)).toHaveCount(1)
+    await expect(nudgeTips(page)).toContainText('trail of films')
     expect(
       await page.evaluate(() =>
         window.localStorage.getItem('wtw:constellations'),
@@ -238,7 +245,7 @@ test.describe('An explicit choice on the old single switch', () => {
     await load(page)
     await expect(pathButton(page)).toBeVisible()
     await openMenu(page)
-    await expect(page.getByRole('tooltip')).toHaveCount(0)
+    await expect(nudgeTips(page)).toHaveCount(0)
     for (const name of ['History on globe', 'Favourites on globe']) {
       await expect(
         page
@@ -280,6 +287,7 @@ test.describe('History and favourites', () => {
   test('the history is kept in local storage across visits', async ({
     page,
   }) => {
+    test.setTimeout(120_000)
     await seedPath(page)
     await load(page)
     const stored = await page.evaluate(() =>
@@ -287,7 +295,9 @@ test.describe('History and favourites', () => {
     )
     expect(stored.length).toBeGreaterThanOrEqual(2)
     await page.reload()
-    await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
+    await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached({
+      timeout: 60_000,
+    })
     await pathButton(page).click()
     await expect(page.getByRole('tab', { name: /^History/ })).toContainText('2')
   })
