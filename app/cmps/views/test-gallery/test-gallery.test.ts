@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { mapCatalogRow } from './catalog-loader'
 import { createHoneycombSpherePositions } from './honeycomb-layout'
 import {
@@ -6,6 +6,7 @@ import {
   POSTER_HALF_HEIGHT,
   POSTER_HALF_WIDTH,
 } from './infinite-movie-menu'
+import { notePosterLoaded, resetLoadedPosters } from './poster-loaded'
 import {
   DEFAULT_SORT_RULES,
   type GalleryKeyState,
@@ -32,6 +33,7 @@ import {
   groupMoviesByVotes,
   groupMoviesByYear,
   isDefaultSortRules,
+  posterBaseLayers,
   shouldHandleGalleryKey,
   sortMoviesByRules,
   sortMoviesForList,
@@ -628,5 +630,50 @@ describe('phone globe density', () => {
     // Two neighbours can only overlap when the gap between their centres is
     // shorter than a poster's diagonal.
     expect(nearest).toBeGreaterThan(Math.hypot(width, height))
+  })
+})
+
+describe('posterBaseLayers', () => {
+  const film = {
+    posterPath: 'abc',
+    posterUrl: 'https://image.tmdb.org/t/p/w154/abc.jpg',
+    posterDetailUrl: 'https://image.tmdb.org/t/p/w342/abc.jpg',
+  }
+  afterEach(resetLoadedPosters)
+
+  it('starts from a tiny w92 and w154 when the globe has loaded nothing', () => {
+    expect(posterBaseLayers(film)).toEqual([
+      'https://image.tmdb.org/t/p/w92/abc.jpg',
+      'https://image.tmdb.org/t/p/w154/abc.jpg',
+    ])
+  })
+
+  it("uses the size the globe already loaded for the film's middle layer", () => {
+    notePosterLoaded('abc', 'w185')
+    expect(posterBaseLayers(film)).toEqual([
+      'https://image.tmdb.org/t/p/w92/abc.jpg',
+      'https://image.tmdb.org/t/p/w185/abc.jpg',
+    ])
+  })
+
+  it('never repeats the size the card shows next', () => {
+    notePosterLoaded('abc', 'w342')
+    notePosterLoaded('abc', 'w500')
+    expect(posterBaseLayers(film).some((url) => /w342|w500/.test(url))).toBe(
+      false,
+    )
+  })
+
+  it('falls back to the thumbnail for a film with no poster path', () => {
+    expect(posterBaseLayers({ ...film, posterPath: undefined })).toEqual([
+      film.posterUrl,
+    ])
+    expect(
+      posterBaseLayers({
+        posterPath: undefined,
+        posterUrl: film.posterUrl,
+        posterDetailUrl: undefined,
+      }),
+    ).toEqual([])
   })
 })

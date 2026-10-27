@@ -29,6 +29,7 @@ import { createLayerPool } from './layer-pool'
 import { type LodPoster, SHARPNESS_SLACK, planLod } from './lod-scheduler'
 import { perfProbe } from './perf-probe'
 import { buildPosterIndex } from './poster-index'
+import { notePosterUrlLoaded } from './poster-loaded'
 import {
   type CellSpec,
   type PosterImage,
@@ -3122,6 +3123,8 @@ class InfiniteMovieEngine<T> {
         .then(
           ([base, ...mid]) => {
             this.combinedInflight.delete(index)
+            // The card and the flight start from what the globe has fetched.
+            notePosterUrlLoaded(midUrls[0])
             this.placeMidImage(index, mid)
             return base
           },
@@ -3139,7 +3142,10 @@ class InfiniteMovieEngine<T> {
         ]
       : [item.image]
     if (item.fallbackImage) urls.push(item.fallbackImage)
-    return loader.request(`b:${index}`, urls, priority, cell)
+    return loader.request(`b:${index}`, urls, priority, cell).then((image) => {
+      notePosterUrlLoaded(urls[0])
+      return image
+    })
   }
 
   // True when the poster is drawn large enough on screen to need its mid
@@ -3401,7 +3407,10 @@ class InfiniteMovieEngine<T> {
       }
       this.lodInflight.add(runId)
       loader.requestCells(runId, urls, priority, this.tierCells(tier)).then(
-        (images) => this.onTierImage(tier, item, layer, images),
+        (images) => {
+          notePosterUrlLoaded(urls[0])
+          this.onTierImage(tier, item, layer, images)
+        },
         (error) => {
           this.lodInflight.delete(runId)
           if (error instanceof DOMException && error.name === 'AbortError')

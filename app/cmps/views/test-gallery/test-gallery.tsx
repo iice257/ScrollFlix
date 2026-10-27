@@ -152,6 +152,7 @@ import {
   seedStarterSet,
 } from './poster-cache'
 import { PosterFlight, type ViewRect } from './poster-flight'
+import { notePosterUrlLoaded, startingPosterUrl } from './poster-loaded'
 import {
   backdropUrl,
   pickBackdropSize,
@@ -344,6 +345,7 @@ const preloadPosterImage = (url: string) =>
     image.decoding = 'async'
     image.fetchPriority = 'low'
     image.onload = () => {
+      notePosterUrlLoaded(url)
       image.decode().then(resolve, resolve)
     }
     image.onerror = reject
@@ -748,13 +750,10 @@ const MoviePosterImage = ({
       ? posterUrl(path, 'w500')
       : null
   const [upgraded, setUpgraded] = useState(false)
-  // The detail card sits on the thumbnail the globe already loaded, and the
-  // sharper image fades in over it, so opening a poster never flashes empty.
-  const [baseFailed, setBaseFailed] = useState(false)
-  const baseSrc =
-    size === 'detail' && movie.posterDetailUrl && !baseFailed
-      ? movie.posterUrl
-      : null
+  // The detail card starts from whatever the globe has already loaded for this
+  // film (see posterBaseLayers) and each sharper image fades in over the one
+  // below once decoded, so opening a poster never shows an empty frame.
+  const baseSrcs = size === 'detail' ? posterBaseLayers(movie) : []
 
   useEffect(() => {
     if (loadState !== 'error') return
@@ -796,18 +795,9 @@ const MoviePosterImage = ({
           : undefined
       }
     >
-      {baseSrc ? (
-        <img
-          className='warp-poster-base'
-          src={baseSrc}
-          alt=''
-          aria-hidden='true'
-          crossOrigin='anonymous'
-          decoding='async'
-          // A failed thumbnail goes, rather than leaving a broken-image icon.
-          onError={() => setBaseFailed(true)}
-        />
-      ) : null}
+      {baseSrcs.map((base) => (
+        <PosterBaseLayer key={base} src={base} />
+      ))}
       <img
         key={attempt}
         src={recovered ?? getWarmPosterUrl(src) ?? src}
@@ -823,6 +813,7 @@ const MoviePosterImage = ({
         onLoad={(event) => {
           const reveal = () => {
             decodedPosters.add(decodedKey)
+            notePosterUrlLoaded(src)
             setLoadState('loaded')
           }
           const image = event.currentTarget
@@ -842,7 +833,10 @@ const MoviePosterImage = ({
           decoding='async'
           onLoad={(event) => {
             const image = event.currentTarget
-            const show = () => setUpgraded(true)
+            const show = () => {
+              notePosterUrlLoaded(upgradeSrc)
+              setUpgraded(true)
+            }
             if (typeof image.decode === 'function')
               image.decode().then(show, show)
             else show()
@@ -851,6 +845,38 @@ const MoviePosterImage = ({
       ) : null}
     </span>
   )
+}
+
+// A layer under the card's poster: a size the globe has already loaded. It is
+// never removed once painted; a failed one simply goes, rather than leaving a
+// broken-image icon.
+const PosterBaseLayer = ({ src }: { src: string }) => {
+  const [failed, setFailed] = useState(false)
+  return failed ? null : (
+    <img
+      className='warp-poster-base'
+      src={src}
+      alt=''
+      aria-hidden='true'
+      crossOrigin='anonymous'
+      decoding='async'
+      onError={() => setFailed(true)}
+    />
+  )
+}
+
+// The images the card (and the flight animation) start from, smallest first: a
+// tiny w92 (the globe's own back-of-globe size, a few KB), then the best size
+// the globe has loaded for this film, else w154. Everything sits under the
+// w342 the card shows next, so there is always something painted.
+export const posterBaseLayers = (
+  movie: Pick<TestMovie, 'posterPath' | 'posterUrl' | 'posterDetailUrl'>,
+) => {
+  const path = movie.posterPath
+  if (!path) return movie.posterDetailUrl ? [movie.posterUrl] : []
+  const low = posterUrl(path, 'w92')
+  const mid = startingPosterUrl(path, posterUrl(path, 'w154'))
+  return mid === low ? [low] : [low, mid]
 }
 
 // Whether the card's poster is drawn wide enough to gain from w500 over
@@ -2415,7 +2441,10 @@ export const TestGalleryApp = () => {
       // The card's first image (w342, which the globe's opened poster also
       // fetches), over the w154 thumbnail the globe already has.
       const images = movie.posterPath
-        ? [posterUrl(movie.posterPath, 'w342'), movie.posterUrl]
+        ? [
+            posterUrl(movie.posterPath, 'w342'),
+            ...posterBaseLayers(movie).reverse(),
+          ]
         : [movie.posterUrl]
       setPosterFlight({ movieId: movie.id, from, images })
     },
