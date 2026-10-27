@@ -503,47 +503,55 @@ test.describe('Gallery user flows', () => {
     await expect(tip).toHaveCount(0)
   })
 
-  test('constellations follow the globe and theme', async ({ page }) => {
-    // Each pass turns the globe and shoots it four times; allow a few passes.
-    test.setTimeout(180_000)
-    test.skip(
-      (page.viewportSize()?.width ?? 0) <= 900,
-      'the drawer fills a phone',
-    )
-    await openWithConstellations(page)
-    const lines = marksDiffer(page)
+  test(
+    'constellations follow the globe and theme',
+    { tag: '@heavy' },
+    async ({ page }) => {
+      // Each pass turns the globe and shoots it four times; allow a few passes.
+      test.setTimeout(180_000)
+      test.skip(
+        (page.viewportSize()?.width ?? 0) <= 900,
+        'the drawer fills a phone',
+      )
+      await openWithConstellations(page)
+      const lines = marksDiffer(page)
 
-    // Light marks on the dark globe...
-    const dark = await lines(1)
-    expect(dark.changed).toBeGreaterThan(30)
-    expect(dark.meanDelta).toBeGreaterThan(0)
+      // Light marks on the dark globe...
+      const dark = await lines(1)
+      expect(dark.changed).toBeGreaterThan(30)
+      expect(dark.meanDelta).toBeGreaterThan(0)
 
-    // ...and ink on the light one.
-    await page.locator('button.warp-info-button').click()
-    await page.getByRole('button', { name: 'Light', exact: true }).click()
-    await closeDrawer(page)
-    await expect(page.locator('main')).toHaveAttribute('data-theme', 'light')
-    const light = await lines(-1)
-    expect(light.changed).toBeGreaterThan(30)
-    expect(light.meanDelta).toBeLessThan(0)
-  })
+      // ...and ink on the light one.
+      await page.locator('button.warp-info-button').click()
+      await page.getByRole('button', { name: 'Light', exact: true }).click()
+      await closeDrawer(page)
+      await expect(page.locator('main')).toHaveAttribute('data-theme', 'light')
+      const light = await lines(-1)
+      expect(light.changed).toBeGreaterThan(30)
+      expect(light.meanDelta).toBeLessThan(0)
+    },
+  )
 
-  test('links stay on posters after resize', async ({ page }) => {
-    // Each pass turns the globe and shoots it four times; allow a few passes.
-    test.setTimeout(180_000)
-    test.skip(
-      (page.viewportSize()?.width ?? 0) <= 900,
-      'the drawer fills a phone',
-    )
-    await openWithConstellations(page)
+  test(
+    'links stay on posters after resize',
+    { tag: '@heavy' },
+    async ({ page }) => {
+      // Each pass turns the globe and shoots it four times; allow a few passes.
+      test.setTimeout(180_000)
+      test.skip(
+        (page.viewportSize()?.width ?? 0) <= 900,
+        'the drawer fills a phone',
+      )
+      await openWithConstellations(page)
 
-    // The globe has gone to sleep by now; a resize must wake it and the marks
-    // must be redrawn with the posters at the new size.
-    await page.setViewportSize({ width: 1180, height: 760 })
-    await page.waitForTimeout(1_200)
+      // The globe has gone to sleep by now; a resize must wake it and the marks
+      // must be redrawn with the posters at the new size.
+      await page.setViewportSize({ width: 1180, height: 760 })
+      await page.waitForTimeout(1_200)
 
-    const diff = await marksDiffer(page)(1)
-    expect(diff.changed).toBeGreaterThan(30)
-    expect(diff.meanDelta).toBeGreaterThan(0)
-  })
+      const diff = await marksDiffer(page)(1)
+      expect(diff.changed).toBeGreaterThan(30)
+      expect(diff.meanDelta).toBeGreaterThan(0)
+    },
+  )
 })

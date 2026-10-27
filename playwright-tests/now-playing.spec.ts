@@ -27,7 +27,7 @@ const titleOf = async (page: Page) =>
     .locator('.warp-np-face:not(.is-leaving) .warp-np-title')
     .textContent()) ?? ''
 
-test.describe('Now-playing bar (phone width)', () => {
+test.describe('Now-playing bar (phone width)', { tag: '@heavy' }, () => {
   test.setTimeout(120_000)
 
   test.beforeEach(async ({ page }) => {
