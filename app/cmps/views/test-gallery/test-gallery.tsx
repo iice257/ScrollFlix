@@ -1539,6 +1539,8 @@ export const TestGalleryApp = () => {
   const [libraryTab, setLibraryTab] = useState<LibraryTab>('history')
   const [pathShareOpen, setPathShareOpen] = useState(false)
   const [moodNudge, setMoodNudge] = useState(false)
+  // Shuffles since the moods were last opened: what the mood line follows.
+  const [moodSkips, setMoodSkips] = useState(0)
   const [moodShuffleNonce, setMoodShuffleNonce] = useState(0)
   // The bonus run a mood landing earned, waiting for the wall to be rebuilt.
   const pendingMoodRunRef = useRef<MoodRunStart | null>(null)
@@ -2553,6 +2555,7 @@ export const TestGalleryApp = () => {
     unlockAudio()
     void loadMoodPage()
     setMoodNudge(false)
+    setMoodSkips(0)
     moodNudgeSpentRef.current = true
     writeSessionFlag(MOOD_NUDGE_STORAGE_KEY)
     setDetailsMovieId(null)
@@ -2665,6 +2668,7 @@ export const TestGalleryApp = () => {
       shuffleProController.startAutomatic(trigger, movieId)
       return
     }
+    setMoodSkips((count) => count + 1)
     // A few quick shuffles in a row, far from an Easter egg: offer the moods.
     if (!moodNudgeSpentRef.current) {
       const noted = noteShuffleForNudge(recentShufflesRef.current, Date.now())
@@ -3386,7 +3390,7 @@ export const TestGalleryApp = () => {
                 </button>
               ) : null}
               {initialGalleryReady && partyOff ? (
-                <MoodLine onOpen={openMoods} />
+                <MoodLine onOpen={openMoods} skips={moodSkips} />
               ) : null}
             </>
           ) : null
