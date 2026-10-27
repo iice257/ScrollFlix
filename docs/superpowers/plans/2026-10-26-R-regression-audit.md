@@ -187,6 +187,34 @@ pick.
   their logos are decoded, and are fetched 0.7 s after the card opens so the
   poster goes first. With nothing confirmed, there are no badges.
 
+### Follow-up requests (27 Oct)
+
+- **No blank images.** The card and the flight animation start from the best
+  poster size the globe, the shuffle pool or an earlier card already loaded
+  (`poster-loaded.ts`), stack the larger sizes on top as they decode, and never
+  remove a layer, so nothing blanks between tiers. Tested.
+- **Watch badges.** The logos sit on a dark capsule inside the white button, so
+  Prime and the other light logos read on it, with a "+N" chip when more than
+  three brands are confirmed. Each brand shows once and none is hidden because
+  another is present (Forrest Gump: fuboTV, Paramount+, YouTube TV, +2). The
+  sheet rows have 40 px logos on a dark tile, and long names wrap to two lines
+  instead of pushing the row off a phone screen.
+- **More categories.** The Filters page gains Collections (Blockbusters,
+  Crowd-pleasers, Hidden gems, Cult classics, Modern classics, Golden age,
+  Fresh, Quick watches, Epics) and Country (with counts; the biggest 12, then
+  "N more"). Both come from fields the catalogue already carries, so there is
+  no new data. Collections combine with "or" like the moods; one country at a
+  time. Thresholds are in `collections.ts` with tests.
+- **History and Favourites.** One always-present button (the path icon) opens
+  one drawer with two tabs: History (clock) and Favourites (heart). Each tab
+  has its own "show on globe" switch. History moved from session storage to
+  local storage, so it survives visits; a path left in session storage by an
+  older visit is adopted once. Both stay in this browser until accounts exist
+  (the drawer says so). The About switches are renamed "History on globe" and
+  "Favourites on globe". The heart on the film card still saves a film.
+- **Pick a mood.** The collapsed vertical names sit on a dark frosted plate at
+  full opacity, so they read over any scene.
+
 ## Results
 
 Before: production. After: this branch's production build. Same network,
