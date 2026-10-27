@@ -45,7 +45,7 @@ const compareShots = (page: Page, before: string, after: string) =>
     [before, after],
   )
 
-// Opens the gallery with saved films and a session path, so links and stars
+// Opens the gallery with saved films and a history, so links and stars
 // are drawn somewhere on the globe whichever way it faces, and turns the globe
 // a little so they are not where they started.
 const openWithConstellations = async (page: Page) => {
@@ -60,10 +60,7 @@ const openWithConstellations = async (page: Page) => {
     ({ saved, path }) => {
       try {
         window.localStorage.setItem('wtw:saved:v1', JSON.stringify(saved))
-        window.sessionStorage.setItem(
-          'wtw:session-path:v1',
-          JSON.stringify(path),
-        )
+        window.localStorage.setItem('wtw:session-path:v1', JSON.stringify(path))
         window.localStorage.setItem('wtw:spin-hint-seen', '1')
         window.localStorage.setItem('wtw:theme', 'dark')
       } catch {}
@@ -112,7 +109,7 @@ const marksDiffer = (page: Page) => {
     // Press it with the keyboard: on a slow runner the drawer's entrance and
     // the line tips keep the button "unstable" for a click.
     // Both settings, so links and path marks give the globe the most to show.
-    for (const group of ['Session path', 'Favorite links']) {
+    for (const group of ['History on globe', 'Favourites on globe']) {
       const toggle = page
         .getByRole('group', { name: group })
         .getByRole('button', { name: on ? 'On' : 'Off', exact: true })

@@ -1549,12 +1549,6 @@
   background: rgb(255 252 245);
 }
 
-.warp-shell[data-theme="light"] .warp-saved-count {
-  border: 2px solid rgb(247 240 225);
-  background: rgb(33 26 16);
-  color: rgb(247 240 225);
-}
-
 .warp-shell[data-theme="light"] .warp-saved-list li:hover {
   background: rgb(33 26 16 / 0.06);
 }

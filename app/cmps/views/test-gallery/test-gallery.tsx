@@ -10,6 +10,7 @@ import {
   ChevronsDown,
   ChevronsUp,
   Clapperboard,
+  Clock,
   Dices,
   ExternalLink,
   Hand,
@@ -1529,12 +1530,13 @@ export const TestGalleryApp = () => {
   const [listSearchQuery, setListSearchQuery] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
-  const [savedOpen, setSavedOpen] = useState(false)
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [moodsOpen, setMoodsOpen] = useState(false)
   // The run recap's share sheet, opened from the Easter egg shelf.
   const [recapOpen, setRecapOpen] = useState(false)
-  // The session path's drawer and its share sheet.
-  const [pathOpen, setPathOpen] = useState(false)
+  // The History and Favourites drawer (one button, two tabs) and the history
+  // share sheet.
+  const [libraryTab, setLibraryTab] = useState<LibraryTab>('history')
   const [pathShareOpen, setPathShareOpen] = useState(false)
   const [moodNudge, setMoodNudge] = useState(false)
   const [moodShuffleNonce, setMoodShuffleNonce] = useState(0)
@@ -2104,7 +2106,7 @@ export const TestGalleryApp = () => {
       setWatchMovieId(null)
       setFilterOpen(false)
       setAboutOpen(false)
-      setSavedOpen(false)
+      setLibraryOpen(false)
       setSortOpen(false)
     },
   })
@@ -2159,8 +2161,7 @@ export const TestGalleryApp = () => {
   )
   const filterPresence = useExitPresence(filterOpen)
   const aboutPresence = useExitPresence(aboutOpen)
-  const savedPresence = useExitPresence(savedOpen)
-  const pathPresence = useExitPresence(pathOpen)
+  const libraryPresence = useExitPresence(libraryOpen)
   const moodsPresence = useExitPresence(moodsOpen)
   const savedEntries = useSyncExternalStore(
     savedStore.subscribe,
@@ -2203,8 +2204,7 @@ export const TestGalleryApp = () => {
     overlayOpen:
       filterOpen ||
       aboutOpen ||
-      savedOpen ||
-      pathOpen ||
+      libraryOpen ||
       moodsOpen ||
       sortOpen ||
       recapOpen ||
@@ -2429,7 +2429,7 @@ export const TestGalleryApp = () => {
     setWatchMovieId(null)
     setFilterOpen(false)
     setAboutOpen(false)
-    setSavedOpen(false)
+    setLibraryOpen(false)
   }, [])
 
   // A shared link opens its film's card once the catalogue is in. The address
@@ -2559,7 +2559,7 @@ export const TestGalleryApp = () => {
     setWatchMovieId(null)
     setFilterOpen(false)
     setAboutOpen(false)
-    setSavedOpen(false)
+    setLibraryOpen(false)
     setSortOpen(false)
     setMoodsOpen(true)
   }, [])
@@ -2801,7 +2801,7 @@ export const TestGalleryApp = () => {
     mode,
     Boolean(watchMovieId),
     aboutOpen,
-    savedOpen,
+    libraryOpen,
   ])
   const streakBreakReady = useRef(false)
   // biome-ignore lint/correctness/useExhaustiveDependencies: the signature carries the inputs
@@ -2847,8 +2847,7 @@ export const TestGalleryApp = () => {
         detailsMovieId ||
         watchMovieId ||
         aboutOpen ||
-        savedOpen ||
-        pathOpen ||
+        libraryOpen ||
         moodsOpen ||
         filterOpen ||
         sortOpen ||
@@ -2867,8 +2866,7 @@ export const TestGalleryApp = () => {
     filterOpen,
     immersive,
     moodsOpen,
-    pathOpen,
-    savedOpen,
+    libraryOpen,
     shuffleProController,
     sortOpen,
     watchMovieId,
@@ -2903,8 +2901,7 @@ export const TestGalleryApp = () => {
   useDismissLayer(Boolean(watchMovieId), () => setWatchMovieId(null))
   useDismissLayer(Boolean(detailsMovieId), () => setDetailsMovieId(null))
   useDismissLayer(aboutOpen, () => setAboutOpen(false))
-  useDismissLayer(savedOpen, () => setSavedOpen(false))
-  useDismissLayer(pathOpen, () => setPathOpen(false))
+  useDismissLayer(libraryOpen, () => setLibraryOpen(false))
   useDismissLayer(sortOpen && mode === 'list', () => setSortOpen(false), {
     inside: (node) => Boolean(closestElement(node, SORT_POPUP_SELECTOR)),
   })
@@ -2925,8 +2922,7 @@ export const TestGalleryApp = () => {
         overlayOpen: Boolean(
           watchMovieId ||
             aboutOpen ||
-            savedOpen ||
-            pathOpen ||
+            libraryOpen ||
             moodsOpen ||
             party.phase === 'setup' ||
             party.phase === 'final' ||
@@ -2992,8 +2988,7 @@ export const TestGalleryApp = () => {
     promptFullscreenHint,
     moodsOpen,
     party.phase,
-    pathOpen,
-    savedOpen,
+    libraryOpen,
     initialGalleryReady,
     listMovies.length,
     mode,
@@ -3499,47 +3494,21 @@ export const TestGalleryApp = () => {
         }
       />
 
-      {pathLinesOn && sessionPath.length >= 2 ? (
-        <button
-          type='button'
-          className={cn(
-            'warp-saved-button warp-path-button',
-            pathOpen && 'is-active',
-          )}
-          aria-label={`Session path, ${sessionPath.length} films`}
-          aria-expanded={pathOpen}
-          onClick={() => {
-            setPathOpen((isOpen) => !isOpen)
-            setSavedOpen(false)
-            setAboutOpen(false)
-            setFilterOpen(false)
-          }}
-        >
-          <Route aria-hidden='true' />
-        </button>
-      ) : null}
       <button
         type='button'
-        className={cn('warp-saved-button', savedOpen && 'is-active')}
-        aria-label={
-          savedMovies.length
-            ? `Saved movies, ${savedMovies.length}`
-            : 'Saved movies'
-        }
-        aria-expanded={savedOpen}
+        className={cn(
+          'warp-saved-button warp-history-button',
+          libraryOpen && 'is-active',
+        )}
+        aria-label='History and favourites'
+        aria-expanded={libraryOpen}
         onClick={() => {
-          setSavedOpen((isOpen) => !isOpen)
-          setPathOpen(false)
+          setLibraryOpen((isOpen) => !isOpen)
           setAboutOpen(false)
           setFilterOpen(false)
         }}
       >
-        <Heart aria-hidden='true' />
-        {savedMovies.length ? (
-          <span className='warp-saved-count' aria-hidden='true'>
-            {savedMovies.length > 99 ? '99+' : savedMovies.length}
-          </span>
-        ) : null}
+        <Route aria-hidden='true' />
       </button>
       <button
         type='button'
@@ -3548,63 +3517,43 @@ export const TestGalleryApp = () => {
         aria-expanded={aboutOpen}
         onClick={() => {
           setAboutOpen((isOpen) => !isOpen)
-          setSavedOpen(false)
-          setPathOpen(false)
+          setLibraryOpen(false)
           setFilterOpen(false)
         }}
       >
         <Info aria-hidden='true' />
       </button>
 
-      {savedPresence.isPresent ? (
+      {libraryPresence.isPresent ? (
         <>
           <button
             type='button'
             className='warp-drawer-scrim'
-            data-motion={savedPresence.motionPhase}
-            aria-label='Close saved movies'
+            data-motion={libraryPresence.motionPhase}
+            aria-label='Close history and favourites'
             tabIndex={-1}
-            onClick={() => setSavedOpen(false)}
+            onClick={() => setLibraryOpen(false)}
           />
-          <SavedDrawer
-            motionPhase={savedPresence.motionPhase}
-            movies={savedMovies}
-            taste={topGenres(tasteProfile)}
-            onClose={() => setSavedOpen(false)}
-            onOpenMovie={handleOpenMovie}
-            onRemove={(movie) => savedStore.remove(movie.id)}
-          />
-        </>
-      ) : null}
-
-      {pathPresence.isPresent ? (
-        <>
-          <button
-            type='button'
-            className='warp-drawer-scrim'
-            data-motion={pathPresence.motionPhase}
-            aria-label='Close session path'
-            tabIndex={-1}
-            onClick={() => setPathOpen(false)}
-          />
-          <PathDrawer
-            motionPhase={pathPresence.motionPhase}
+          <LibraryDrawer
+            motionPhase={libraryPresence.motionPhase}
+            tab={libraryTab}
+            onTab={setLibraryTab}
             path={sessionPath}
             movies={movies}
             currentId={activeMovieId}
-            onClose={() => setPathOpen(false)}
-            onRetrace={(movie) => {
-              setPathOpen(false)
+            saved={savedMovies}
+            taste={topGenres(tasteProfile)}
+            onClose={() => setLibraryOpen(false)}
+            onOpenMovie={(movie) => {
+              setLibraryOpen(false)
               handleOpenMovie(movie)
             }}
+            onRemoveSaved={(movie) => savedStore.remove(movie.id)}
             onShare={() => {
-              setPathOpen(false)
+              setLibraryOpen(false)
               setPathShareOpen(true)
             }}
-            onClear={() => {
-              sessionPathStore.clear()
-              setPathOpen(false)
-            }}
+            onClearHistory={() => sessionPathStore.clear()}
           />
         </>
       ) : null}
@@ -3662,7 +3611,7 @@ export const TestGalleryApp = () => {
       !moodsOpen &&
       !filterOpen &&
       !aboutOpen &&
-      !savedOpen ? (
+      !libraryOpen ? (
         <MoodNudge onOpen={openMoods} onDismiss={dismissMoodNudge} />
       ) : null}
 
@@ -5650,7 +5599,7 @@ const SessionPathSetting = ({
 }) => (
   <GlobeLineSetting
     kind='path'
-    label='Session path'
+    label='History on globe'
     store={sessionPathSetting}
     nudges={nudges}
     light={light}
@@ -5667,7 +5616,7 @@ const FavoriteLinksSetting = ({
 }) => (
   <GlobeLineSetting
     kind='links'
-    label='Favorite links'
+    label='Favourites on globe'
     store={constellationSetting}
     nudges={nudges}
     light={light}
@@ -5937,121 +5886,68 @@ const AboutDrawer = ({
   )
 }
 
-type SavedDrawerProps = {
-  motionPhase: MotionPhase
-  movies: TestMovie[]
-  // The genres the saved films lean on, once there are enough to say.
-  taste: string[]
-  onClose: () => void
-  onOpenMovie: (movie: TestMovie) => void
-  onRemove: (movie: TestMovie) => void
-}
+type LibraryTab = 'history' | 'favourites'
 
-// Rises from the heart button exactly like the compact About drawer.
-const SavedDrawer = ({
-  motionPhase,
-  movies,
-  taste,
-  onClose,
-  onOpenMovie,
-  onRemove,
-}: SavedDrawerProps) => (
-  <aside
-    ref={overlayScrollbarRef}
-    className='warp-about-drawer warp-saved-drawer'
-    data-motion={motionPhase}
-    aria-label='Saved movies'
-  >
-    <header className='warp-about-drawer-heading'>
-      <div>
-        <h2>Saved</h2>
-        <p>
-          {movies.length
-            ? `${movies.length} ${movies.length === 1 ? 'movie' : 'movies'}`
-            : 'Your shortlist'}
-        </p>
-      </div>
-      <button
-        type='button'
-        className='warp-about-drawer-close'
-        aria-label='Close saved movies'
-        onClick={onClose}
-      >
-        <X aria-hidden='true' />
-      </button>
-    </header>
-    {taste.length ? (
-      <p className='warp-saved-taste'>
-        <Sparkles aria-hidden='true' />
-        <span>
-          Your shuffles lean towards <strong>{taste.join(' and ')}</strong>.
-        </span>
-      </p>
-    ) : null}
-    {movies.length ? (
-      <ul className='warp-saved-list' ref={overlayScrollbarRef}>
-        {movies.map((movie) => (
-          <li key={movie.id}>
-            <button
-              type='button'
-              className='warp-saved-row'
-              onClick={() => onOpenMovie(movie)}
-            >
-              <span className='warp-saved-thumb'>
-                <MoviePoster movie={movie} size='list' />
-              </span>
-              <span className='warp-saved-copy'>
-                <strong>{movie.title}</strong>
-                <small>
-                  {[movie.year, movie.rating ? `★ ${movie.rating}` : null]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </small>
-              </span>
-            </button>
-            <button
-              type='button'
-              className='warp-saved-remove'
-              aria-label={`Remove ${movie.title} from saved`}
-              onClick={() => onRemove(movie)}
-            >
-              <X aria-hidden='true' />
-            </button>
-          </li>
-        ))}
-      </ul>
-    ) : (
-      <p className='warp-saved-empty'>
-        Nothing saved yet. Tap ♥ on any movie card to keep it here.
-      </p>
-    )}
-  </aside>
-)
-
-type PathDrawerProps = {
+type LibraryDrawerProps = {
   motionPhase: MotionPhase
+  tab: LibraryTab
+  onTab: (tab: LibraryTab) => void
   path: readonly PathPoint[]
   movies: TestMovie[]
   // The film the globe is on, marked as where you are.
   currentId: string | null
+  saved: TestMovie[]
+  // The genres the saved films lean on, once there are enough to say.
+  taste: string[]
   onClose: () => void
-  onRetrace: (movie: TestMovie) => void
+  onOpenMovie: (movie: TestMovie) => void
+  onRemoveSaved: (movie: TestMovie) => void
   onShare: () => void
-  onClear: () => void
+  onClearHistory: () => void
 }
 
-// The session path as a timeline: where this visit has been, oldest first, so
-// any step can be walked back to. Rises from its button like the Saved drawer.
-const PathDrawer = ({
+// One switch for a kind of line over the globe, shown inside its tab.
+const GlobeSwitch = ({
+  label,
+  store,
+}: {
+  label: string
+  store: typeof sessionPathSetting
+}) => {
+  const on = useSyncExternalStore(store.subscribe, store.get, store.get)
+  return (
+    <button
+      type='button'
+      role='switch'
+      aria-checked={on}
+      className='warp-path-toggle'
+      onClick={() => store.set(!on)}
+    >
+      <span>{label}</span>
+      <i className='warp-path-switch' />
+    </button>
+  )
+}
+
+// History and Favourites in one drawer that rises from one button. History is
+// the trail of films landed on (oldest first, so any step can be walked back
+// to) and Favourites the saved films; both live in this browser until accounts
+// arrive, and each has its own "show on globe" switch.
+const LibraryDrawer = ({
   motionPhase,
+  tab,
+  onTab,
   path,
   movies,
   currentId,
+  saved,
+  taste,
   onClose,
-  onRetrace,
+  onOpenMovie,
+  onRemoveSaved,
   onShare,
-  onClear,
-}: PathDrawerProps) => {
+  onClearHistory,
+}: LibraryDrawerProps) => {
   const byId = useMemo(
     () => new Map(movies.map((movie) => [movie.id, movie])),
     [movies],
@@ -6060,96 +5956,196 @@ const PathDrawer = ({
     const movie = byId.get(point.id)
     return movie ? [{ point, movie, index }] : []
   })
-  const showOnGlobe = useSyncExternalStore(
-    sessionPathSetting.subscribe,
-    sessionPathSetting.get,
-    sessionPathSetting.get,
-  )
   const listRef = useRef<HTMLOListElement | null>(null)
   const pathScrollRef = useOverlayScrollbar(listRef)
-  // Open on the newest step.
+  // The history opens on its newest step.
   useEffect(() => {
     const list = listRef.current
-    if (list) list.scrollTop = list.scrollHeight
-  }, [])
+    if (tab === 'history' && list) list.scrollTop = list.scrollHeight
+  }, [tab])
+  const tabs: { id: LibraryTab; label: string; count: number }[] = [
+    { id: 'history', label: 'History', count: steps.length },
+    { id: 'favourites', label: 'Favourites', count: saved.length },
+  ]
 
   return (
     <aside
       ref={overlayScrollbarRef}
-      className='warp-about-drawer warp-saved-drawer warp-path-drawer'
+      className='warp-about-drawer warp-saved-drawer warp-library-drawer'
       data-motion={motionPhase}
-      aria-label='Session path'
+      aria-label='History and favourites'
     >
       <header className='warp-about-drawer-heading'>
-        <div>
-          <h2>Session path</h2>
-          <p>
-            {steps.length} {steps.length === 1 ? 'film' : 'films'} this visit
-          </p>
+        <div role='tablist' className='warp-library-tabs'>
+          {tabs.map(({ id, label, count }) => (
+            <button
+              type='button'
+              role='tab'
+              key={id}
+              id={`warp-library-tab-${id}`}
+              aria-selected={tab === id}
+              aria-controls={`warp-library-panel-${id}`}
+              className={cn('warp-library-tab', tab === id && 'is-active')}
+              onClick={() => onTab(id)}
+            >
+              {id === 'history' ? (
+                <Clock aria-hidden='true' />
+              ) : (
+                <Heart aria-hidden='true' />
+              )}
+              <span>{label}</span>
+              {count ? <b>{count > 99 ? '99+' : count}</b> : null}
+            </button>
+          ))}
         </div>
         <button
           type='button'
           className='warp-about-drawer-close'
-          aria-label='Close session path'
+          aria-label='Close history and favourites'
           onClick={onClose}
         >
           <X aria-hidden='true' />
         </button>
       </header>
-      <button
-        type='button'
-        role='switch'
-        aria-checked={showOnGlobe}
-        className='warp-path-toggle'
-        onClick={() => sessionPathSetting.set(!showOnGlobe)}
-      >
-        <span>Show on globe</span>
-        <i className='warp-path-switch' />
-      </button>
-      <ol className='warp-path-list' ref={pathScrollRef}>
-        {steps.map(({ point, movie, index }, place) => (
-          <li
-            key={`${point.id}-${index}`}
-            data-tier={point.tier ?? undefined}
-            data-here={
-              place === steps.length - 1 && movie.id === currentId
-                ? 'true'
-                : undefined
-            }
-          >
-            <i className='warp-path-dot' />
-            <button
-              type='button'
-              className='warp-saved-row'
-              onClick={() => onRetrace(movie)}
-            >
-              <span className='warp-saved-thumb'>
-                <MoviePoster movie={movie} size='list' />
+      {tab === 'history' ? (
+        <div
+          role='tabpanel'
+          id='warp-library-panel-history'
+          aria-labelledby='warp-library-tab-history'
+          className='warp-library-panel'
+        >
+          <GlobeSwitch
+            label='Show history on globe'
+            store={sessionPathSetting}
+          />
+          {steps.length ? (
+            <ol className='warp-path-list' ref={pathScrollRef}>
+              {steps.map(({ point, movie, index }, place) => (
+                <li
+                  key={`${point.id}-${index}`}
+                  data-tier={point.tier ?? undefined}
+                  data-here={
+                    place === steps.length - 1 && movie.id === currentId
+                      ? 'true'
+                      : undefined
+                  }
+                >
+                  <i className='warp-path-dot' />
+                  <button
+                    type='button'
+                    className='warp-saved-row'
+                    onClick={() => onOpenMovie(movie)}
+                  >
+                    <span className='warp-saved-thumb'>
+                      <MoviePoster movie={movie} size='list' />
+                    </span>
+                    <span className='warp-saved-copy'>
+                      <strong>{movie.title}</strong>
+                      <small>
+                        {point.tier
+                          ? `Shuffle Pro · ${TIER_LABELS[point.tier]}`
+                          : [
+                              movie.year,
+                              movie.rating ? `★ ${movie.rating}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                        {place === steps.length - 1 ? ' · latest' : ''}
+                      </small>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className='warp-saved-empty'>
+              Nothing yet. The films you land on or open are kept here.
+            </p>
+          )}
+          {steps.length ? (
+            <div className='warp-path-actions'>
+              {steps.length >= 2 ? (
+                <button
+                  type='button'
+                  className='warp-path-share'
+                  onClick={onShare}
+                >
+                  <Share2 aria-hidden='true' />
+                  Share path
+                </button>
+              ) : null}
+              <button
+                type='button'
+                className='warp-path-clear'
+                onClick={onClearHistory}
+              >
+                Clear history
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div
+          role='tabpanel'
+          id='warp-library-panel-favourites'
+          aria-labelledby='warp-library-tab-favourites'
+          className='warp-library-panel'
+        >
+          <GlobeSwitch
+            label='Show favourites on globe'
+            store={constellationSetting}
+          />
+          {taste.length ? (
+            <p className='warp-saved-taste'>
+              <Sparkles aria-hidden='true' />
+              <span>
+                Your shuffles lean towards{' '}
+                <strong>{taste.join(' and ')}</strong>.
               </span>
-              <span className='warp-saved-copy'>
-                <strong>{movie.title}</strong>
-                <small>
-                  {point.tier
-                    ? `Shuffle Pro · ${TIER_LABELS[point.tier]}`
-                    : [movie.year, movie.rating ? `★ ${movie.rating}` : null]
-                        .filter(Boolean)
-                        .join(' · ')}
-                  {place === steps.length - 1 ? ' · latest' : ''}
-                </small>
-              </span>
-            </button>
-          </li>
-        ))}
-      </ol>
-      <div className='warp-path-actions'>
-        <button type='button' className='warp-path-share' onClick={onShare}>
-          <Share2 aria-hidden='true' />
-          Share path
-        </button>
-        <button type='button' className='warp-path-clear' onClick={onClear}>
-          Clear
-        </button>
-      </div>
+            </p>
+          ) : null}
+          {saved.length ? (
+            <ul className='warp-saved-list' ref={overlayScrollbarRef}>
+              {saved.map((movie) => (
+                <li key={movie.id}>
+                  <button
+                    type='button'
+                    className='warp-saved-row'
+                    onClick={() => onOpenMovie(movie)}
+                  >
+                    <span className='warp-saved-thumb'>
+                      <MoviePoster movie={movie} size='list' />
+                    </span>
+                    <span className='warp-saved-copy'>
+                      <strong>{movie.title}</strong>
+                      <small>
+                        {[movie.year, movie.rating ? `★ ${movie.rating}` : null]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </small>
+                    </span>
+                  </button>
+                  <button
+                    type='button'
+                    className='warp-saved-remove'
+                    aria-label={`Remove ${movie.title} from favourites`}
+                    onClick={() => onRemoveSaved(movie)}
+                  >
+                    <X aria-hidden='true' />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className='warp-saved-empty'>
+              Nothing here yet. Tap ♥ on any movie card to keep it here.
+            </p>
+          )}
+        </div>
+      )}
+      <p className='warp-library-note'>
+        Kept in this browser. Accounts to sync them are coming soon.
+      </p>
     </aside>
   )
 }

@@ -1,14 +1,15 @@
 import { type Page, expect, test } from '@playwright/test'
 
-// The session path and the favorite links start off, and the first time the
-// menu opens each gets a small tip explaining it.
+// History and favourites on the globe start off, and the first time the
+// menu opens each gets a small tip explaining it. One button opens a drawer
+// with a tab for each.
 
-// Two landings, so the session path has something to show once it is on.
+// Two landings, so the history has something to show once it is on.
 const seedPath = (page: Page) =>
   page.addInitScript(() => {
     const key = 'wtw:session-path:v1'
-    if (!window.sessionStorage.getItem(key)) {
-      window.sessionStorage.setItem(
+    if (!window.localStorage.getItem(key)) {
+      window.localStorage.setItem(
         key,
         JSON.stringify([
           { id: '27205', tier: null },
@@ -49,7 +50,7 @@ const closeMenu = async (page: Page) => {
 }
 
 const pathButton = (page: Page) =>
-  page.getByRole('button', { name: /^Session path, \d+ films$/ })
+  page.getByRole('button', { name: 'History and favourites' })
 
 test.describe('Globe lines start off', () => {
   test.beforeEach(async ({ page }) => {
@@ -60,9 +61,10 @@ test.describe('Globe lines start off', () => {
   test('both switches are off and nothing is drawn by default', async ({
     page,
   }) => {
-    await expect(pathButton(page)).toHaveCount(0)
+    // The button is always there; nothing is drawn until a switch is on.
+    await expect(pathButton(page)).toBeVisible()
     await openMenu(page)
-    for (const name of ['Session path', 'Favorite links']) {
+    for (const name of ['History on globe', 'Favourites on globe']) {
       const group = page.getByRole('group', { name })
       await expect(
         group.getByRole('button', { name: 'Off', exact: true }),
@@ -86,8 +88,8 @@ test.describe('Globe lines start off', () => {
 
     // Each switch points at its tip for screen readers.
     for (const [name, index] of [
-      ['Session path', 0],
-      ['Favorite links', 1],
+      ['History on globe', 0],
+      ['Favourites on globe', 1],
     ] as const) {
       const group = page.getByRole('group', { name })
       const id = await tips.nth(index).getAttribute('id')
@@ -169,16 +171,16 @@ test.describe('Globe lines start off', () => {
     await expect(page.getByRole('tooltip')).toHaveCount(1)
     await expect(page.getByRole('tooltip')).toContainText('films you’ve saved')
     await expect(
-      page.getByRole('group', { name: 'Session path' }),
+      page.getByRole('group', { name: 'History on globe' }),
     ).not.toHaveAttribute('aria-describedby')
   })
 
-  test('turning the session path on shows its button and drawer, and ends its tip', async ({
+  test('turning history on is reflected in its drawer tab, and ends its tip', async ({
     page,
   }) => {
     await openMenu(page)
     await page
-      .getByRole('group', { name: 'Session path' })
+      .getByRole('group', { name: 'History on globe' })
       .getByRole('button', { name: 'On', exact: true })
       .click()
     // Only the favorite links tip is left.
@@ -189,15 +191,18 @@ test.describe('Globe lines start off', () => {
     await expect(pathButton(page)).toBeVisible()
     await pathButton(page).click()
     await expect(
-      page.getByRole('complementary', { name: 'Session path' }),
+      page.getByRole('complementary', { name: 'History and favourites' }),
     ).toBeVisible()
     await expect(
-      page.getByRole('switch', { name: 'Show on globe' }),
+      page.getByRole('switch', { name: 'Show history on globe' }),
     ).toHaveAttribute('aria-checked', 'true')
 
-    // Off again hides the button; the favorite links switch is its own.
-    await page.getByRole('switch', { name: 'Show on globe' }).click()
-    await expect(pathButton(page)).toHaveCount(0)
+    // Off again leaves the button; the favourites switch is its own.
+    await page.getByRole('switch', { name: 'Show history on globe' }).click()
+    await expect(
+      page.getByRole('switch', { name: 'Show history on globe' }),
+    ).toHaveAttribute('aria-checked', 'false')
+    await expect(pathButton(page)).toBeVisible()
     expect(
       await page.evaluate(() =>
         window.localStorage.getItem('wtw:constellations'),
@@ -210,7 +215,7 @@ test.describe('Globe lines start off', () => {
   }) => {
     await openMenu(page)
     await page
-      .getByRole('group', { name: 'Favorite links' })
+      .getByRole('group', { name: 'Favourites on globe' })
       .getByRole('button', { name: 'On', exact: true })
       .click()
     await expect(page.getByRole('tooltip')).toHaveCount(1)
@@ -220,7 +225,7 @@ test.describe('Globe lines start off', () => {
         window.localStorage.getItem('wtw:constellations'),
       ),
     ).toBe('1')
-    await expect(pathButton(page)).toHaveCount(0)
+    await expect(pathButton(page)).toBeVisible()
   })
 })
 
@@ -234,12 +239,56 @@ test.describe('An explicit choice on the old single switch', () => {
     await expect(pathButton(page)).toBeVisible()
     await openMenu(page)
     await expect(page.getByRole('tooltip')).toHaveCount(0)
-    for (const name of ['Session path', 'Favorite links']) {
+    for (const name of ['History on globe', 'Favourites on globe']) {
       await expect(
         page
           .getByRole('group', { name })
           .getByRole('button', { name: 'On', exact: true }),
       ).toHaveAttribute('aria-pressed', 'true')
     }
+  })
+})
+
+test.describe('History and favourites', () => {
+  test('one button, two tabs, each with its own globe switch', async ({
+    page,
+  }) => {
+    await seedPath(page)
+    await load(page)
+    await pathButton(page).click()
+    const drawer = page.getByRole('complementary', {
+      name: 'History and favourites',
+    })
+    await expect(drawer).toBeVisible()
+    await expect(drawer.getByRole('tab', { name: /^History/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    await expect(
+      drawer.getByRole('switch', { name: 'Show history on globe' }),
+    ).toBeVisible()
+
+    await drawer.getByRole('tab', { name: /^Favourites/ }).click()
+    await expect(
+      drawer.getByRole('switch', { name: 'Show favourites on globe' }),
+    ).toBeVisible()
+    await expect(
+      drawer.getByRole('switch', { name: 'Show history on globe' }),
+    ).toHaveCount(0)
+  })
+
+  test('the history is kept in local storage across visits', async ({
+    page,
+  }) => {
+    await seedPath(page)
+    await load(page)
+    const stored = await page.evaluate(() =>
+      JSON.parse(window.localStorage.getItem('wtw:session-path:v1') ?? '[]'),
+    )
+    expect(stored.length).toBeGreaterThanOrEqual(2)
+    await page.reload()
+    await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
+    await pathButton(page).click()
+    await expect(page.getByRole('tab', { name: /^History/ })).toContainText('2')
   })
 })

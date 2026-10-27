@@ -2547,11 +2547,6 @@
     }
   }
 
-  /* The session path button floats above the bar rather than behind it. */
-  .warp-shell[data-now-playing="true"] .warp-path-button {
-    translate: 0 calc(-1 * var(--np-lift, 140px));
-  }
-
   @media (prefers-reduced-motion: reduce) {
     .warp-np-bar,
     .warp-np-bar[data-state="exit"] {
@@ -6526,25 +6521,6 @@
   .warp-shell[data-details-open="true"] .warp-saved-button {
     opacity: 0;
     pointer-events: none;
-  }
-
-  .warp-saved-count {
-    position: absolute;
-    top: -6px;
-    right: -6px;
-    display: grid;
-    min-width: 19px;
-    height: 19px;
-    place-items: center;
-    border: 2px solid #000;
-    border-radius: 999px;
-    background: #fff;
-    padding: 0 4px;
-    color: #000;
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: -0.02em;
-    line-height: 1;
   }
 
   .warp-saved-drawer {

@@ -1,8 +1,9 @@
-// The session path: the films this visit has landed on, in order. Shuffles and
-// opened posters add a point; a Shuffle Pro run adds a point in its path's
+// History (the session path): the films you have landed on, in order. Shuffles
+// and opened posters add a point; a Shuffle Pro run adds a point in its path's
 // colour. It is drawn over the globe as a thin thread of light, can be walked
-// back through, and can be shared. It lasts for the visit (this tab), not
-// longer, and nothing leaves the device.
+// back through, and can be shared. It is kept in this browser's local storage,
+// so it lasts across visits until accounts arrive, and nothing leaves the
+// device.
 
 import { migrateLegacyId } from './catalog-loader'
 import type { Tier } from './shuffle-pro/shuffle-pro-logic'
@@ -76,25 +77,32 @@ export const parsePath = (raw: string | null): PathPoint[] => {
 let current: readonly PathPoint[] | null = null
 const listeners = new Set<() => void>()
 
-const load = (): readonly PathPoint[] => {
-  if (current) return current
-  let raw: string | null = null
+const readStored = (kind: 'localStorage' | 'sessionStorage') => {
   try {
-    raw = window.sessionStorage.getItem(PATH_STORAGE_KEY)
+    return window[kind].getItem(PATH_STORAGE_KEY)
   } catch {
     // Storage can be unavailable (private mode, blocked site data).
+    return null
   }
-  current = parsePath(raw)
+}
+
+const load = (): readonly PathPoint[] => {
+  if (current) return current
+  // The path used to last for the tab only: adopt one left there.
+  current = parsePath(
+    readStored('localStorage') ?? readStored('sessionStorage'),
+  )
   return current
 }
 
 const set = (next: readonly PathPoint[]) => {
   current = next
   try {
-    window.sessionStorage.setItem(
+    window.localStorage.setItem(
       PATH_STORAGE_KEY,
       JSON.stringify(next.map(({ id, tier }) => ({ id, tier }))),
     )
+    window.sessionStorage.removeItem(PATH_STORAGE_KEY)
   } catch {
     // Keep the in-memory copy; persistence is best effort.
   }
@@ -113,5 +121,10 @@ export const sessionPathStore = {
     set(addToPath(load(), id, tier, Date.now())),
   clear: () => {
     if (load().length) set([])
+  },
+  // Test helper: forget the cache so the next read hits storage again.
+  reset: () => {
+    current = null
+    for (const listener of listeners) listener()
   },
 }
