@@ -1198,6 +1198,10 @@
   color: rgb(247 240 225 / 0.42);
 }
 
+.warp-shell[data-theme="light"] .warp-filters-body .warp-fs-chip.warp-fs-more {
+  color: rgb(33 26 16 / 0.58);
+}
+
 .warp-shell[data-theme="light"] .warp-about-drawer {
   border: 1px solid rgb(33 26 16 / 0.14);
   background: rgb(239 232 217 / 0.94);

@@ -4583,6 +4583,12 @@
     color: rgb(0 0 0 / 0.42);
   }
 
+  .warp-filters-body .warp-fs-chip.warp-fs-more {
+    border-style: dashed;
+    background: transparent;
+    color: rgb(255 255 255 / 0.58);
+  }
+
   .warp-filters-body .warp-fs-chip:disabled {
     cursor: not-allowed;
     opacity: 0.52;

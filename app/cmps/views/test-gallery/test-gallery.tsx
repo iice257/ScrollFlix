@@ -101,6 +101,14 @@ import {
   toTitleKey,
   withWeightedRatings,
 } from './catalog-loader'
+import {
+  COLLECTION_FILTERS,
+  type CollectionId,
+  type CountrySummary,
+  filterMoviesByCollections,
+  filterMoviesByCountry,
+  getCountrySummaries,
+} from './collections'
 import { constellationSetting } from './constellation'
 import { countGenresAndFilters } from './filter-count'
 import { formatGenreCount } from './genre-count'
@@ -1513,6 +1521,10 @@ export const TestGalleryApp = () => {
     useState<RuntimeFilter | null>(null)
   const [selectedYear, setSelectedYear] = useState<YearFilter | null>(null)
   const [ratingMin, setRatingMin] = useState<number | null>(null)
+  const [selectedCollections, setSelectedCollections] = useState<
+    CollectionId[]
+  >([])
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null)
   const [contentFilter, setContentFilter] = useState<ContentFilter>('all')
   const [listSearchQuery, setListSearchQuery] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
@@ -1836,6 +1848,8 @@ export const TestGalleryApp = () => {
 
   const decadeOptions = useMemo(() => getDecadeSummaries(movies), [movies])
 
+  const countrySummaries = useMemo(() => getCountrySummaries(movies), [movies])
+
   // Same lists the Filters page renders, so the About figure follows them.
   const genreAndFilterCount = useMemo(
     () =>
@@ -1847,14 +1861,25 @@ export const TestGalleryApp = () => {
           decadeOptions,
           RATING_PRESETS,
           MOOD_FILTERS,
+          COLLECTION_FILTERS,
+          countrySummaries
+            .slice(0, COUNTRY_CHIPS_SHOWN)
+            .map((summary) => summary.country),
         ],
       }),
-    [genreSummaries, decadeOptions],
+    [genreSummaries, decadeOptions, countrySummaries],
   )
 
   const baseMovies = useMemo(
-    () => filterMoviesByYearAndRating(movies, selectedYear, ratingMin),
-    [movies, selectedYear, ratingMin],
+    () =>
+      filterMoviesByCountry(
+        filterMoviesByCollections(
+          filterMoviesByYearAndRating(movies, selectedYear, ratingMin),
+          selectedCollections,
+        ),
+        selectedCountry,
+      ),
+    [movies, selectedYear, ratingMin, selectedCollections, selectedCountry],
   )
 
   const genreFilteredMovies = useMemo(
@@ -1879,6 +1904,8 @@ export const TestGalleryApp = () => {
     (selectedRuntimeFilter ? 1 : 0) +
     (selectedYear ? 1 : 0) +
     (ratingMin !== null ? 1 : 0) +
+    selectedCollections.length +
+    (selectedCountry ? 1 : 0) +
     (contentFilter !== 'all' ? 1 : 0)
 
   const visibleMovies = useStableList(
@@ -2245,6 +2272,8 @@ export const TestGalleryApp = () => {
     setContentFilter('all')
     setSelectedYear(null)
     setRatingMin(null)
+    setSelectedCollections([])
+    setSelectedCountry(null)
     setSelectedGenres([])
     setSelectedMoodFilters([])
     setSelectedRuntimeFilter(null)
@@ -2260,6 +2289,18 @@ export const TestGalleryApp = () => {
         ? currentFilters.filter((filter) => filter !== moodFilter)
         : [...currentFilters, moodFilter],
     )
+  }, [])
+
+  const toggleCollection = useCallback((id: CollectionId) => {
+    setSelectedCollections((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id],
+    )
+  }, [])
+
+  const toggleCountry = useCallback((country: string) => {
+    setSelectedCountry((current) => (current === country ? null : country))
   }, [])
 
   const toggleRuntimeFilter = useCallback((runtimeFilter: RuntimeFilter) => {
@@ -2359,9 +2400,12 @@ export const TestGalleryApp = () => {
   const filterSectionProps: FilterSectionsProps = {
     allActive: selectedFilterCount === 0,
     contentFilter,
+    countries: countrySummaries,
     decades: decadeOptions,
     genres: genreSummaries,
     ratingMin,
+    selectedCollections,
+    selectedCountry,
     runtimeFilter: selectedRuntimeFilter,
     selectedGenres,
     selectedMoodFilters,
@@ -2370,6 +2414,8 @@ export const TestGalleryApp = () => {
     onClear: clearAllFilters,
     onClearGenres: clearGenres,
     onSelectContentFilter: selectContentFilter,
+    onToggleCollection: toggleCollection,
+    onToggleCountry: toggleCountry,
     onToggleGenre: toggleGenre,
     onToggleMoodFilter: toggleMoodFilter,
     onToggleRating: toggleRatingMin,
@@ -2747,6 +2793,8 @@ export const TestGalleryApp = () => {
     selectedRuntimeFilter,
     selectedYear,
     ratingMin,
+    selectedCollections,
+    selectedCountry,
     contentFilter,
     sortRules,
     listSearchQuery,
@@ -4964,13 +5012,71 @@ const SortPanel = ({
   )
 }
 
+const COUNTRY_CHIPS_SHOWN = 12
+
+// The biggest film-making countries first; "More" lists the rest. A selected
+// country always shows, even when it would be folded away.
+const CountryChips = ({
+  countries,
+  selectedCountry,
+  onToggleCountry,
+}: Pick<
+  FilterSectionsProps,
+  'countries' | 'selectedCountry' | 'onToggleCountry'
+>) => {
+  const [expanded, setExpanded] = useState(false)
+  if (!countries.length) return null
+  const shown = expanded ? countries : countries.slice(0, COUNTRY_CHIPS_SHOWN)
+  const folded = countries.length - COUNTRY_CHIPS_SHOWN
+  const selected = selectedCountry
+    ? countries.find((item) => item.country === selectedCountry)
+    : undefined
+  const chips =
+    selected && !shown.includes(selected) ? [...shown, selected] : shown
+  return (
+    <section className='warp-fs-section' data-section='countries'>
+      <p>Country</p>
+      <div className='warp-fs-chips'>
+        {chips.map(({ country, count }) => (
+          <button
+            type='button'
+            className={cn(
+              'warp-fs-chip',
+              selectedCountry === country && 'is-active',
+            )}
+            key={country}
+            aria-pressed={selectedCountry === country}
+            onClick={() => onToggleCountry(country)}
+          >
+            <span>{country}</span>
+            <span>{formatGenreCount(count)}</span>
+          </button>
+        ))}
+        {folded > 0 ? (
+          <button
+            type='button'
+            className='warp-fs-chip warp-fs-more'
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            <span>{expanded ? 'Fewer' : `${folded} more`}</span>
+          </button>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
 type FilterSectionsProps = {
   allActive: boolean
   contentFilter: ContentFilter
+  countries: CountrySummary[]
   decades: number[]
   genres: GenreSummary[]
   ratingMin: number | null
   runtimeFilter: RuntimeFilter | null
+  selectedCollections: CollectionId[]
+  selectedCountry: string | null
   selectedGenres: string[]
   selectedMoodFilters: MoodFilter[]
   selectedYear: YearFilter | null
@@ -4978,6 +5084,8 @@ type FilterSectionsProps = {
   onClear: () => void
   onClearGenres: () => void
   onSelectContentFilter: (contentFilter: ContentFilter) => void
+  onToggleCollection: (id: CollectionId) => void
+  onToggleCountry: (country: string) => void
   onToggleGenre: (genre: string) => void
   onToggleMoodFilter: (moodFilter: MoodFilter) => void
   onToggleRating: (min: number) => void
@@ -4989,10 +5097,13 @@ type FilterSectionsProps = {
 const FilterSections = ({
   allActive,
   contentFilter,
+  countries,
   decades,
   genres,
   ratingMin,
   runtimeFilter,
+  selectedCollections,
+  selectedCountry,
   selectedGenres,
   selectedMoodFilters,
   selectedYear,
@@ -5000,6 +5111,8 @@ const FilterSections = ({
   onClear,
   onClearGenres,
   onSelectContentFilter,
+  onToggleCollection,
+  onToggleCountry,
   onToggleGenre,
   onToggleMoodFilter,
   onToggleRating,
@@ -5137,6 +5250,31 @@ const FilterSections = ({
           ))}
         </div>
       </section>
+      <section className='warp-fs-section' data-section='collections'>
+        <p>Collections</p>
+        <div className='warp-fs-chips'>
+          {COLLECTION_FILTERS.map((filter) => (
+            <button
+              type='button'
+              className={cn(
+                'warp-fs-chip',
+                selectedCollections.includes(filter.id) && 'is-active',
+              )}
+              key={filter.id}
+              title={filter.hint}
+              aria-pressed={selectedCollections.includes(filter.id)}
+              onClick={() => onToggleCollection(filter.id)}
+            >
+              <span>{filter.label}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+      <CountryChips
+        countries={countries}
+        selectedCountry={selectedCountry}
+        onToggleCountry={onToggleCountry}
+      />
       <section className='warp-fs-section' data-section='genres'>
         <p>Genres</p>
         <small>The more the merrier</small>
