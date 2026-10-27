@@ -166,7 +166,7 @@ test.describe('Globe lines start off', () => {
   }) => {
     await openMenu(page)
     await page
-      .getByRole('button', { name: 'Dismiss tip: Session path' })
+      .getByRole('button', { name: 'Dismiss tip: History on globe' })
       .click()
     await expect(page.getByRole('tooltip')).toHaveCount(1)
     await expect(page.getByRole('tooltip')).toContainText('films you’ve saved')
