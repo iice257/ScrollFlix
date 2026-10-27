@@ -84,7 +84,7 @@ export type MovieText = {
 const CATALOG_URL = '/json/catalog'
 const TMDB_IMAGE_URL = 'https://image.tmdb.org/t/p'
 // Chunks of 2,000 films in vote order: the first one is the globe's top films.
-const DEFAULT_CHUNK_SIZE = 2000
+export const DEFAULT_CHUNK_SIZE = 2000
 
 // Phones and weaker machines load the most-voted 20,000 films up front; the
 // rest comes when the index, search or filters first open.
@@ -185,14 +185,16 @@ export const mapCatalogRow = (
 
 // The blurred card backdrop is a CSS image, which is fetched without CORS. A
 // response cached from such a request carries no CORS headers, so the same URL
-// then fails for WebGL and for the CORS-enabled index tiles (blank posters).
-// It therefore uses a catalogue size nothing else requests.
+// then fails for WebGL and for every CORS image of that poster. Every poster
+// size is now requested with CORS somewhere (w185 is the globe's mid tier), so
+// the backdrop gets its own cache entry instead: TMDB ignores the query.
 export const POSTER_BACKDROP_SIZE = 'w185'
+export const NO_CORS_QUERY = '?no-cors'
 export const posterBackdropUrl = (
   movie: Pick<TestMovie, 'posterUrl' | 'posterDetailUrl'>,
 ) =>
   movie.posterDetailUrl
-    ? movie.posterUrl.replace('/w154/', `/${POSTER_BACKDROP_SIZE}/`)
+    ? `${movie.posterUrl.replace('/w154/', `/${POSTER_BACKDROP_SIZE}/`)}${NO_CORS_QUERY}`
     : movie.posterUrl
 
 export type DeviceSignals = {
@@ -247,10 +249,51 @@ export const getCatalogChunkCount = (
   )
 }
 
-const fetchJson = async <T>(url: string): Promise<T> => {
-  const response = await fetch(url)
+const fetchJson = async <T>(
+  url: string,
+  priority: RequestPriority = 'auto',
+): Promise<T> => {
+  const response = await fetch(url, { priority })
   if (!response.ok) throw new Error(`Catalogue ${response.status} (${url})`)
   return response.json() as Promise<T>
+}
+
+// A first chunk is about this many bytes once decoded; used as the total when
+// the response is compressed (its Content-Length is then the compressed size).
+const FIRST_CHUNK_BYTES_ESTIMATE = 260_000
+
+// fetchJson that reports how much of the body has arrived (0..1), from the
+// bytes read so far against Content-Length, or the estimate when compressed.
+export const fetchJsonWithProgress = async <T>(
+  url: string,
+  onProgress: (fraction: number) => void,
+  fetchImpl: typeof fetch = fetch,
+): Promise<T> => {
+  const response = await fetchImpl(url)
+  if (!response.ok) throw new Error(`Catalogue ${response.status} (${url})`)
+  const length = Number(response.headers.get('content-length'))
+  const encoded = Boolean(response.headers.get('content-encoding'))
+  const total = length > 0 && !encoded ? length : FIRST_CHUNK_BYTES_ESTIMATE
+  if (!response.body) return response.json() as Promise<T>
+  const reader = response.body.getReader()
+  const parts: Uint8Array[] = []
+  let received = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    parts.push(value)
+    received += value.byteLength
+    onProgress(Math.min(0.97, received / total))
+  }
+  const bytes = new Uint8Array(received)
+  let offset = 0
+  for (const part of parts) {
+    bytes.set(part, offset)
+    offset += part.byteLength
+  }
+  const json = JSON.parse(new TextDecoder().decode(bytes)) as T
+  onProgress(1)
+  return json
 }
 
 let manifestPromise: Promise<CatalogManifestV2> | null = null
@@ -265,12 +308,19 @@ export const loadCatalogManifest = () => {
 }
 
 const chunkRequests = new Map<number, Promise<CatalogRow[]>>()
-const loadChunk = (manifest: CatalogManifestV2, chunk: number) => {
+const loadChunk = (
+  manifest: CatalogManifestV2,
+  chunk: number,
+  onProgress?: (fraction: number) => void,
+) => {
   let request = chunkRequests.get(chunk)
   if (!request) {
-    request = fetchJson<CatalogRow[]>(
-      `${CATALOG_URL}/${manifest.chunks[chunk]}`,
-    )
+    const url = `${CATALOG_URL}/${manifest.chunks[chunk]}`
+    // Chunk 0 is what the globe waits for; the rest stream in behind the
+    // posters at low priority.
+    request = onProgress
+      ? fetchJsonWithProgress<CatalogRow[]>(url, onProgress)
+      : fetchJson<CatalogRow[]>(url, chunk === 0 ? 'auto' : 'low')
     chunkRequests.set(chunk, request)
     request.catch(() => chunkRequests.delete(chunk))
   }
@@ -296,13 +346,19 @@ let cachedFirstChunk: TestMovie[] | null = null
 let firstChunkPromise: Promise<TestMovie[]> | null = null
 export const getCachedFirstChunk = () => cachedFirstChunk
 
-// The manifest and chunk 0: the 2,000 most-voted films, enough for the globe
-// (it shows the top 900) and the first screen of everything else.
-export const loadFirstChunk = () => {
+// The manifest and chunk 0: the 2,000 most-voted films, the whole desktop
+// globe and the first screen of everything else. `onProgress` follows the
+// download (0..1): a tenth for the manifest, the rest for the chunk's bytes.
+export const loadFirstChunk = (onProgress?: (fraction: number) => void) => {
   if (cachedFirstChunk) return Promise.resolve(cachedFirstChunk)
   firstChunkPromise ??= loadCatalogManifest()
     .then(async (manifest) => {
-      const rows = await loadChunk(manifest, 0)
+      onProgress?.(0.1)
+      const rows = await loadChunk(
+        manifest,
+        0,
+        onProgress && ((fraction) => onProgress(0.1 + 0.9 * fraction)),
+      )
       cachedFirstChunk = mapChunks(manifest, [rows])
       return cachedFirstChunk
     })

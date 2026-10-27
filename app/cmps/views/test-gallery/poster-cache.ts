@@ -18,9 +18,10 @@ const EVICT_TO_SHARE = 0.9
 // Skip persisting when the browser reports less room than this.
 const MIN_FREE_BYTES = 64 * 1024 * 1024
 
-// The starter set kept on every visit: the first alphabetical films (what the
-// index shows first) and some random ones (what the globe may show first).
-export const STARTER_ALPHA_COUNT = 80
+// The starter set kept on every visit: the films the index lists first (its
+// first screen and a little more) and some random ones (what the globe may
+// show first).
+export const STARTER_INDEX_COUNT = 30
 export const STARTER_RANDOM_COUNT = 40
 // Blob URLs of the starter set kept ready for instant use. Fixed, small.
 const WARM_URL_LIMIT = 320
@@ -140,30 +141,6 @@ export const chooseRandomIds = (
     rest.pop()
   }
   return chosen
-}
-
-// The `count` items with the smallest keys, in key order, without sorting the
-// whole list (the catalogue can hold 100,000 films).
-export const firstByKey = <T>(
-  items: readonly T[],
-  keyOf: (item: T) => string,
-  count: number,
-) => {
-  const best: { item: T; key: string }[] = []
-  for (const item of items) {
-    const key = keyOf(item)
-    if (best.length >= count && key >= best[best.length - 1].key) continue
-    let low = 0
-    let high = best.length
-    while (low < high) {
-      const mid = (low + high) >> 1
-      if (best[mid].key <= key) low = mid + 1
-      else high = mid
-    }
-    best.splice(low, 0, { item, key })
-    if (best.length > count) best.pop()
-  }
-  return best.map((entry) => entry.item)
 }
 
 let cachePromise: Promise<Cache | null> | null = null
@@ -366,14 +343,14 @@ const readStarter = (): StarterState => {
 
 export type StarterFilm = { id: string; thumbUrl: string; listUrl: string }
 
-// Keeps a small starter set on the device: the first films of the alphabetical
-// index (list thumbnails) and a random set chosen once per device (globe and
-// list thumbnails). `alphabetical` must already be in index order.
+// Keeps a small starter set on the device: the films the index lists first
+// (list thumbnails) and a random set chosen once per device (globe and list
+// thumbnails). `indexHead` must already be in index order.
 export const seedStarterSet = (
-  alphabetical: StarterFilm[],
+  indexHead: StarterFilm[],
   pool: StarterFilm[],
 ) => {
-  if (!alphabetical.length) return
+  if (!indexHead.length) return
   const starter = readStarter()
   const randomIds = chooseRandomIds(
     pool.map((film) => film.id),
@@ -389,8 +366,8 @@ export const seedStarterSet = (
     // Chosen again next visit.
   }
   const byId = new Map(pool.map((film) => [film.id, film]))
-  const urls = alphabetical
-    .slice(0, STARTER_ALPHA_COUNT)
+  const urls = indexHead
+    .slice(0, STARTER_INDEX_COUNT)
     .map((film) => film.listUrl)
   for (const id of randomIds) {
     const film = byId.get(id)

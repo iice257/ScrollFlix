@@ -45,6 +45,18 @@ describe('parseWatch', () => {
     expect(providerUrl(8, '')).toBeNull()
   })
 
+  it("sends Amazon's store links to the visitor's country", () => {
+    expect(providerUrl(10, 'Heat', 'GB')).toBe(
+      'https://www.amazon.co.uk/s?k=Heat&i=instant-video',
+    )
+    expect(providerUrl(10, 'Heat', 'NG')).toBe(
+      'https://www.primevideo.com/search/?phrase=Heat',
+    )
+    expect(providerUrl(9, 'Heat', 'DE')).toBe(
+      'https://www.primevideo.com/search/?phrase=Heat',
+    )
+  })
+
   it('keeps the JustWatch link only when it is https', () => {
     expect(parseWatch(body, 'US', 'x').link).toMatch(/^https:\/\//)
     expect(parseWatch(body, 'GB', 'x').link).toBeNull()
@@ -80,15 +92,29 @@ describe('handleWatch', () => {
     expect(load).not.toHaveBeenCalled()
   })
 
-  it('uses the geo header for the country and caches the reply', async () => {
+  it('uses the geo header for the country, and keeps that reply private', async () => {
     const load = vi.fn().mockResolvedValue(body)
     const res = await handleWatch(
       ask('id=27205&title=Inception', { 'x-vercel-ip-country': 'GB' }),
       load,
     )
     expect(load).toHaveBeenCalledWith('movie/27205/watch/providers')
-    expect(res.headers.get('Cache-Control')).toContain('s-maxage=86400')
+    // The URL does not say which country: a shared cache must not keep it.
+    expect(res.headers.get('Cache-Control')).toMatch(/^private/)
+    expect(res.headers.get('Cache-Control')).not.toContain('s-maxage')
     expect(((await res.json()) as WatchReply).region).toBe('GB')
+  })
+
+  it('shares a reply only when the country is in the URL', async () => {
+    const load = vi.fn().mockResolvedValue(body)
+    const res = await handleWatch(
+      ask('id=27205&title=Inception&region=US', {
+        'x-vercel-ip-country': 'NG',
+      }),
+      load,
+    )
+    expect(res.headers.get('Cache-Control')).toContain('s-maxage=86400')
+    expect(((await res.json()) as WatchReply).region).toBe('US')
   })
 
   it('lets the query override the country', async () => {

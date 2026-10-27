@@ -1,4 +1,5 @@
 import { type Page, expect, test } from '@playwright/test'
+import { waitForGlobeQuiet } from './globe-quiet'
 
 const SHUFFLE_TO_RANDOM = 'Shuffle to a random movie'
 
@@ -12,6 +13,8 @@ const openGallery = async (page: Page) => {
     .click({ timeout: 3_000 })
     .catch(() => {})
   await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
+  // These specs drag the globe on a timer: let it finish loading first.
+  await waitForGlobeQuiet(page)
 }
 
 const isPhone = (page: Page) => (page.viewportSize()?.width ?? 0) <= 900
@@ -25,6 +28,8 @@ const titleOf = async (page: Page) =>
     .textContent()) ?? ''
 
 test.describe('Now-playing bar (phone width)', () => {
+  test.setTimeout(120_000)
+
   test.beforeEach(async ({ page }) => {
     test.skip(!isPhone(page), 'the bar is for phone-width layouts')
     await openGallery(page)
@@ -56,10 +61,12 @@ test.describe('Now-playing bar (phone width)', () => {
     await page.mouse.move(box.x + box.width * 0.75, y)
     await page.mouse.down()
     // Paced like a finger: WebKit's software-rendered globe ignores a drag
-    // that is over before it has drawn a frame.
-    for (let step = 1; step <= 16; step++) {
-      await page.mouse.move(box.x + box.width * (0.75 - 0.035 * step), y + step)
-      await page.waitForTimeout(24)
+    // that is over before it has drawn a frame. Few, wide steps: each one waits
+    // for the page, and on a slow runner a long drag becomes a 3 s hold, which
+    // starts a run and takes the bar down.
+    for (let step = 1; step <= 10; step++) {
+      await page.mouse.move(box.x + box.width * (0.75 - 0.056 * step), y + step)
+      await page.waitForTimeout(30)
     }
     await page.mouse.up()
 
@@ -117,6 +124,8 @@ test.describe('Now-playing bar (phone width)', () => {
 })
 
 test.describe('Shuffle on wide layouts', () => {
+  test.setTimeout(120_000)
+
   test('still opens the card and shows no bar', async ({ page }) => {
     test.skip(isPhone(page), 'wide layouts only')
     await openGallery(page)

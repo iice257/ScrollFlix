@@ -3,7 +3,6 @@ import {
   PosterIndex,
   type PosterIndexEntry,
   chooseRandomIds,
-  firstByKey,
   isCacheablePosterUrl,
   planEviction,
 } from './poster-cache'
@@ -93,22 +92,6 @@ describe('chooseRandomIds', () => {
 
   it('returns fewer when the pool is small', () => {
     expect(chooseRandomIds(['a', 'b'], 5, [])).toHaveLength(2)
-  })
-})
-
-describe('firstByKey', () => {
-  it('returns the smallest keys in order without a full sort', () => {
-    const items = ['d', 'b', 'e', 'a', 'c', 'b2'].map((key) => ({ key }))
-    expect(firstByKey(items, (item) => item.key, 3).map((i) => i.key)).toEqual([
-      'a',
-      'b',
-      'b2',
-    ])
-  })
-
-  it('handles fewer items than asked for', () => {
-    expect(firstByKey(['b', 'a'], (item) => item, 5)).toEqual(['a', 'b'])
-    expect(firstByKey([], (item: string) => item, 5)).toEqual([])
   })
 })
 

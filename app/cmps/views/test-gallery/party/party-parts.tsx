@@ -75,7 +75,15 @@ export const Poster = ({
   className?: string
 }) => (
   <span className={cn('party-poster', className)}>
-    {src ? <img src={src} alt='' decoding='async' draggable={false} /> : null}
+    {src ? (
+      <img
+        src={src}
+        alt=''
+        decoding='async'
+        draggable={false}
+        crossOrigin='anonymous'
+      />
+    ) : null}
     <span className='party-poster-title' aria-hidden='true'>
       {title}
     </span>
