@@ -49,10 +49,6 @@ test.describe('Now-playing bar (phone width)', () => {
   test('the globe still spins with the bar up', async ({ page }) => {
     await page.getByRole('button', { name: SHUFFLE_TO_RANDOM }).click()
     await expect(nowPlaying(page)).toBeVisible({ timeout: 30_000 })
-    // The landing turns the globe to a new face and loads the sharper posters
-    // there. Let that finish: a frame stalled by it turns the paced drag below
-    // into a 3 s hold, which starts a run and takes the bar down.
-    await waitForGlobeQuiet(page)
 
     const pill = page.locator('.warp-title-card')
     await expect(pill).toBeVisible()
@@ -65,10 +61,12 @@ test.describe('Now-playing bar (phone width)', () => {
     await page.mouse.move(box.x + box.width * 0.75, y)
     await page.mouse.down()
     // Paced like a finger: WebKit's software-rendered globe ignores a drag
-    // that is over before it has drawn a frame.
-    for (let step = 1; step <= 16; step++) {
-      await page.mouse.move(box.x + box.width * (0.75 - 0.035 * step), y + step)
-      await page.waitForTimeout(24)
+    // that is over before it has drawn a frame. Few, wide steps: each one waits
+    // for the page, and on a slow runner a long drag becomes a 3 s hold, which
+    // starts a run and takes the bar down.
+    for (let step = 1; step <= 10; step++) {
+      await page.mouse.move(box.x + box.width * (0.75 - 0.056 * step), y + step)
+      await page.waitForTimeout(30)
     }
     await page.mouse.up()
 
