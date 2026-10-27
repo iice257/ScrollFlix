@@ -55,22 +55,15 @@ jobs:
         # rendered globe) would pile up in one shard. They get their own shards,
         # about one test each; everything else shares a few.
         part:
-          - light 1/6
-          - light 2/6
-          - light 3/6
-          - light 4/6
-          - light 5/6
-          - light 6/6
-          - heavy 1/10
-          - heavy 2/10
-          - heavy 3/10
-          - heavy 4/10
-          - heavy 5/10
-          - heavy 6/10
-          - heavy 7/10
-          - heavy 8/10
-          - heavy 9/10
-          - heavy 10/10
+          - light 1/4
+          - light 2/4
+          - light 3/4
+          - light 4/4
+          - heavy 1/5
+          - heavy 2/5
+          - heavy 3/5
+          - heavy 4/5
+          - heavy 5/5
     steps:
       - uses: actions/checkout@v4
 
@@ -159,7 +152,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1/4, 2/4, 3/4, 4/4]
+        shard: [1/3, 2/3, 3/3]
     steps:
       - uses: actions/checkout@v4
 
