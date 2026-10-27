@@ -77,6 +77,8 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
     url: string
   } | null>(null)
   const [notice, setNotice] = useState('')
+  const [linkCopied, setLinkCopied] = useState(false)
+  const linkTimerRef = useRef(0)
   const [busy, setBusy] = useState(false)
   const preparedRef = useRef<ShareRenderable | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -138,6 +140,7 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
     () => () => {
       recordAbortRef.current?.abort()
       window.clearTimeout(noticeTimerRef.current)
+      window.clearTimeout(linkTimerRef.current)
     },
     [],
   )
@@ -257,8 +260,15 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
     }
   }
 
+  // The button itself says it worked, then goes back to its label.
   const copyLink = async () => {
-    flash((await copyText(link)) ? 'Link copied.' : 'Could not copy the link.')
+    if (!(await copyText(link))) {
+      flash('Could not copy the link.')
+      return
+    }
+    setLinkCopied(true)
+    window.clearTimeout(linkTimerRef.current)
+    linkTimerRef.current = window.setTimeout(() => setLinkCopied(false), 2000)
   }
 
   const needsClip = format === 'clip' && !clip
@@ -437,10 +447,18 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
               className='warp-share-link'
               onClick={() => void copyLink()}
             >
-              <Link2 aria-hidden='true' />
-              {recap || path
-                ? 'Copy link to ScrollFlix'
-                : 'Copy link to this film'}
+              {linkCopied ? (
+                <Check aria-hidden='true' />
+              ) : (
+                <Link2 aria-hidden='true' />
+              )}
+              <span aria-live='polite'>
+                {linkCopied
+                  ? 'Link copied'
+                  : recap || path
+                    ? 'Copy link to ScrollFlix'
+                    : 'Copy link to this film'}
+              </span>
             </button>
 
             <output className='warp-share-note'>

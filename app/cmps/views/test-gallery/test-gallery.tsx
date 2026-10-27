@@ -1002,10 +1002,10 @@ export const DEFAULT_SORT_DIRECTION: Record<ListGrouping, SortDirection> = {
   year: 'desc',
 }
 
-// The index opens newest first, then A–Z. Reset returns to exactly this.
+// The index opens newest first, then most popular. Reset returns to exactly this.
 export const DEFAULT_SORT_RULES: SortRule[] = [
   { key: 'year', direction: 'desc' },
-  { key: 'alpha', direction: 'asc' },
+  { key: 'popularity', direction: 'desc' },
 ]
 
 export const isDefaultSortRules = (rules: SortRule[]) =>

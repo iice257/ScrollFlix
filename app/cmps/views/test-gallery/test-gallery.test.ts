@@ -251,22 +251,22 @@ describe('test gallery filtering helpers', () => {
     ).toBe('Year: - | Rating: N/A | Hour: -')
   })
 
-  it('defaults to year newest first, then A-Z', () => {
+  it('defaults to year newest first, then most popular', () => {
     expect(DEFAULT_SORT_RULES).toEqual([
       { key: 'year', direction: 'desc' },
-      { key: 'alpha', direction: 'asc' },
+      { key: 'popularity', direction: 'desc' },
     ])
     expect(isDefaultSortRules(DEFAULT_SORT_RULES)).toBe(true)
 
     const pool = [
-      { ...movies[1], title: 'Zodiac', year: '2007' },
-      { ...movies[0], title: 'Amelie', year: '2007' },
-      { ...movies[2], title: 'Memento', year: '2000' },
-      { ...movies[3], title: 'Alien', year: '1979' },
+      { ...movies[1], title: 'Amelie', year: '2007', popularity: 10 },
+      { ...movies[0], title: 'Zodiac', year: '2007', popularity: 50 },
+      { ...movies[2], title: 'Memento', year: '2000', popularity: 5 },
+      { ...movies[3], title: 'Alien', year: '1979', popularity: 80 },
     ]
     expect(
       sortMoviesByRules(pool, DEFAULT_SORT_RULES).map((item) => item.title),
-    ).toEqual(['Amelie', 'Zodiac', 'Memento', 'Alien'])
+    ).toEqual(['Zodiac', 'Amelie', 'Memento', 'Alien'])
   })
 
   it('Reset target matches the default and edits never mutate it', () => {
@@ -278,7 +278,7 @@ describe('test gallery filtering helpers', () => {
     expect(isDefaultSortRules([{ key: 'alpha', direction: 'asc' }])).toBe(false)
     expect(DEFAULT_SORT_RULES).toEqual([
       { key: 'year', direction: 'desc' },
-      { key: 'alpha', direction: 'asc' },
+      { key: 'popularity', direction: 'desc' },
     ])
   })
 
