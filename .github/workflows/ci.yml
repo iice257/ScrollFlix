@@ -38,17 +38,19 @@ jobs:
     name: E2E ${{ matrix.project }} (${{ matrix.shard }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      # Chrome comes preinstalled on the runner; only Firefox and WebKit are
-      # downloaded, and only on their own jobs.
-      BROWSER: ${{ matrix.project == 'firefox' && 'firefox' || matrix.project == 'Mobile Safari' && 'webkit' || '' }}
+    # Firefox and WebKit run in Playwright's own image, which already holds
+    # every browser and system library: `playwright install --with-deps` is an
+    # apt-get on a shared mirror and sometimes stalls for 10+ minutes. Chrome is
+    # preinstalled on the runner, so its jobs run on the host. The image tag
+    # must match the Playwright version in package-lock.json (checked below).
+    container: ${{ (matrix.project == 'firefox' || matrix.project == 'Mobile Safari') && 'mcr.microsoft.com/playwright:v1.63.0-noble' || null }}
     strategy:
       fail-fast: false
       matrix:
         # Pull requests run one desktop and one mobile engine; pushes to
         # staging/main (which gate promotion) and manual runs run all four.
         project: ${{ fromJSON(github.event_name == 'pull_request' && '["Google Chrome","Mobile Safari"]' || '["firefox","Google Chrome","Mobile Chrome","Mobile Safari"]') }}
-        shard: [1/6, 2/6, 3/6, 4/6, 5/6, 6/6]
+        shard: [1/8, 2/8, 3/8, 4/8, 5/8, 6/8, 7/8, 8/8]
     steps:
       - uses: actions/checkout@v4
 
@@ -63,21 +65,9 @@ jobs:
       # public/json/catalog, so there is no separate catalog:pull step.
       - run: npm run build
 
-      - name: Playwright version
-        id: pw
-        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        if: env.BROWSER != ''
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-${{ env.BROWSER }}
-
-      # On a cache hit the download is skipped; the system packages are still installed.
-      - name: Install browser
-        if: env.BROWSER != ''
-        run: npx playwright install --with-deps ${{ env.BROWSER }}
+      - name: Playwright image matches the installed Playwright
+        if: matrix.project == 'firefox' || matrix.project == 'Mobile Safari'
+        run: test "$(node -p "require('@playwright/test/package.json').version")" = "1.63.0"
 
       - name: Run tests
         run: npx playwright test --project="${{ matrix.project }}" --shard="${{ matrix.shard }}" --grep-invert @dev
