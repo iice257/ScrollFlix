@@ -50,7 +50,7 @@ jobs:
         # Pull requests run one desktop and one mobile engine; pushes to
         # staging/main (which gate promotion) and manual runs run all four.
         project: ${{ fromJSON(github.event_name == 'pull_request' && '["Google Chrome","Mobile Safari"]' || '["firefox","Google Chrome","Mobile Chrome","Mobile Safari"]') }}
-        shard: [1/12, 2/12, 3/12, 4/12, 5/12, 6/12, 7/12, 8/12, 9/12, 10/12, 11/12, 12/12]
+        shard: [1/16, 2/16, 3/16, 4/16, 5/16, 6/16, 7/16, 8/16, 9/16, 10/16, 11/16, 12/16, 13/16, 14/16, 15/16, 16/16]
     steps:
       - uses: actions/checkout@v4
 
@@ -142,7 +142,7 @@ jobs:
 
       - run: npm ci
       # Uses the runner's installed Google Chrome, a mocked catalogue and mocked posters.
-      - run: npm run test:visual -- --shard="${{ matrix.shard }}"
+      - run: npm run test:visual -- --fully-parallel --shard="${{ matrix.shard }}"
 
       - uses: actions/upload-artifact@v4
         if: failure()
