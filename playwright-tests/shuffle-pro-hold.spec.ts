@@ -55,7 +55,7 @@ const pressGlobe = async (page: Page) => {
   await page.mouse.down()
 }
 
-test.describe('Shuffle Pro holds', () => {
+test.describe('Shuffle Pro holds', { tag: '@heavy' }, () => {
   // Waiting for the globe to be quiet comes before the hold itself.
   test.setTimeout(120_000)
 

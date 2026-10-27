@@ -35,7 +35,7 @@ jobs:
   # Every job builds for itself (about 15 s, catalogue pull included), which is
   # quicker than waiting on the checks job to hand over an artifact.
   e2e:
-    name: E2E ${{ matrix.project }} (${{ matrix.shard }})
+    name: E2E ${{ matrix.project }} (${{ matrix.part }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Firefox and WebKit run in Playwright's own image, which already holds
@@ -50,7 +50,27 @@ jobs:
         # Pull requests run one desktop and one mobile engine; pushes to
         # staging/main (which gate promotion) and manual runs run all four.
         project: ${{ fromJSON(github.event_name == 'pull_request' && '["Google Chrome","Mobile Safari"]' || '["firefox","Google Chrome","Mobile Chrome","Mobile Safari"]') }}
-        shard: [1/16, 2/16, 3/16, 4/16, 5/16, 6/16, 7/16, 8/16, 9/16, 10/16, 11/16, 12/16, 13/16, 14/16, 15/16, 16/16]
+        # Playwright cuts shards into contiguous slices of the test list, so the
+        # slow tests (@heavy: they wait a minute or more for the software-
+        # rendered globe) would pile up in one shard. They get their own shards,
+        # about one test each; everything else shares a few.
+        part:
+          - light 1/6
+          - light 2/6
+          - light 3/6
+          - light 4/6
+          - light 5/6
+          - light 6/6
+          - heavy 1/10
+          - heavy 2/10
+          - heavy 3/10
+          - heavy 4/10
+          - heavy 5/10
+          - heavy 6/10
+          - heavy 7/10
+          - heavy 8/10
+          - heavy 9/10
+          - heavy 10/10
     steps:
       - uses: actions/checkout@v4
 
@@ -70,7 +90,13 @@ jobs:
         run: test "$(node -p "require('@playwright/test/package.json').version")" = "1.63.0"
 
       - name: Run tests
-        run: npx playwright test --project="${{ matrix.project }}" --shard="${{ matrix.shard }}" --grep-invert @dev
+        run: |
+          read -r kind shard <<< "${{ matrix.part }}"
+          if [ "$kind" = heavy ]; then
+            npx playwright test --project="${{ matrix.project }}" --shard="$shard" --grep @heavy --grep-invert @dev --pass-with-no-tests
+          else
+            npx playwright test --project="${{ matrix.project }}" --shard="$shard" --grep-invert "@dev|@heavy" --pass-with-no-tests
+          fi
 
       - uses: actions/upload-artifact@v4
         if: failure()
