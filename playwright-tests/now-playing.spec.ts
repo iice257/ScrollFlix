@@ -49,6 +49,10 @@ test.describe('Now-playing bar (phone width)', () => {
   test('the globe still spins with the bar up', async ({ page }) => {
     await page.getByRole('button', { name: SHUFFLE_TO_RANDOM }).click()
     await expect(nowPlaying(page)).toBeVisible({ timeout: 30_000 })
+    // The landing turns the globe to a new face and loads the sharper posters
+    // there. Let that finish: a frame stalled by it turns the paced drag below
+    // into a 3 s hold, which starts a run and takes the bar down.
+    await waitForGlobeQuiet(page)
 
     const pill = page.locator('.warp-title-card')
     await expect(pill).toBeVisible()
