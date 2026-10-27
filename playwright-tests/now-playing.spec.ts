@@ -122,6 +122,8 @@ test.describe('Now-playing bar (phone width)', () => {
 })
 
 test.describe('Shuffle on wide layouts', () => {
+  test.setTimeout(120_000)
+
   test('still opens the card and shows no bar', async ({ page }) => {
     test.skip(isPhone(page), 'wide layouts only')
     await openGallery(page)

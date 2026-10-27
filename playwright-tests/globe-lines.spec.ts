@@ -12,8 +12,8 @@ const seedPath = (page: Page) =>
       window.localStorage.setItem(
         key,
         JSON.stringify([
-          { id: '27205', tier: null },
-          { id: '76203', tier: null },
+          { id: 'c27205', tier: null },
+          { id: 'c155', tier: null },
         ]),
       )
     }
@@ -50,7 +50,7 @@ const closeMenu = async (page: Page) => {
 }
 
 const pathButton = (page: Page) =>
-  page.getByRole('button', { name: 'History and favourites' })
+  page.getByRole('button', { name: 'History and favourites', exact: true })
 
 test.describe('Globe lines start off', () => {
   test.beforeEach(async ({ page }) => {
