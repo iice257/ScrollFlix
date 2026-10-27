@@ -6871,6 +6871,7 @@ const MovieDetailsCard = ({
                 <Suspense fallback={null}>
                   <ShareSheet
                     input={shareInput}
+                    movieId={movie.id}
                     link={shareLink(movie.id)}
                     onClose={() => setShareOpen(false)}
                   />

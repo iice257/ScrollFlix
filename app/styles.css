@@ -2005,8 +2005,7 @@
   }
 
   .warp-share-primary,
-  .warp-share-secondary,
-  .warp-share-link {
+  .warp-share-secondary {
     display: inline-flex;
     height: 46px;
     align-items: center;
@@ -2031,7 +2030,12 @@
     color: #050505;
   }
 
+  .warp-share-copy {
+    flex: 1 1 100%;
+  }
+
   .warp-share-secondary {
+    flex: 1 1 0;
     min-width: 46px;
     border: 1px solid rgb(255 255 255 / 0.2);
     background: rgb(255 255 255 / 0.08);
@@ -2039,19 +2043,8 @@
     color: #fff;
   }
 
-  .warp-share-link {
-    height: 38px;
-    justify-self: start;
-    border: 0;
-    background: transparent;
-    padding: 0 4px;
-    color: rgb(255 255 255 / 0.7);
-    font-size: 13px;
-  }
-
   .warp-share-primary svg,
-  .warp-share-secondary svg,
-  .warp-share-link svg {
+  .warp-share-secondary svg {
     width: 16px;
     height: 16px;
     stroke-width: 2.4;
@@ -2066,13 +2059,8 @@
     background: rgb(255 255 255 / 0.16);
   }
 
-  .warp-share-link:hover {
-    color: #fff;
-  }
-
   .warp-share-primary:focus-visible,
-  .warp-share-secondary:focus-visible,
-  .warp-share-link:focus-visible {
+  .warp-share-secondary:focus-visible {
     outline: 2px solid #fff;
     outline-offset: 2px;
   }
