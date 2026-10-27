@@ -2086,11 +2086,6 @@
     font-weight: 650;
   }
 
-  .warp-share-note svg {
-    width: 13px;
-    height: 13px;
-  }
-
   @media (max-width: 720px) {
     .warp-share-layer {
       place-items: end center;
@@ -2109,9 +2104,13 @@
       gap: 18px;
     }
 
+    .warp-share-tilt {
+      display: grid;
+      justify-items: center;
+    }
+
     .warp-share-stage {
       width: min(260px, 100%);
-      justify-self: center;
     }
   }
 
@@ -3026,23 +3025,20 @@
     transform: translateY(1px) scale(0.98);
   }
 
+  /* The whole card scrolls when the list is long, so every service and the
+     footer stay reachable on a short phone screen. */
   .warp-watch-card {
-    display: flex;
-    flex-direction: column;
-    max-height: min(680px, calc(100dvh - 48px));
+    max-height: calc(100dvh - 48px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 0.2) transparent;
   }
 
   .warp-watch-body {
     display: grid;
     gap: 18px;
     margin-top: 20px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: none;
-  }
-
-  .warp-watch-body::-webkit-scrollbar {
-    display: none;
   }
 
   .warp-watch-group h3 {
