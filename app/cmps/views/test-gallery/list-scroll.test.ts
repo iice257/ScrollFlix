@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  PREROLL_SPAN,
   centeredScrollTop,
   glideStart,
   pickRandomRow,
+  prerollWindow,
+  usablePick,
   visibleGenreTags,
 } from './list-scroll'
 
@@ -104,5 +107,34 @@ describe('visibleGenreTags', () => {
   it('ignores selected genres the film does not have', () => {
     expect(visibleGenreTags(['Drama'], ['Horror'])).toEqual(['Drama'])
     expect(visibleGenreTags([], ['Horror'])).toEqual([])
+  })
+})
+
+describe('shuffle preroll', () => {
+  const rows = Array.from({ length: 40 }, (_, index) => ({ id: `r${index}` }))
+
+  it('takes the pick and nine rows either side, in list order', () => {
+    const window = prerollWindow(rows, 20)
+    expect(window).toHaveLength(19)
+    expect(window[0].id).toBe('r11')
+    expect(window[9].id).toBe('r20')
+    expect(window[18].id).toBe('r29')
+  })
+
+  it('shrinks at the ends of the list and for a missing pick', () => {
+    expect(prerollWindow(rows, 0).map((row) => row.id)).toEqual(
+      rows.slice(0, 10).map((row) => row.id),
+    )
+    expect(prerollWindow(rows, 39)).toHaveLength(10)
+    expect(prerollWindow(rows, -1)).toEqual([])
+    expect(PREROLL_SPAN).toBe(9)
+  })
+
+  it('uses a planned pick only for the same list and a different film', () => {
+    const planned = { row: rows[5], rows }
+    expect(usablePick(planned, rows, 'r1')).toBe(rows[5])
+    expect(usablePick(planned, rows, 'r5')).toBeNull()
+    expect(usablePick(planned, [...rows], 'r1')).toBeNull()
+    expect(usablePick(null, rows, null)).toBeNull()
   })
 })
