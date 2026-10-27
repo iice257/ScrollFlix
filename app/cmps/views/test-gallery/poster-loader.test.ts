@@ -168,4 +168,26 @@ describe('poster loader', () => {
     ).toHaveBeenCalled()
     loader.dispose()
   })
+
+  it('draws one download into several cells', async () => {
+    const source = bitmap('src')
+    const deps = makeDeps({
+      createImageBitmap: vi.fn(async () => source),
+      renderCell: vi.fn((_, cell) => bitmap(`cell-${cell.width}`)),
+    })
+    const loader = createPosterLoader({ useWorker: false, deps })
+    const images = await loader.requestCells('a', ['https://x/a.jpg'], 0, [
+      { width: 64, height: 96, gutter: 2 },
+      { width: 154, height: 231, gutter: 0 },
+    ])
+    expect(images.map((image) => nameOf(image).name)).toEqual([
+      'cell-64',
+      'cell-154',
+    ])
+    expect(deps.fetch).toHaveBeenCalledTimes(1)
+    expect(
+      (source as unknown as { close: () => void }).close,
+    ).toHaveBeenCalled()
+    loader.dispose()
+  })
 })

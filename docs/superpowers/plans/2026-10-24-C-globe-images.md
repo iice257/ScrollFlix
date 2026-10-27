@@ -59,9 +59,8 @@ Requests keep the loader's priority and concurrency (12), so frame cost is the s
 stay; leaving rest only cancels what has not landed.
 
 ## C.6
-`shuffle-preroll.ts` (+test): pick plus 2 decoys, same call, random order, seed in closure, drawn through the
-shuffle's own weighted chooser. Call-site in `test-gallery.tsx`: one `useMemo`, a `take()` in `handleShuffle`,
-one effect to `prepare()` once the globe is ready and when the filters change.
+Superseded by staging's `shuffle-pool.ts` (#60): the pool of 3 loaded candidates covers the decoy idea, and
+the card now opens on w342, which the pool preloads. The preroll module and its call-site were dropped in the merge.
 
 ## C.10 headers (vercel.json, for workstream A)
 ```json

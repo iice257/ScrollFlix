@@ -11,8 +11,10 @@ export type ViewRect = {
 type PosterFlightProps = {
   // Where the poster is on the globe.
   from: ViewRect
-  // Best first. Stacked as backgrounds, so a sharper image that is not in yet
-  // leaves the one below showing instead of a gap.
+  // Best first. Stacked as layers, so a sharper image that is not in yet
+  // leaves the one below showing instead of a gap. They are images with CORS,
+  // never CSS backgrounds: a CSS fetch caches a copy without CORS headers,
+  // and the card and the globe then fail on the same URL.
   images: string[]
   onDone: () => void
 }
@@ -166,14 +168,33 @@ export const PosterFlight = ({ from, images, onDone }: PosterFlightProps) => {
         pointerEvents: 'none',
         transformOrigin: '0 0',
         borderRadius: 18,
-        backgroundImage: images
-          .map((image) => `url(${JSON.stringify(image)})`)
-          .join(', '),
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
+        overflow: 'hidden',
         willChange: 'transform',
       }}
-    />,
+    >
+      {[...images].reverse().map((image) => (
+        <img
+          key={image}
+          src={image}
+          alt=''
+          crossOrigin='anonymous'
+          decoding='async'
+          fetchPriority='high'
+          // A layer that fails leaves the one below showing, never a
+          // broken-image icon.
+          onError={(event) => {
+            event.currentTarget.style.visibility = 'hidden'
+          }}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+          }}
+        />
+      ))}
+    </div>,
     document.body,
   )
 }

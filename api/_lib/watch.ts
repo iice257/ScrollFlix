@@ -17,7 +17,8 @@ export type Provider = {
 
 export type WatchReply = {
   region: string
-  // The JustWatch page for this film and country; always safe to open.
+  // TMDB's watch page for this film and country (its listings come from
+  // JustWatch); always safe to open.
   link: string | null
   providers: Provider[]
 }
@@ -50,12 +51,41 @@ const KINDS: [keyof TmdbRegion, ProviderKind][] = [
 
 // Search URLs for the services people use most, keyed by TMDB provider id.
 // A search is the best a public link can do: no service publishes a stable
-// per-film deep link without a partner agreement.
+// per-film deep link without a partner agreement (or a paid catalogue API).
 const q = (title: string) => encodeURIComponent(title)
-const SEARCH: Partial<Record<number, (title: string) => string>> = {
+
+// Amazon's store for a country; Prime Video's own site serves everywhere.
+const AMAZON_STORES: Record<string, string> = {
+  US: 'www.amazon.com',
+  GB: 'www.amazon.co.uk',
+  DE: 'www.amazon.de',
+  AT: 'www.amazon.de',
+  FR: 'www.amazon.fr',
+  IT: 'www.amazon.it',
+  ES: 'www.amazon.es',
+  NL: 'www.amazon.nl',
+  CA: 'www.amazon.ca',
+  JP: 'www.amazon.co.jp',
+  IN: 'www.amazon.in',
+  AU: 'www.amazon.com.au',
+  BR: 'www.amazon.com.br',
+  MX: 'www.amazon.com.mx',
+}
+const primeVideoSearch = (t: string) =>
+  `https://www.primevideo.com/search/?phrase=${q(t)}`
+
+type SearchUrl = (title: string, region: string) => string
+const SEARCH: Partial<Record<number, SearchUrl>> = {
   8: (t) => `https://www.netflix.com/search?q=${q(t)}`,
-  9: (t) => `https://www.amazon.com/s?k=${q(t)}&i=instant-video`,
-  119: (t) => `https://www.amazon.com/s?k=${q(t)}&i=instant-video`,
+  // Prime Video (and its ad tier): its own site, in every country.
+  9: primeVideoSearch,
+  119: primeVideoSearch,
+  2100: primeVideoSearch,
+  // Amazon Video (rent or buy): the country's Amazon store, where one exists.
+  10: (t, region) =>
+    AMAZON_STORES[region]
+      ? `https://${AMAZON_STORES[region]}/s?k=${q(t)}&i=instant-video`
+      : primeVideoSearch(t),
   337: (t) => `https://www.disneyplus.com/search?q=${q(t)}`,
   384: (t) => `https://play.max.com/search?q=${q(t)}`,
   1899: (t) => `https://play.max.com/search?q=${q(t)}`,
@@ -70,7 +100,6 @@ const SEARCH: Partial<Record<number, (title: string) => string>> = {
   192: (t) =>
     `https://www.youtube.com/results?search_query=${q(`${t} full movie`)}`,
   3: (t) => `https://play.google.com/store/search?q=${q(t)}&c=movies`,
-  10: (t) => `https://www.amazon.com/s?k=${q(t)}&i=instant-video`,
   190: (t) => `https://www.curiositystream.com/search?q=${q(t)}`,
   258: (t) => `https://www.criterionchannel.com/search?q=${q(t)}`,
   11: (t) => `https://mubi.com/en/search?query=${q(t)}`,
@@ -79,9 +108,13 @@ const SEARCH: Partial<Record<number, (title: string) => string>> = {
   1796: (t) => `https://www.netflix.com/search?q=${q(t)}`,
 }
 
-export const providerUrl = (id: number, title: string): string | null => {
+export const providerUrl = (
+  id: number,
+  title: string,
+  region = 'US',
+): string | null => {
   const make = SEARCH[id]
-  return make && title ? make(title) : null
+  return make && title ? make(title, region) : null
 }
 
 const isHttps = (value: unknown): value is string =>
@@ -114,7 +147,7 @@ export const parseWatch = (
         name: raw.provider_name,
         logoPath: raw.logo_path ?? null,
         kind,
-        url: providerUrl(raw.provider_id, title),
+        url: providerUrl(raw.provider_id, title, region),
       })
     }
   }
@@ -140,8 +173,14 @@ const empty = (status: number) =>
 type Load = (path: string) => Promise<unknown>
 
 // GET /api/watch?id=<tmdbId>&title=<title>[&region=GB]. The country comes
-// from the query, else Vercel's geolocation header, else the US. Availability
-// changes slowly, so shared caches keep it for a day.
+// from the query, else Vercel's geolocation header, else the US.
+//
+// Shared caches key a reply by its URL only, so a reply may be shared (for a
+// day: availability changes slowly) only when the country is in the URL. A
+// reply whose country came from the visitor's IP stays private to them: a
+// shared copy once served one visitor's country (say Nigeria) to everyone
+// asking for that film. The client asks once without a country, then puts
+// the one it got back into every later request.
 export const handleWatch = async (
   request: Request,
   load: Load,
@@ -149,9 +188,9 @@ export const handleWatch = async (
   const url = new URL(request.url)
   const id = url.searchParams.get('id') ?? ''
   if (!/^\d{1,9}$/.test(id)) return empty(400)
+  const asked = url.searchParams.get('region')
   const region = normalizeRegion(
-    url.searchParams.get('region') ??
-      request.headers.get('x-vercel-ip-country'),
+    asked ?? request.headers.get('x-vercel-ip-country'),
   )
   const title = (url.searchParams.get('title') ?? '').slice(0, 200)
   try {
@@ -161,7 +200,9 @@ export const handleWatch = async (
     if (!body) return empty(502)
     return json(
       parseWatch(body, region, title),
-      'public, s-maxage=86400, stale-while-revalidate=604800',
+      asked
+        ? 'public, s-maxage=86400, stale-while-revalidate=604800'
+        : 'private, max-age=3600',
     )
   } catch {
     return empty(502)

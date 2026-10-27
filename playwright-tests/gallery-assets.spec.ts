@@ -24,7 +24,7 @@ test('reveals the full poster gallery from the TMDB CDN', async ({ page }) => {
   test.skip(!hasWebgl2, 'WebGL2 is unavailable in this browser')
 
   const canvas = page.getByLabel('Infinite movie poster menu')
-  await expect(canvas).toHaveAttribute('data-item-count', /^(2160|1260)$/, {
+  await expect(canvas).toHaveAttribute('data-item-count', /^(2000|1260)$/, {
     timeout: 30_000,
   })
   await expect(canvas).toHaveAttribute('data-texture-progress', '100', {
@@ -36,13 +36,9 @@ test('reveals the full poster gallery from the TMDB CDN', async ({ page }) => {
     'ready',
   )
   expect(posterRequests.length).toBeGreaterThan(0)
-  // The globe's base tier asks for w92 (falling back to larger sizes); the
-  // index keeps its w92 thumbnails. Larger sizes only come from the LOD pools,
-  // and the next-shuffle preroll warms w500 for its pick and two decoys.
+  // The globe's base tier asks for w154 (falling back to smaller sizes); the
+  // index keeps its w92 thumbnails. Larger sizes only come from the LOD pools.
   expect(
-    posterRequests.every((url) => /\/t\/p\/w(92|154|185|342|500)\//.test(url)),
+    posterRequests.every((url) => /\/t\/p\/w(92|154|185|342)\//.test(url)),
   ).toBe(true)
-  expect(
-    posterRequests.filter((url) => url.includes('/w500/')).length,
-  ).toBeLessThanOrEqual(6)
 })

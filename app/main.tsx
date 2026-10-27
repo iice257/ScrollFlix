@@ -44,4 +44,8 @@ window.addEventListener('DOMContentLoaded', () => {
     </StrictMode>,
   )
   animateDocTitleSuffix()
+  // The app's own loader fades in over 360 ms after its first commit; the
+  // boot screen stays underneath until then, so nothing flashes.
+  const boot = document.getElementById('boot-loader')
+  if (boot) window.setTimeout(() => boot.remove(), 420)
 })

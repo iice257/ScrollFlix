@@ -194,8 +194,8 @@ The film catalogue (about 100,000 TMDB films) is built by the nightly
 `Catalogue` GitHub Action and published as the `catalog-latest` release asset.
 `npm run build` and `npm run catalog:pull` download it into
 `public/json/catalog/`; set `CATALOG_SKIP_PULL=1` to skip the download. Posters
-load from the TMDB image CDN, with a tiny `public/media/poster-sprite.jpg` as the
-instant placeholder. On a managed
+load from the TMDB image CDN; until a poster arrives, its slot on the globe shows
+a pixelated block in the film's colour, drawn by the shader. On a managed
 Windows network with TLS inspection, run Node with its system CA support.
 If stored TMDB image paths have expired, set `TMDB_API_READ_TOKEN` before
 running the command. The build-time generator will refresh those paths through

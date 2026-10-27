@@ -48,11 +48,11 @@ export const LINE_NUDGE_COPY: Record<
   { title: string; line: string }
 > = {
   path: {
-    title: 'Session path',
+    title: 'History on globe',
     line: 'See the trail of films you’ve landed on.',
   },
   links: {
-    title: 'Favorite links',
+    title: 'Favourites on globe',
     line: 'Draw lines between the films you’ve saved.',
   },
 }

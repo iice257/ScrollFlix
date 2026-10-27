@@ -30,7 +30,16 @@ const Poster = ({ film }: { film: NowPlayingFilm }) => (
         : undefined
     }
   >
-    <img src={film.posterUrl} alt='' width={40} height={60} decoding='async' />
+    <img
+      src={film.posterUrl}
+      alt=''
+      width={40}
+      height={60}
+      decoding='async'
+      // The globe and the card fetch this URL with CORS; a plain request
+      // would cache a copy they cannot use.
+      crossOrigin='anonymous'
+    />
   </span>
 )
 
