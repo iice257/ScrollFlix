@@ -210,6 +210,29 @@ test.describe('Gallery user flows', () => {
     expect(backdrop).toMatch(/\/(w780|w1280)\//)
   })
 
+  test('the Watch listing is fetched before any card is opened', async ({
+    page,
+  }) => {
+    const asked: string[] = []
+    await page.route('**/api/watch*', async (route) => {
+      asked.push(route.request().url())
+      await route.fulfill({
+        json: { region: 'US', link: null, providers: [] },
+      })
+    })
+    await page.reload()
+    await page
+      .getByRole('button', { name: 'Skip first time load' })
+      .click({ timeout: 3_000 })
+      .catch(() => {})
+    await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
+
+    // The film the globe settles on (and the next shuffle's candidates) get
+    // their listing ahead of time; no card has been opened.
+    await expect.poll(() => asked.length).toBeGreaterThan(0)
+    await expect(page.locator('.warp-details-card')).toHaveCount(0)
+  })
+
   test('searches the movie index by title and offers filters', async ({
     page,
   }) => {

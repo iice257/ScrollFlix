@@ -220,6 +220,7 @@ import {
 import { DESKTOP_GLOBE_COUNT } from './texture-tiers'
 import { useDismissLayer } from './use-dismiss-layer'
 import { WatchBadges, WatchOptionsList, useWatchBadges } from './watch-options'
+import { prefetchWatch } from './watch-providers'
 import './session-path.css'
 import { AmbientWeather } from './ambient-weather'
 import { AppearanceSetting, useDynamicHint } from './dynamic-theme-setting'
@@ -342,6 +343,9 @@ const MOOD_RUN_WAIT_MS = 4000
 const CATALOG_STILL_RETRY_MS = 400
 // The shuffle pool's top-ups: a beat after each shuffle (its card loads
 // first), and a little after the globe is up.
+// How long a film must stay the active one before its Watch listing is
+// fetched ahead of its card.
+const WATCH_DWELL_MS = 600
 const SHUFFLE_REFILL_DELAY_MS = 1500
 const SHUFFLE_FIRST_FILL_DELAY_MS = 2500
 
@@ -2085,6 +2089,20 @@ export const TestGalleryApp = () => {
     )
   }, [activeMovieId, landingId, movies, visibleMovies])
 
+  // The film the globe has settled on (its title pill, one tap from the
+  // card) gets its Watch listing and logos ready after a short dwell, so a
+  // spin past a film costs nothing.
+  const dwellId = activeMovie?.id
+  const dwellTitle = activeMovie?.title
+  useEffect(() => {
+    if (!dwellId || !dwellTitle || !initialGalleryReady) return
+    const timer = window.setTimeout(
+      () => prefetchWatch(dwellId, dwellTitle),
+      WATCH_DWELL_MS,
+    )
+    return () => window.clearTimeout(timer)
+  }, [dwellId, dwellTitle, initialGalleryReady])
+
   const detailsMovie = useMemo(
     () => movies.find((movie) => movie.id === detailsMovieId) ?? null,
     [detailsMovieId, movies],
@@ -2602,6 +2620,9 @@ export const TestGalleryApp = () => {
   const shufflePoolRef = useRef<ShufflePool | null>(null)
   shufflePoolRef.current ??= createShufflePool((id) => {
     const movie = visibleMoviesRef.current.find((film) => film.id === id)
+    // The candidate's Watch listing and service logos come along, so its
+    // card opens with the badges already in place.
+    if (movie) prefetchWatch(movie.id, movie.title)
     return movie?.posterPath
       ? preloadPosterImage(posterUrl(movie.posterPath, 'w342'))
       : Promise.resolve()
