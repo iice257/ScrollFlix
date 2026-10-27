@@ -147,12 +147,15 @@ export const realDeps = (): DecodeDeps => ({
   renderCell,
 })
 
+// One fetch and decode, drawn into every cell asked for (the globe's atlas
+// cell and a sharper layer from the same download), or the decoded image
+// itself when no cell is asked for.
 const decodeOne = async (
   url: string,
-  cell: CellSpec | null,
+  cells: readonly CellSpec[] | null,
   deps: DecodeDeps,
   signal?: AbortSignal,
-): Promise<PosterImage> => {
+): Promise<PosterImage[]> => {
   let source: DrawSource
   if (deps.createImageBitmap) {
     const response = await deps.fetch(url, { mode: 'cors', signal })
@@ -165,9 +168,9 @@ const decodeOne = async (
   } else {
     source = await deps.loadImage(url, signal)
   }
-  if (!cell) return source
+  if (!cells) return [source]
   try {
-    return deps.renderCell(source, cell)
+    return cells.map((cell) => deps.renderCell(source, cell))
   } finally {
     if ('close' in source) source.close()
   }
@@ -181,7 +184,16 @@ export const decodeFirst = async (
   cell: CellSpec | null,
   deps: DecodeDeps,
   signal?: AbortSignal,
-): Promise<PosterImage> => {
+): Promise<PosterImage> =>
+  (await decodeFirstCells(urls, cell ? [cell] : null, deps, signal))[0]
+
+// decodeFirst for several cells from one download, in the order asked for.
+export const decodeFirstCells = async (
+  urls: readonly string[],
+  cells: readonly CellSpec[] | null,
+  deps: DecodeDeps,
+  signal?: AbortSignal,
+): Promise<PosterImage[]> => {
   let lastError: unknown = new Error('no poster urls')
   for (const url of urls) {
     if (signal?.aborted) throw new DOMException('cancelled', 'AbortError')
@@ -191,7 +203,7 @@ export const decodeFirst = async (
     signal?.addEventListener('abort', forward, { once: true })
     const timer = setTimeout(forward, URL_TIMEOUT_MS)
     try {
-      return await decodeOne(url, cell, deps, attempt.signal)
+      return await decodeOne(url, cells, deps, attempt.signal)
     } catch (error) {
       if (signal?.aborted) throw error
       lastError = error
@@ -204,8 +216,8 @@ export const decodeFirst = async (
 }
 
 export type WorkerIn =
-  | { t: 'load'; key: string; urls: string[]; cell: CellSpec | null }
+  | { t: 'load'; key: string; urls: string[]; cells: CellSpec[] | null }
   | { t: 'cancel'; key: string }
 export type WorkerOut =
-  | { t: 'ok'; key: string; bitmap: ImageBitmap }
+  | { t: 'ok'; key: string; bitmaps: ImageBitmap[] }
   | { t: 'fail'; key: string }

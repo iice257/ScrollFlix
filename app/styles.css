@@ -619,6 +619,19 @@
     transition: none;
   }
 
+  /* The card's w500 upgrade, over the w342 already showing; it fades in only
+     once decoded, so the poster never steps back to a blank. */
+  .warp-poster-frame img.warp-poster-upgrade {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    opacity: 0;
+  }
+
+  .warp-poster-frame img.warp-poster-upgrade[data-shown="true"] {
+    opacity: 1;
+  }
+
   .warp-poster-frame[data-poster-state="loaded"] .warp-poster-placeholder,
   .warp-poster-frame[data-poster-state="fallback"] .warp-poster-placeholder {
     opacity: 0;
@@ -2533,11 +2546,6 @@
     }
   }
 
-  /* The session path button floats above the bar rather than behind it. */
-  .warp-shell[data-now-playing="true"] .warp-path-button {
-    translate: 0 calc(-1 * var(--np-lift, 140px));
-  }
-
   @media (prefers-reduced-motion: reduce) {
     .warp-np-bar,
     .warp-np-bar[data-state="exit"] {
@@ -3056,6 +3064,7 @@
 
   .warp-watch-group ul {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 6px;
     margin: 0;
     padding: 0;
@@ -3066,7 +3075,8 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    min-height: 52px;
+    min-width: 0;
+    min-height: 62px;
     border: 1px solid rgb(255 255 255 / 0.1);
     border-radius: 14px;
     background: rgb(255 255 255 / 0.05);
@@ -3091,23 +3101,35 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
   .warp-watch-row img,
   .warp-watch-logo-blank {
     flex: none;
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    background: rgb(255 255 255 / 0.08);
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+    background: #16161a;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16);
     object-fit: cover;
   }
 
   .warp-watch-row svg {
     flex: none;
     color: rgb(255 255 255 / 0.42);
+  }
+
+  /* What a row's link opens (the service's search, or the TMDB listing). */
+  .warp-watch-opens {
+    flex: none;
+    color: rgb(255 255 255 / 0.46);
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: 0.01em;
   }
 
   a.warp-watch-row:hover,
@@ -3118,7 +3140,7 @@
   }
 
   .warp-watch-skeleton {
-    height: 52px;
+    height: 62px;
     border-radius: 14px;
     background: rgb(255 255 255 / 0.06);
     animation: warp-watch-pulse 1.2s ease-in-out infinite;
@@ -3529,6 +3551,58 @@
 
   .warp-details-watch:hover {
     transform: translateY(-1px);
+  }
+
+  /* The services the film is confirmed on: logos on a dark capsule inside the
+     button, so a light or white logo (Prime Video) always reads. Real
+     listings only, faded in when they arrive. */
+  .warp-watch-badges {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 6px;
+    margin-right: -14px;
+    border-radius: 999px;
+    background: #0b0b0e;
+    padding: 4px;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.18);
+    animation: warp-watch-badges-in 260ms ease-out both;
+  }
+
+  .warp-watch-badges img {
+    width: 28px;
+    height: 28px;
+    border-radius: 9px;
+    background: #1d1d22;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16);
+    object-fit: cover;
+  }
+
+  .warp-watch-more {
+    display: grid;
+    min-width: 28px;
+    height: 28px;
+    place-items: center;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.16);
+    padding: 0 8px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 850;
+    letter-spacing: 0;
+  }
+
+  @keyframes warp-watch-badges-in {
+    from {
+      opacity: 0;
+      transform: translateX(-4px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .warp-watch-badges {
+      animation: none;
+    }
   }
 
   .warp-details-watch:focus-visible {
@@ -4498,6 +4572,12 @@
 
   .warp-filters-body .warp-fs-chip.is-active span:last-child:not(:first-child) {
     color: rgb(0 0 0 / 0.42);
+  }
+
+  .warp-filters-body .warp-fs-chip.warp-fs-more {
+    border-style: dashed;
+    background: transparent;
+    color: rgb(255 255 255 / 0.58);
   }
 
   .warp-filters-body .warp-fs-chip:disabled {
@@ -6241,6 +6321,18 @@
       font-size: 13px;
     }
 
+    .warp-watch-badges img {
+      width: 24px;
+      height: 24px;
+      border-radius: 8px;
+    }
+
+    .warp-watch-more {
+      min-width: 24px;
+      height: 24px;
+      font-size: 11px;
+    }
+
     .warp-details-next-mobile {
       position: absolute;
       z-index: 6;
@@ -6425,25 +6517,6 @@
   .warp-shell[data-details-open="true"] .warp-saved-button {
     opacity: 0;
     pointer-events: none;
-  }
-
-  .warp-saved-count {
-    position: absolute;
-    top: -6px;
-    right: -6px;
-    display: grid;
-    min-width: 19px;
-    height: 19px;
-    place-items: center;
-    border: 2px solid #000;
-    border-radius: 999px;
-    background: #fff;
-    padding: 0 4px;
-    color: #000;
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: -0.02em;
-    line-height: 1;
   }
 
   .warp-saved-drawer {

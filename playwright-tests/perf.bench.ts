@@ -176,10 +176,7 @@ const seedStorage = async (page: Page) => {
     ({ saved, path }) => {
       try {
         window.localStorage.setItem('wtw:saved:v1', JSON.stringify(saved))
-        window.sessionStorage.setItem(
-          'wtw:session-path:v1',
-          JSON.stringify(path),
-        )
+        window.localStorage.setItem('wtw:session-path:v1', JSON.stringify(path))
         // The first-load hints would sit over the globe.
         window.localStorage.setItem('wtw:spin-hint-seen', '1')
       } catch {}

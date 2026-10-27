@@ -1,8 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { mapCatalogRow } from './catalog-loader'
+import { createHoneycombSpherePositions } from './honeycomb-layout'
+import {
+  ICON_FLOOR_SCALE,
+  POSTER_HALF_HEIGHT,
+  POSTER_HALF_WIDTH,
+} from './infinite-movie-menu'
+import { notePosterLoaded, resetLoadedPosters } from './poster-loaded'
 import {
   DEFAULT_SORT_RULES,
   type GalleryKeyState,
+  MOBILE_POSTER_SCALE,
   applySortDirection,
   applySortToggle,
   compareListGroups,
@@ -10,6 +18,7 @@ import {
   filterMoviesByGenres,
   filterMoviesByTitleSearch,
   filterMoviesByYearAndRating,
+  firstByRules,
   formatFilmCount,
   formatMovieMeta,
   getActiveSortRules,
@@ -24,11 +33,13 @@ import {
   groupMoviesByVotes,
   groupMoviesByYear,
   isDefaultSortRules,
+  posterBaseLayers,
   shouldHandleGalleryKey,
   sortMoviesByRules,
   sortMoviesForList,
   withWeightedRatings,
 } from './test-gallery'
+import { PHONE_GLOBE_COUNT } from './texture-tiers'
 
 const CHINESE_COMEDY_TITLE = '分手大师'
 
@@ -174,6 +185,33 @@ describe('test gallery filtering helpers', () => {
       )
     expect(order('desc')).toEqual(['8+', '6+', 'Unrated'])
     expect(order('asc')).toEqual(['6+', '8+', 'Unrated'])
+  })
+
+  it("lists the index's first films without sorting everything", () => {
+    const years = ['2019', '2021', '----', '2021', '1999', '2005', '2021']
+    const titles = ['Zed', 'Alpha', 'Unknown', 'Beta', 'Old', 'Mid', '9 Lives']
+    const pool = Array.from({ length: 60 }, (_, at) =>
+      movie(
+        String(at),
+        `${titles[at % titles.length]} ${at}`,
+        years[at % years.length],
+        ['Drama'],
+        at,
+      ),
+    )
+    for (const rules of [
+      DEFAULT_SORT_RULES,
+      [{ key: 'alpha' as const, direction: 'asc' as const }],
+      [{ key: 'rating' as const, direction: 'desc' as const }],
+    ]) {
+      for (const count of [1, 5, 30]) {
+        expect(firstByRules(pool, rules, count).map((film) => film.id)).toEqual(
+          sortMoviesByRules(pool, rules)
+            .slice(0, count)
+            .map((film) => film.id),
+        )
+      }
+    }
   })
 
   it('sorts by stacked rules and ignores rules without a direction', () => {
@@ -560,5 +598,82 @@ describe('similar movies', () => {
   it('caps the result and skips the film itself', () => {
     const result = getSimilarMovies(source, pool, 1)
     expect(result.map((item) => item.id)).toEqual(['a'])
+  })
+})
+
+describe('phone globe density', () => {
+  it('draws posters larger against their spacing without them touching', () => {
+    const count = PHONE_GLOBE_COUNT
+    const positions = createHoneycombSpherePositions(
+      count,
+      2.58 * Math.sqrt(count / 900),
+    )
+    let nearest = Number.POSITIVE_INFINITY
+    for (let left = 0; left < positions.length; left += 1) {
+      for (let right = left + 1; right < positions.length; right += 1) {
+        nearest = Math.min(
+          nearest,
+          Math.hypot(
+            positions[left][0] - positions[right][0],
+            positions[left][1] - positions[right][1],
+            positions[left][2] - positions[right][2],
+          ),
+        )
+      }
+    }
+    // The drawn poster (its rounded rectangle) of a front-facing poster at
+    // rest: 0.766 of the quad's width, 0.78 of its height.
+    const scale = ICON_FLOOR_SCALE * MOBILE_POSTER_SCALE
+    const width = 2 * POSTER_HALF_WIDTH * 0.766 * scale
+    const height = 2 * POSTER_HALF_HEIGHT * 0.78 * scale
+    expect(MOBILE_POSTER_SCALE).toBeGreaterThan(1)
+    // Two neighbours can only overlap when the gap between their centres is
+    // shorter than a poster's diagonal.
+    expect(nearest).toBeGreaterThan(Math.hypot(width, height))
+  })
+})
+
+describe('posterBaseLayers', () => {
+  const film = {
+    posterPath: 'abc',
+    posterUrl: 'https://image.tmdb.org/t/p/w154/abc.jpg',
+    posterDetailUrl: 'https://image.tmdb.org/t/p/w342/abc.jpg',
+  }
+  afterEach(resetLoadedPosters)
+
+  it('starts from a tiny w92 and w154 when the globe has loaded nothing', () => {
+    expect(posterBaseLayers(film)).toEqual([
+      'https://image.tmdb.org/t/p/w92/abc.jpg',
+      'https://image.tmdb.org/t/p/w154/abc.jpg',
+    ])
+  })
+
+  it("uses the size the globe already loaded for the film's middle layer", () => {
+    notePosterLoaded('abc', 'w185')
+    expect(posterBaseLayers(film)).toEqual([
+      'https://image.tmdb.org/t/p/w92/abc.jpg',
+      'https://image.tmdb.org/t/p/w185/abc.jpg',
+    ])
+  })
+
+  it('never repeats the size the card shows next', () => {
+    notePosterLoaded('abc', 'w342')
+    notePosterLoaded('abc', 'w500')
+    expect(posterBaseLayers(film).some((url) => /w342|w500/.test(url))).toBe(
+      false,
+    )
+  })
+
+  it('falls back to the thumbnail for a film with no poster path', () => {
+    expect(posterBaseLayers({ ...film, posterPath: undefined })).toEqual([
+      film.posterUrl,
+    ])
+    expect(
+      posterBaseLayers({
+        posterPath: undefined,
+        posterUrl: film.posterUrl,
+        posterDetailUrl: undefined,
+      }),
+    ).toEqual([])
   })
 })

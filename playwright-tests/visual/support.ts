@@ -122,7 +122,7 @@ const determinismScript = ({
     window.sessionStorage.setItem('wtw:mood-nudge-seen', '1')
     if (seedPath) {
       store.setItem('wtw:session-path-lines', '1')
-      window.sessionStorage.setItem(
+      store.setItem(
         'wtw:session-path:v1',
         JSON.stringify(seedPath.map((id) => ({ id, tier: null }))),
       )

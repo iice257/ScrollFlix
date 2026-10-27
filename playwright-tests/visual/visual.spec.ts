@@ -26,7 +26,7 @@ import {
  *   [data-gallery-ready] on the shell ("false" while the loader covers the wall)
  *   [data-theme="light"|"dark"] on .warp-shell, from localStorage "wtw:theme"
  *   [data-loader-state="slow"] on the loader once loading has run long
- *   localStorage "wtw:session-path-lines", sessionStorage "wtw:session-path:v1"
+ *   localStorage "wtw:session-path-lines" and "wtw:session-path:v1"
  * See README.md in this folder.
  */
 
@@ -144,9 +144,11 @@ for (const device of DEVICE_NAMES) {
         await prepare(page, { scheme, withPath: true })
         await gotoGlobe(page)
         await page
-          .getByRole('button', { name: /^Session path, \d+ films$/ })
+          .getByRole('button', { name: 'History and favourites' })
           .click()
-        await expect(page.getByLabel('Session path').last()).toBeVisible()
+        await expect(
+          page.getByLabel('History and favourites').last(),
+        ).toBeVisible()
         await page.waitForTimeout(1200)
         await page.mouse.move(1, 1)
         await expect(page).toHaveScreenshot(snap('session-path'))
@@ -156,7 +158,7 @@ for (const device of DEVICE_NAMES) {
         await prepare(page, { scheme, withPath: true })
         await gotoGlobe(page)
         await page
-          .getByRole('button', { name: /^Session path, \d+ films$/ })
+          .getByRole('button', { name: 'History and favourites' })
           .click()
         await page.getByRole('button', { name: /share/i }).first().click()
         await page.waitForTimeout(2500)

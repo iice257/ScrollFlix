@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_CHUNK_SIZE } from './catalog-loader'
 import {
   DESKTOP_BUDGET_BYTES,
   DESKTOP_GLOBE_COUNT,
@@ -27,6 +28,13 @@ describe('texture tiers', () => {
       expect(layout.width / layout.height).toBeGreaterThan(0.8)
       expect(layout.width / layout.height).toBeLessThan(1.25)
     }
+  })
+
+  it('the desktop globe fits in the first catalogue chunk', () => {
+    // The rest of the catalogue then never changes the globe's films, so it
+    // is never rebuilt (and never turned away from the film on show).
+    expect(DESKTOP_GLOBE_COUNT).toBeLessThanOrEqual(DEFAULT_CHUNK_SIZE)
+    expect(PHONE_GLOBE_COUNT).toBeLessThanOrEqual(DEFAULT_CHUNK_SIZE)
   })
 
   it('shrinks the atlas to the texture limit', () => {

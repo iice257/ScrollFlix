@@ -47,7 +47,7 @@ This is a React application that shows films as a wall of posters wrapped around
 ### Data Flow
 
 1. Film data is the catalogue in `public/json/catalog/` (chunked JSON plus `manifest.json`), pulled from the `catalog-latest` release by `npm run catalog:pull` and loaded by `app/cmps/views/test-gallery/catalog-loader.ts`
-2. Poster images load from the TMDB image CDN, with a tiny `public/media/poster-sprite.jpg` used as an instant placeholder
+2. Poster images load from the TMDB image CDN; until a poster arrives, its globe slot shows a pixelated placeholder in the film's colour, drawn by the shader (no request)
 3. The globe lays the posters out once, uploads them into a texture atlas as they load, and draws only when something moved
 4. User interactions open the details card, switch views, or apply filters in the page shell
 

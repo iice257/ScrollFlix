@@ -1,10 +1,10 @@
 // The two kinds of line that can be drawn over the globe, each its own
 // setting and both off until someone turns them on:
-//   - favorite links: the lines joining the films you saved
-//   - session path: the trail of films this visit has landed on
+//   - favourites: the lines joining the films you saved
+//   - history: the trail of films you have landed on
 
-// The original single switch. It now belongs to the favorite links, and its
-// stored value is carried over to the session path once (see below).
+// The original single switch. It now belongs to the favourites, and its
+// stored value is carried over to the history once (see below).
 export const CONSTELLATIONS_STORAGE_KEY = 'wtw:constellations'
 export const SESSION_PATH_LINES_STORAGE_KEY = 'wtw:session-path-lines'
 
