@@ -89,6 +89,9 @@ jobs:
 
       - name: Run tests
         run: |
+          # Firefox refuses to start in the container unless HOME is root's
+          # (only the Playwright image sets PLAYWRIGHT_BROWSERS_PATH).
+          if [ -n "$PLAYWRIGHT_BROWSERS_PATH" ]; then export HOME=/root; fi
           set -- ${{ matrix.part }}
           kind=$1
           shard=$2
