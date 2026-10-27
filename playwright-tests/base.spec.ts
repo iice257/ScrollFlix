@@ -19,6 +19,11 @@ test('loads the gallery without application console errors', async ({
   await page.route(/image\.tmdb\.org/, (route) =>
     route.fulfill({ status: 200, contentType: 'image/jpeg', body: '' }),
   )
+  // Vercel Analytics is injected by the platform, so a plain static server
+  // (vite preview on CI) answers its script with a 404.
+  await page.route(/\/_vercel\//, (route) =>
+    route.fulfill({ status: 200, contentType: 'text/javascript', body: '' }),
+  )
   const consoleErrors: string[] = []
   page.on('console', (msg) => {
     if (msg.type() === 'error') {
