@@ -63,6 +63,21 @@ export const rankTrailers = (videos, limit = 3) => {
 
 // TMDB movie details (with external_ids and videos appended) -> a film, or null when it
 // cannot be shown: no poster, no release year, no title.
+// The film's country: the one TMDB names as its origin when it does and that
+// country is among the production countries, else the first production
+// country. (TMDB lists production countries alphabetically, not by
+// importance: "Big Momma's House" came out as Germany.)
+export const primaryCountry = (details) => {
+  const list = details.production_countries ?? []
+  const origin = Array.isArray(details.origin_country)
+    ? details.origin_country[0]
+    : undefined
+  const match = origin
+    ? list.find((country) => country?.iso_3166_1 === origin)
+    : undefined
+  return cleanText((match ?? list[0])?.name)
+}
+
 export const normaliseFilm = (details) => {
   if (!details || !Number.isFinite(Number(details.id))) return null
   const title = cleanText(details.title)
@@ -78,7 +93,7 @@ export const normaliseFilm = (details) => {
     genres: (details.genres ?? [])
       .map((genre) => cleanText(genre?.name))
       .filter(Boolean),
-    country: cleanText(details.production_countries?.[0]?.name),
+    country: primaryCountry(details),
     posterPath,
     backdropPath: stripPath(details.backdrop_path),
     voteCount: Math.max(0, Math.round(number(details.vote_count))),

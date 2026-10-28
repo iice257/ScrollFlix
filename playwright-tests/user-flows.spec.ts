@@ -303,6 +303,53 @@ test.describe('Gallery user flows', () => {
     await expect(card.getByRole('button', { name: 'Save movie' })).toHaveCount(
       0,
     )
+
+  test('the Watch sheet keeps the trailer and About links in view and never links to TMDB', async ({
+    page,
+  }) => {
+    const providers = Array.from({ length: 14 }, (_, index) => ({
+      id: 5000 + index,
+      name: `Service ${index}`,
+      logoPath: null,
+      kind: index < 8 ? 'stream' : 'rent',
+      url: `https://www.google.com/search?q=Film%20Service%20${index}`,
+    }))
+    await page.route('**/api/watch*', (route) =>
+      route.fulfill({
+        json: { region: 'US', link: 'https://www.themoviedb.org/x', providers },
+      }),
+    )
+    await page.getByRole('button', { name: /^Open details for/ }).click()
+    await page.locator('.warp-details-watch').click()
+    const sheet = page.locator('.warp-watch-card')
+    await expect(sheet).toBeVisible()
+    await expect(sheet.getByText('Service 0')).toBeVisible()
+
+    // The list scrolls; the trailer link, the credit line and About stay in
+    // view whatever the list holds.
+    await expect(
+      sheet.getByRole('link', { name: 'Trailer on YouTube' }),
+    ).toBeInViewport()
+    await expect(sheet.getByText('Links are not affiliated')).toBeInViewport()
+    await expect(
+      sheet.getByRole('button', { name: /About ScrollFlix and these links/ }),
+    ).toBeInViewport()
+
+    // More links start collapsed and none points at TMDB.
+    await expect(sheet.locator('.warp-watch-more-links')).not.toHaveAttribute(
+      'open',
+      '',
+    )
+    const hrefs = await sheet
+      .locator('a')
+      .evaluateAll((links) => links.map((link) => link.getAttribute('href')))
+    expect(hrefs.filter((href) => /themoviedb/.test(href ?? ''))).toEqual([])
+
+    // About leads to the full About page, not the small drawer.
+    await sheet
+      .getByRole('button', { name: /About ScrollFlix and these links/ })
+      .click()
+    await expect(page.locator('.warp-about-page')).toBeVisible()
   })
 
   test('searches the movie index by title and offers filters', async ({

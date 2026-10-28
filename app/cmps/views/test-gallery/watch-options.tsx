@@ -22,18 +22,10 @@ type State =
   | { status: 'failed' }
   | { status: 'ready'; options: WatchOptions }
 
-const regionName = (region: string) => {
-  try {
-    return new Intl.DisplayNames(undefined, { type: 'region' }).of(region)
-  } catch {
-    return region
-  }
-}
-
 // Where the film is on right now in the visitor's country, grouped by how it
-// is offered, from JustWatch's listings (through TMDB). Each row opens the
-// service's own search for the title, or the film's TMDB watch page when we
-// have no search link for that service. With no listing, nothing is claimed:
+// is offered, from JustWatch's listings (through TMDB; the About page carries
+// the credit). Each row opens the service's own search for the title, or a
+// Google search for it, and never TMDB. With no listing, nothing is claimed:
 // no service, no country.
 export const WatchOptionsList = ({ movieId, title }: WatchOptionsListProps) => {
   const [state, setState] = useState<State>({ status: 'loading' })
@@ -86,10 +78,12 @@ export const WatchOptionsList = ({ movieId, title }: WatchOptionsListProps) => {
             <h3>{group.label}</h3>
             <ul>
               {group.providers.map((provider) => {
-                const href = provider.url ?? options.link
-                // What the link opens: the service's search, or the film's
-                // watch page on TMDB.
-                const opens = provider.url ? 'Search' : 'Listing'
+                // Always the service's own search, or a Google search for it:
+                // never a third party's listing.
+                const href = provider.url
+                const opens = href?.includes('//www.google.com/')
+                  ? 'Google'
+                  : 'Search'
                 const row = (
                   <>
                     {provider.logoPath ? (
@@ -135,24 +129,13 @@ export const WatchOptionsList = ({ movieId, title }: WatchOptionsListProps) => {
           </section>
         ))
       )}
-      <p className='warp-watch-credit'>
-        {options.link ? (
-          <a href={options.link} target='_blank' rel='noopener noreferrer'>
-            See all options
-          </a>
-        ) : null}
-        {options.link && groups.length ? ' · ' : null}
-        {groups.length
-          ? `Listings for ${regionName(options.region) ?? options.region} from JustWatch`
-          : null}
-      </p>
     </div>
   )
 }
 
 // How long the card waits before asking for its badges, so its poster loads
 // first.
-const BADGE_DELAY_MS = 700
+const BADGE_DELAY_MS = 300
 
 // The services the card's Watch button shows for a film: confirmed listings
 // in the visitor's country, with a link (see badgeProviders). Empty until
