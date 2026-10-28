@@ -7,6 +7,7 @@ import {
   getCachedWatchOptions,
   groupByKind,
   loadWatchOptions,
+  preloadLogo,
   providerLogoUrl,
   tmdbIdOfMovie,
 } from './watch-providers'
@@ -152,18 +153,6 @@ export const WatchOptionsList = ({ movieId, title }: WatchOptionsListProps) => {
 // How long the card waits before asking for its badges, so its poster loads
 // first.
 const BADGE_DELAY_MS = 700
-
-const preloadLogo = (url: string) =>
-  new Promise<void>((resolve, reject) => {
-    const image = new Image()
-    image.crossOrigin = 'anonymous'
-    image.decoding = 'async'
-    image.onload = () => {
-      image.decode().then(resolve, resolve)
-    }
-    image.onerror = reject
-    image.src = url
-  })
 
 // The services the card's Watch button shows for a film: confirmed listings
 // in the visitor's country, with a link (see badgeProviders). Empty until

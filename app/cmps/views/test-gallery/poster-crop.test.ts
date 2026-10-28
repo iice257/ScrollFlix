@@ -44,8 +44,9 @@ describe('letterboxRect', () => {
 })
 
 describe('poster mask constants', () => {
-  it('matches the detail card: radius 6% of the poster width, 2:3', () => {
-    expect(POSTER_CORNER_RADIUS).toBe(0.06)
+  it('rounds the globe posters: radius 9% of the poster width, 2:3', () => {
+    expect(POSTER_CORNER_RADIUS).toBe(0.09)
+    expect(POSTER_CORNER_RADIUS).toBeLessThan(0.11)
     expect(POSTER_ASPECT).toBe(1.5)
   })
 })

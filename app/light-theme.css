@@ -469,10 +469,6 @@
   color: rgb(33 26 16);
 }
 
-.warp-shell[data-theme="light"] .warp-share-link {
-  color: rgb(33 26 16 / 0.7);
-}
-
 .warp-shell[data-theme="light"] .warp-share-primary:hover:not(:disabled) {
   background: rgb(33 26 16 / 0.86);
 }
@@ -482,13 +478,8 @@
   background: rgb(33 26 16 / 0.16);
 }
 
-.warp-shell[data-theme="light"] .warp-share-link:hover {
-  color: rgb(33 26 16);
-}
-
 .warp-shell[data-theme="light"] .warp-share-primary:focus-visible,
-.warp-shell[data-theme="light"] .warp-share-secondary:focus-visible,
-.warp-shell[data-theme="light"] .warp-share-link:focus-visible {
+.warp-shell[data-theme="light"] .warp-share-secondary:focus-visible {
   outline: 2px solid rgb(33 26 16);
 }
 
@@ -917,6 +908,11 @@
 .warp-shell[data-theme="light"] .warp-details-more:hover,
 .warp-shell[data-theme="light"] .warp-details-more:focus-visible {
   color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-details-more-pill {
+  border: 1px solid rgb(33 26 16 / 0.18);
+  background: rgb(222 215 201 / 0.88);
 }
 
 .warp-shell[data-theme="light"] .warp-details-similar {

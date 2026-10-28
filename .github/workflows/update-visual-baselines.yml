@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   update:
@@ -36,6 +37,8 @@ jobs:
           retention-days: 14
 
       - name: Commit baselines
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -46,4 +49,8 @@ jobs:
             git commit -m "test: update visual baselines"
             git pull --rebase origin "${GITHUB_REF_NAME}"
             git push
+            # Pushes made with GITHUB_TOKEN never trigger workflows, so the PR
+            # would sit with no checks. Dispatching CI on the branch is allowed,
+            # and its checks attach to the new head SHA.
+            gh workflow run ci.yml --ref "${GITHUB_REF_NAME}"
           fi

@@ -390,6 +390,9 @@ const POSTER_REPRIORITISE_MS = 300
 // The posters' LOD is re-planned at most this often while the globe moves,
 // and once more when it settles.
 const LOD_PLAN_INTERVAL_MS = 120
+// Below this angular speed (rad/s) the globe counts as at rest and the idle
+// mid-tier warm-up may run.
+const WARMUP_SPEED_MAX = 0.05
 // The base atlas's mip chain is rebuilt at most this often while posters land.
 const MIP_BATCH_MS = 150
 // A tier image that failed is not asked for again for this long.
@@ -651,10 +654,11 @@ export const pickWinner = (
 // Placeholder blocks across and down a poster (see the shader's placeholder).
 const PLACEHOLDER_BLOCKS = [4, 6] as const
 
-// The poster is 2:3; its corners are this share of its width (the detail
-// card's 18 px on a 330 px poster is 5.5%).
+// The poster is 2:3; its corners are this share of its width. The detail card
+// uses 5.5%; on the globe the posters are small, so a rounder 9% keeps them
+// from reading as rectangles (past about 11% they start to look like pills).
 export const POSTER_ASPECT = 1.5
-export const POSTER_CORNER_RADIUS = 0.06
+export const POSTER_CORNER_RADIUS = 0.09
 
 const vertexShaderSource = `#version 300 es
 uniform mat4 uWorldMatrix;
@@ -1554,6 +1558,8 @@ class InfiniteMovieEngine<T> {
   // One float per poster cell: when its full poster arrived (see the shader).
   private revealTexture: WebGLTexture | null = null
   private colorTexture: WebGLTexture | null = null
+  // Base cells that show their picture (or a failed poster's placeholder).
+  private readonly baseCells = new Set<number>()
   private readonly revealEpoch = performance.now()
   private revealUntil = 0
   private revealPending = false
@@ -2075,6 +2081,7 @@ class InfiniteMovieEngine<T> {
       debugStats.textures -= 5
       debugStats.engines -= 1
     }
+    this.colorTexture = null
     this.texture = null
     this.midTexture = null
     this.detailTexture = null
@@ -2701,7 +2708,9 @@ class InfiniteMovieEngine<T> {
   }
 
   // One texel per film: its average colour from the catalogue, or a muted
-  // random one, for the placeholder blocks.
+  // random one, for the placeholder blocks. Uploaded before any picture is
+  // requested, so every cell can draw something from the first frame, which is
+  // what data-globe-complete reports.
   private initColorTexture() {
     const gl = this.gl
     const size = this.revealSize
@@ -2730,6 +2739,18 @@ class InfiniteMovieEngine<T> {
     )
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
+    this.canvas.dataset.globeComplete = 'true'
+    this.canvas.dataset.baseLoaded = '0'
+    this.canvas.dispatchEvent(new CustomEvent('globecomplete'))
+  }
+
+  // A base cell now shows its picture (or the colour of a poster that failed).
+  private noteBaseCell(index: number) {
+    if (this.baseCells.has(index)) return
+    this.baseCells.add(index)
+    this.canvas.dataset.baseLoaded = String(this.baseCells.size)
+    // The last base cell in: plan once more so the warm-up starts at rest.
+    if (this.baseCells.size >= this.items.length) this.lodStale = true
   }
 
   // Seconds on the reveal clock; always above zero, which means "no reveal".
@@ -2919,8 +2940,12 @@ class InfiniteMovieEngine<T> {
         onLoaded(index, image)
         countSettled(index)
       },
-      // A poster that could not be fetched keeps its placeholder.
-      (index) => countSettled(index),
+      // A poster that could not be fetched keeps its placeholder; it still
+      // counts as settled for data-base-loaded.
+      (index) => {
+        this.noteBaseCell(index)
+        countSettled(index)
+      },
       POSTER_SETTLE_RETRY_DELAYS_MS,
     )
 
@@ -3212,6 +3237,7 @@ class InfiniteMovieEngine<T> {
     closeImage()
     this.baseMipsDirty = true
     this.scheduleMips()
+    this.noteBaseCell(index)
     this.markPosterArrived(index)
     this.renderDirty = true
   }
@@ -3330,9 +3356,15 @@ class InfiniteMovieEngine<T> {
       detailCapacity: this.tiers.detailLayers,
       baseWidth: this.tiers.baseWidth,
       midWidth: this.tiers.midWidth,
+      // Tier 3 warm-up: once every base cell is in and the globe is at rest.
+      warm:
+        this.baseCells.size >= count &&
+        !document.hidden &&
+        this.angularSpeed() < WARMUP_SPEED_MAX,
     })
     this.applyTier('m', plan.mid, now)
     this.applyTier('d', plan.detail, now)
+    this.canvas.dataset.lodPending = String(this.lodInflight.size)
   }
 
   private tierUrls(tier: 'm' | 'd', item: number) {
