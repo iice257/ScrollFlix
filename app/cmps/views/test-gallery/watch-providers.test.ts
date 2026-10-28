@@ -6,6 +6,7 @@ import {
   clearWatchCache,
   groupByKind,
   loadWatchOptions,
+  prefetchWatch,
   providerBrand,
   tmdbIdOfMovie,
 } from './watch-providers'
@@ -18,7 +19,10 @@ const provider = (id: number, kind: WatchProvider['kind']): WatchProvider => ({
   url: null,
 })
 
-afterEach(clearWatchCache)
+afterEach(() => {
+  clearWatchCache()
+  vi.unstubAllGlobals()
+})
 
 describe('groupByKind', () => {
   it('orders sections stream, free, ads, rent, buy and drops empty ones', () => {
@@ -60,6 +64,52 @@ describe('loadWatchOptions', () => {
 
   it('refuses a film with no TMDB id', async () => {
     await expect(loadWatchOptions('x', 'B', ok())).rejects.toThrow()
+  })
+})
+
+describe('prefetchWatch', () => {
+  const reply = { region: 'US', link: null, providers: [provider(8, 'stream')] }
+  const stubFetch = () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => reply })
+    vi.stubGlobal('fetch', fetchImpl)
+    return fetchImpl
+  }
+
+  it('shares one request with the card and asks once per film', async () => {
+    const fetchImpl = stubFetch()
+    prefetchWatch('c1', 'A')
+    prefetchWatch('c1', 'A')
+    const options = await loadWatchOptions('c1', 'A', fetchImpl)
+    expect(options).toEqual(reply)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs at most two films at a time', async () => {
+    let open = 0
+    let peak = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        open += 1
+        peak = Math.max(peak, open)
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        open -= 1
+        return { ok: true, json: async () => reply }
+      }),
+    )
+    for (const id of ['c1', 'c2', 'c3', 'c4']) prefetchWatch(id, id)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(4))
+    expect(peak).toBeLessThanOrEqual(2)
+  })
+
+  it('does nothing on data saver or for a film outside the catalogue', () => {
+    const fetchImpl = stubFetch()
+    prefetchWatch('not-a-film', 'A')
+    vi.stubGlobal('navigator', { connection: { saveData: true } })
+    prefetchWatch('c9', 'A')
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 })
 

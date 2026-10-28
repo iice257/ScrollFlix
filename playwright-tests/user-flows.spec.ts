@@ -210,6 +210,29 @@ test.describe('Gallery user flows', () => {
     expect(backdrop).toMatch(/\/(w780|w1280)\//)
   })
 
+  test('the Watch listing is fetched before any card is opened', async ({
+    page,
+  }) => {
+    const asked: string[] = []
+    await page.route('**/api/watch*', async (route) => {
+      asked.push(route.request().url())
+      await route.fulfill({
+        json: { region: 'US', link: null, providers: [] },
+      })
+    })
+    await page.reload()
+    await page
+      .getByRole('button', { name: 'Skip first time load' })
+      .click({ timeout: 3_000 })
+      .catch(() => {})
+    await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
+
+    // The film the globe settles on (and the next shuffle's candidates) get
+    // their listing ahead of time; no card has been opened.
+    await expect.poll(() => asked.length).toBeGreaterThan(0)
+    await expect(page.locator('.warp-details-card')).toHaveCount(0)
+  })
+
   test('searches the movie index by title and offers filters', async ({
     page,
   }) => {
@@ -294,6 +317,45 @@ test.describe('Gallery user flows', () => {
 
     await pill.click()
     await expect(page.locator('.warp-details-card')).toBeVisible()
+  })
+
+  test('the index can be grouped by country, biggest origins first', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    const list = page.getByRole('region', { name: 'Movie list view' })
+    await expect(list).toBeVisible()
+
+    // Country first: tick it, then untick the default Year and Popularity.
+    await page.getByRole('button', { name: /^Sort:/ }).click()
+    const sortName = (label: string) =>
+      page
+        .locator('.warp-sort-row', { hasText: label })
+        .locator('.warp-sort-name')
+    await sortName('Country').click()
+    await sortName('Year').click()
+    await sortName('Popularity').click()
+    await page.keyboard.press('Escape')
+
+    const headings = list.locator('.warp-list-group-heading h2')
+    await expect(headings.first()).toHaveText('United States of America')
+    // Every group is a country (or the Unknown group, which is last).
+    const titles = await headings.allTextContents()
+    expect(titles.length).toBeGreaterThan(5)
+    expect(titles.filter((title) => /^\d{4}\+?$/.test(title))).toEqual([])
+  })
+
+  test('an origin chip on the Filters page narrows the films and shows in the badge', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Filters' }).click()
+    const origins = page.locator('[data-section="origins"]').first()
+    const chip = origins.getByRole('button', { name: /^Nollywood/ })
+    await expect(chip).toHaveAttribute('aria-pressed', 'false')
+    await chip.click()
+    await expect(chip).toHaveAttribute('aria-pressed', 'true')
+    await chip.click()
+    await expect(chip).toHaveAttribute('aria-pressed', 'false')
   })
 
   test('hovering an index row does not take the highlight from the active film', async ({
@@ -527,47 +589,55 @@ test.describe('Gallery user flows', () => {
     await expect(tip).toHaveCount(0)
   })
 
-  test('constellations follow the globe and theme', async ({ page }) => {
-    // Each pass turns the globe and shoots it four times; allow a few passes.
-    test.setTimeout(180_000)
-    test.skip(
-      (page.viewportSize()?.width ?? 0) <= 900,
-      'the drawer fills a phone',
-    )
-    await openWithConstellations(page)
-    const lines = marksDiffer(page)
+  test(
+    'constellations follow the globe and theme',
+    { tag: '@heavy' },
+    async ({ page }) => {
+      // Each pass turns the globe and shoots it four times; allow a few passes.
+      test.setTimeout(180_000)
+      test.skip(
+        (page.viewportSize()?.width ?? 0) <= 900,
+        'the drawer fills a phone',
+      )
+      await openWithConstellations(page)
+      const lines = marksDiffer(page)
 
-    // Light marks on the dark globe...
-    const dark = await lines(1)
-    expect(dark.changed).toBeGreaterThan(30)
-    expect(dark.meanDelta).toBeGreaterThan(0)
+      // Light marks on the dark globe...
+      const dark = await lines(1)
+      expect(dark.changed).toBeGreaterThan(30)
+      expect(dark.meanDelta).toBeGreaterThan(0)
 
-    // ...and ink on the light one.
-    await page.locator('button.warp-info-button').click()
-    await page.getByRole('button', { name: 'Light', exact: true }).click()
-    await closeDrawer(page)
-    await expect(page.locator('main')).toHaveAttribute('data-theme', 'light')
-    const light = await lines(-1)
-    expect(light.changed).toBeGreaterThan(30)
-    expect(light.meanDelta).toBeLessThan(0)
-  })
+      // ...and ink on the light one.
+      await page.locator('button.warp-info-button').click()
+      await page.getByRole('button', { name: 'Light', exact: true }).click()
+      await closeDrawer(page)
+      await expect(page.locator('main')).toHaveAttribute('data-theme', 'light')
+      const light = await lines(-1)
+      expect(light.changed).toBeGreaterThan(30)
+      expect(light.meanDelta).toBeLessThan(0)
+    },
+  )
 
-  test('links stay on posters after resize', async ({ page }) => {
-    // Each pass turns the globe and shoots it four times; allow a few passes.
-    test.setTimeout(180_000)
-    test.skip(
-      (page.viewportSize()?.width ?? 0) <= 900,
-      'the drawer fills a phone',
-    )
-    await openWithConstellations(page)
+  test(
+    'links stay on posters after resize',
+    { tag: '@heavy' },
+    async ({ page }) => {
+      // Each pass turns the globe and shoots it four times; allow a few passes.
+      test.setTimeout(180_000)
+      test.skip(
+        (page.viewportSize()?.width ?? 0) <= 900,
+        'the drawer fills a phone',
+      )
+      await openWithConstellations(page)
 
-    // The globe has gone to sleep by now; a resize must wake it and the marks
-    // must be redrawn with the posters at the new size.
-    await page.setViewportSize({ width: 1180, height: 760 })
-    await page.waitForTimeout(1_200)
+      // The globe has gone to sleep by now; a resize must wake it and the marks
+      // must be redrawn with the posters at the new size.
+      await page.setViewportSize({ width: 1180, height: 760 })
+      await page.waitForTimeout(1_200)
 
-    const diff = await marksDiffer(page)(1)
-    expect(diff.changed).toBeGreaterThan(30)
-    expect(diff.meanDelta).toBeGreaterThan(0)
-  })
+      const diff = await marksDiffer(page)(1)
+      expect(diff.changed).toBeGreaterThan(30)
+      expect(diff.meanDelta).toBeGreaterThan(0)
+    },
+  )
 })

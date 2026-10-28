@@ -19,6 +19,11 @@ test('loads the gallery without application console errors', async ({
   await page.route(/image\.tmdb\.org/, (route) =>
     route.fulfill({ status: 200, contentType: 'image/jpeg', body: '' }),
   )
+  // Vercel Analytics is injected by the platform, so a plain static server
+  // (vite preview on CI) answers its script with a 404.
+  await page.route(/\/_vercel\//, (route) =>
+    route.fulfill({ status: 200, contentType: 'text/javascript', body: '' }),
+  )
   const consoleErrors: string[] = []
   page.on('console', (msg) => {
     if (msg.type() === 'error') {
@@ -26,11 +31,20 @@ test('loads the gallery without application console errors', async ({
     }
   })
 
+  // The browser's "Failed to load resource" console line has no URL; keep the
+  // failing ones so a failure says which request it was.
+  const failedRequests: string[] = []
+  page.on('response', (res) => {
+    if (res.status() >= 400) failedRequests.push(`${res.status()} ${res.url()}`)
+  })
+
   await page.goto('/')
 
   await expect(
     page.getByRole('region', { name: 'Warp Wall movie gallery' }),
   ).toBeVisible()
+
+  expect(failedRequests).toEqual([])
 
   const criticalErrors = consoleErrors.filter(
     (error) =>

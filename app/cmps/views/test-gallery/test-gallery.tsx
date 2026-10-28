@@ -39,7 +39,6 @@ import {
   type CSSProperties,
   Fragment,
   type ReactNode,
-  type PointerEvent as ReactPointerEvent,
   type RefObject,
   Suspense,
   type SyntheticEvent,
@@ -150,6 +149,12 @@ import {
   tasteWeight,
   topGenres,
 } from './moods/taste'
+import {
+  ORIGIN_GROUPS,
+  type OriginId,
+  countOrigins,
+  filterMoviesByOrigins,
+} from './origin-groups'
 import { PartyLayer } from './party/party-layer'
 import type { PartyMovieInfo } from './party/party-parts'
 import { toPartyFilm, usePartyGame } from './party/use-party'
@@ -218,7 +223,9 @@ import {
 } from './shuffle-pro/use-shuffle-pro'
 import { DESKTOP_GLOBE_COUNT } from './texture-tiers'
 import { useDismissLayer } from './use-dismiss-layer'
+import { useSheetDrag } from './use-sheet-drag'
 import { WatchBadges, WatchOptionsList, useWatchBadges } from './watch-options'
+import { prefetchWatch } from './watch-providers'
 import './session-path.css'
 import { AmbientWeather } from './ambient-weather'
 import { AppearanceSetting, useDynamicHint } from './dynamic-theme-setting'
@@ -257,6 +264,7 @@ type ListGrouping =
   | 'runtime'
   | 'popularity'
   | 'votes'
+  | 'country'
 type LoadState = 'loading' | 'ready' | 'error'
 type ContentFilter = 'all' | 'movies' | 'series'
 export type RuntimeFilter =
@@ -298,9 +306,8 @@ const SORT_POPUP_SELECTOR = '.warp-sort-panel, .warp-sort-button'
 const closestElement = (node: Node, selector: string) =>
   (node instanceof Element ? node : node.parentElement)?.closest(selector)
 
-const DETAILS_EXPAND_DRAG_PX = 42
-const DETAILS_CLOSE_DRAG_PX = 68
-const DETAILS_COMPACT_DRAG_PX = 38
+// The phone sheet's layer leaves 54 px above the card and 10 px below it.
+const DETAILS_SHEET_GUTTER_PX = 64
 const EXIT_ANIMATION_MS = 220
 // Loaded when someone first shares, so the artwork code stays out of the
 // initial bundle.
@@ -341,6 +348,9 @@ const MOOD_RUN_WAIT_MS = 4000
 const CATALOG_STILL_RETRY_MS = 400
 // The shuffle pool's top-ups: a beat after each shuffle (its card loads
 // first), and a little after the globe is up.
+// How long a film must stay the active one before its Watch listing is
+// fetched ahead of its card.
+const WATCH_DWELL_MS = 600
 const SHUFFLE_REFILL_DELAY_MS = 1500
 const SHUFFLE_FIRST_FILL_DELAY_MS = 2500
 
@@ -1098,6 +1108,7 @@ export type SortRule = { key: ListGrouping; direction: SortDirection | null }
 
 export const DEFAULT_SORT_DIRECTION: Record<ListGrouping, SortDirection> = {
   alpha: 'asc',
+  country: 'desc',
   popularity: 'desc',
   rating: 'desc',
   runtime: 'asc',
@@ -1146,6 +1157,17 @@ const compareMoviesByRule = (
 ) => {
   const sign = direction === 'desc' ? -1 : 1
   if (key === 'alpha') return sign * compareTitleKeys(movieA, movieB)
+  if (key === 'country') {
+    // Films with no country always come last.
+    if (!movieA.countries || !movieB.countries) {
+      return movieA.countries === movieB.countries
+        ? 0
+        : movieA.countries
+          ? -1
+          : 1
+    }
+    return sign * movieA.countries.localeCompare(movieB.countries)
+  }
   const valueA = getSortValue(movieA, key)
   const valueB = getSortValue(movieB, key)
   if (valueA === null || valueB === null) {
@@ -1329,6 +1351,10 @@ export const groupMoviesByRuntime = (movies: TestMovie[]) =>
 export const groupMoviesByVotes = (movies: TestMovie[]) =>
   groupBy(movies, getVotesGroupKey)
 
+// Films with no country share the "Unknown" group.
+export const groupMoviesByCountry = (movies: TestMovie[]) =>
+  groupBy(movies, (movie) => movie.countries || UNKNOWN_GROUP)
+
 export const groupMoviesByPopularity = (movies: TestMovie[]) => {
   const groups = getPopularityGroups(movies)
   return groupBy(movies, (movie) => groups.get(movie.id) ?? UNKNOWN_GROUP)
@@ -1349,6 +1375,8 @@ export const groupMoviesForList = (
       return groupMoviesByPopularity(movies)
     case 'votes':
       return groupMoviesByVotes(movies)
+    case 'country':
+      return groupMoviesByCountry(movies)
     default:
       return groupMoviesByYear(movies)
   }
@@ -1366,17 +1394,24 @@ const getGroupOrder = (group: string, grouping: ListGrouping) => {
 }
 
 // Group headers follow the sort direction; unknown groups always come last.
+// Countries are ordered by how many films each holds (`sizes`), then by name.
 export const compareListGroups = (
   groupA: string,
   groupB: string,
   grouping: ListGrouping,
   direction: SortDirection,
+  sizes?: { a: number; b: number },
 ) => {
   const unknownA = isUnknownGroup(groupA)
   const unknownB = isUnknownGroup(groupB)
   if (unknownA || unknownB) return Number(unknownA) - Number(unknownB)
   const sign = direction === 'desc' ? -1 : 1
   if (grouping === 'alpha') return sign * groupA.localeCompare(groupB)
+  if (grouping === 'country') {
+    return (
+      sign * ((sizes?.a ?? 0) - (sizes?.b ?? 0)) || groupA.localeCompare(groupB)
+    )
+  }
   return (
     sign * (getGroupOrder(groupA, grouping) - getGroupOrder(groupB, grouping))
   )
@@ -1414,6 +1449,12 @@ const SORT_OPTIONS: Array<{
     asc: 'Fewest votes',
     desc: 'Most votes',
   },
+  {
+    key: 'country',
+    label: 'Country',
+    asc: 'Fewest films first',
+    desc: 'Most films first',
+  },
 ]
 const SORT_LABELS = Object.fromEntries(
   SORT_OPTIONS.map((option) => [option.key, option.label]),
@@ -1437,6 +1478,8 @@ const getMovieListGroupKey = (
       return getVotesGroupKey(movie)
     case 'popularity':
       return popularityGroups?.get(movie.id) ?? UNKNOWN_GROUP
+    case 'country':
+      return movie.countries || UNKNOWN_GROUP
     default:
       return movie.year || '----'
   }
@@ -1530,6 +1573,7 @@ export const TestGalleryApp = () => {
     CollectionId[]
   >([])
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null)
+  const [selectedOrigins, setSelectedOrigins] = useState<OriginId[]>([])
   const [contentFilter, setContentFilter] = useState<ContentFilter>('all')
   const [listSearchQuery, setListSearchQuery] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
@@ -1853,6 +1897,8 @@ export const TestGalleryApp = () => {
 
   const countrySummaries = useMemo(() => getCountrySummaries(movies), [movies])
 
+  const originCounts = useMemo(() => countOrigins(movies), [movies])
+
   // Same lists the Filters page renders, so the About figure follows them.
   const genreAndFilterCount = useMemo(
     () =>
@@ -1865,6 +1911,7 @@ export const TestGalleryApp = () => {
           RATING_PRESETS,
           MOOD_FILTERS,
           COLLECTION_FILTERS,
+          ORIGIN_GROUPS,
           countrySummaries
             .slice(0, COUNTRY_CHIPS_SHOWN)
             .map((summary) => summary.country),
@@ -1875,14 +1922,24 @@ export const TestGalleryApp = () => {
 
   const baseMovies = useMemo(
     () =>
-      filterMoviesByCountry(
-        filterMoviesByCollections(
-          filterMoviesByYearAndRating(movies, selectedYear, ratingMin),
-          selectedCollections,
+      filterMoviesByOrigins(
+        filterMoviesByCountry(
+          filterMoviesByCollections(
+            filterMoviesByYearAndRating(movies, selectedYear, ratingMin),
+            selectedCollections,
+          ),
+          selectedCountry,
         ),
-        selectedCountry,
+        selectedOrigins,
       ),
-    [movies, selectedYear, ratingMin, selectedCollections, selectedCountry],
+    [
+      movies,
+      selectedYear,
+      ratingMin,
+      selectedCollections,
+      selectedCountry,
+      selectedOrigins,
+    ],
   )
 
   const genreFilteredMovies = useMemo(
@@ -1908,6 +1965,7 @@ export const TestGalleryApp = () => {
     (selectedYear ? 1 : 0) +
     (ratingMin !== null ? 1 : 0) +
     selectedCollections.length +
+    selectedOrigins.length +
     (selectedCountry ? 1 : 0) +
     (contentFilter !== 'all' ? 1 : 0)
 
@@ -2086,6 +2144,20 @@ export const TestGalleryApp = () => {
     )
   }, [activeMovieId, landingId, movies, visibleMovies])
 
+  // The film the globe has settled on (its title pill, one tap from the
+  // card) gets its Watch listing and logos ready after a short dwell, so a
+  // spin past a film costs nothing.
+  const dwellId = activeMovie?.id
+  const dwellTitle = activeMovie?.title
+  useEffect(() => {
+    if (!dwellId || !dwellTitle || !initialGalleryReady) return
+    const timer = window.setTimeout(
+      () => prefetchWatch(dwellId, dwellTitle),
+      WATCH_DWELL_MS,
+    )
+    return () => window.clearTimeout(timer)
+  }, [dwellId, dwellTitle, initialGalleryReady])
+
   const detailsMovie = useMemo(
     () => movies.find((movie) => movie.id === detailsMovieId) ?? null,
     [detailsMovieId, movies],
@@ -2220,6 +2292,7 @@ export const TestGalleryApp = () => {
     setRatingMin(null)
     setSelectedCollections([])
     setSelectedCountry(null)
+    setSelectedOrigins([])
     setSelectedGenres([])
     setSelectedMoodFilters([])
     setSelectedRuntimeFilter(null)
@@ -2239,6 +2312,14 @@ export const TestGalleryApp = () => {
 
   const toggleCollection = useCallback((id: CollectionId) => {
     setSelectedCollections((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id],
+    )
+  }, [])
+
+  const toggleOrigin = useCallback((id: OriginId) => {
+    setSelectedOrigins((current) =>
       current.includes(id)
         ? current.filter((item) => item !== id)
         : [...current, id],
@@ -2347,6 +2428,8 @@ export const TestGalleryApp = () => {
     allActive: selectedFilterCount === 0,
     contentFilter,
     countries: countrySummaries,
+    originCounts,
+    selectedOrigins,
     decades: decadeOptions,
     genres: genreSummaries,
     ratingMin,
@@ -2362,6 +2445,7 @@ export const TestGalleryApp = () => {
     onSelectContentFilter: selectContentFilter,
     onToggleCollection: toggleCollection,
     onToggleCountry: toggleCountry,
+    onToggleOrigin: toggleOrigin,
     onToggleGenre: toggleGenre,
     onToggleMoodFilter: toggleMoodFilter,
     onToggleRating: toggleRatingMin,
@@ -2541,6 +2625,9 @@ export const TestGalleryApp = () => {
   const shufflePoolRef = useRef<ShufflePool | null>(null)
   shufflePoolRef.current ??= createShufflePool((id) => {
     const movie = visibleMoviesRef.current.find((film) => film.id === id)
+    // The candidate's Watch listing and service logos come along, so its
+    // card opens with the badges already in place.
+    if (movie) prefetchWatch(movie.id, movie.title)
     return movie?.posterPath
       ? preloadPosterImage(posterUrl(movie.posterPath, 'w342'))
       : Promise.resolve()
@@ -2720,6 +2807,7 @@ export const TestGalleryApp = () => {
     ratingMin,
     selectedCollections,
     selectedCountry,
+    selectedOrigins,
     contentFilter,
     sortRules,
     listSearchQuery,
@@ -4221,8 +4309,11 @@ const WarpList = ({
   const groupedMovies = useMemo(
     () =>
       Object.entries(groupMoviesForList(movies, grouping)).sort(
-        ([groupA], [groupB]) =>
-          compareListGroups(groupA, groupB, grouping, groupDirection),
+        ([groupA, filmsA], [groupB, filmsB]) =>
+          compareListGroups(groupA, groupB, grouping, groupDirection, {
+            a: filmsA.length,
+            b: filmsB.length,
+          }),
       ),
     [groupDirection, grouping, movies],
   )
@@ -4979,6 +5070,8 @@ type FilterSectionsProps = {
   allActive: boolean
   contentFilter: ContentFilter
   countries: CountrySummary[]
+  originCounts: ReadonlyMap<OriginId, number>
+  selectedOrigins: OriginId[]
   decades: number[]
   genres: GenreSummary[]
   ratingMin: number | null
@@ -4994,6 +5087,7 @@ type FilterSectionsProps = {
   onSelectContentFilter: (contentFilter: ContentFilter) => void
   onToggleCollection: (id: CollectionId) => void
   onToggleCountry: (country: string) => void
+  onToggleOrigin: (id: OriginId) => void
   onToggleGenre: (genre: string) => void
   onToggleMoodFilter: (moodFilter: MoodFilter) => void
   onToggleRating: (min: number) => void
@@ -5006,6 +5100,8 @@ const FilterSections = ({
   allActive,
   contentFilter,
   countries,
+  originCounts,
+  selectedOrigins,
   decades,
   genres,
   ratingMin,
@@ -5021,6 +5117,7 @@ const FilterSections = ({
   onSelectContentFilter,
   onToggleCollection,
   onToggleCountry,
+  onToggleOrigin,
   onToggleGenre,
   onToggleMoodFilter,
   onToggleRating,
@@ -5156,6 +5253,30 @@ const FilterSections = ({
               <span>{filter.label}</span>
             </button>
           ))}
+        </div>
+      </section>
+      <section className='warp-fs-section' data-section='origins'>
+        <p>Origin and style</p>
+        <div className='warp-fs-chips'>
+          {ORIGIN_GROUPS.map((group) => {
+            const count = originCounts.get(group.id) ?? 0
+            return (
+              <button
+                type='button'
+                className={cn(
+                  'warp-fs-chip',
+                  selectedOrigins.includes(group.id) && 'is-active',
+                )}
+                key={group.id}
+                title={group.hint}
+                aria-pressed={selectedOrigins.includes(group.id)}
+                onClick={() => onToggleOrigin(group.id)}
+              >
+                <span>{group.label}</span>
+                <span>{formatGenreCount(count)}</span>
+              </button>
+            )
+          })}
         </div>
       </section>
       <section className='warp-fs-section' data-section='collections'>
@@ -6204,8 +6325,7 @@ type MovieDetailsCardProps = {
   onWatch: (movie: TestMovie) => void
 }
 
-// Calls onEnd when the user scrolls the element to its end, or pushes upward on
-// it while it already sits at its end (a short card has nothing to scroll).
+// Calls onEnd when scrolling carries the element to its end.
 const useExpandAtScrollEnd = (
   ref: RefObject<HTMLElement | null>,
   active: boolean,
@@ -6220,7 +6340,9 @@ const useExpandAtScrollEnd = (
     const atEnd = () =>
       element.scrollTop + element.clientHeight >= element.scrollHeight - 2
     let lastTop = element.scrollTop
-    let touchY: number | null = null
+    // Momentum or a wheel that reaches the end opens the long description; a
+    // finger pulling on past the end is followed by the sheet itself (see
+    // useSheetContentDrag).
     const handleScroll = () => {
       const top = element.scrollTop
       const movedDown = top > lastTop
@@ -6228,25 +6350,8 @@ const useExpandAtScrollEnd = (
       if (performance.now() < armedAt) return
       if (movedDown && top > 0 && atEnd()) onEndRef.current()
     }
-    const handleTouchStart = (event: TouchEvent) => {
-      touchY = event.touches[0]?.clientY ?? null
-    }
-    const handleTouchMove = (event: TouchEvent) => {
-      const y = event.touches[0]?.clientY
-      if (touchY === null || y === undefined) return
-      if (touchY - y > 24 && atEnd()) {
-        touchY = null
-        onEndRef.current()
-      }
-    }
     element.addEventListener('scroll', handleScroll, { passive: true })
-    element.addEventListener('touchstart', handleTouchStart, { passive: true })
-    element.addEventListener('touchmove', handleTouchMove, { passive: true })
-    return () => {
-      element.removeEventListener('scroll', handleScroll)
-      element.removeEventListener('touchstart', handleTouchStart)
-      element.removeEventListener('touchmove', handleTouchMove)
-    }
+    return () => element.removeEventListener('scroll', handleScroll)
   }, [active, ref])
 }
 
@@ -6295,64 +6400,34 @@ const MovieDetailsCard = ({
   // keep the draggable bottom sheet with a More/Less toggle.
   const isWide = useMediaQuery('(min-width: 901px)')
   const [isExpanded, setIsExpanded] = useState(false)
-  const [dragOffset, setDragOffset] = useState(0)
-  const dragStartYRef = useRef<number | null>(null)
-  const dragPointerIdRef = useRef<number | null>(null)
+  const cardRef = useRef<HTMLDialogElement | null>(null)
+  const copyScrollRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (movie.id) {
       setIsExpanded(false)
-      setDragOffset(0)
     }
   }, [movie.id])
 
-  const handleDragStart = (event: ReactPointerEvent<HTMLElement>) => {
-    dragStartYRef.current = event.clientY
-    dragPointerIdRef.current = event.pointerId
-    event.currentTarget.setPointerCapture?.(event.pointerId)
-  }
-
-  const handleDragMove = (event: ReactPointerEvent<HTMLElement>) => {
-    if (dragPointerIdRef.current !== event.pointerId) return
-    const startY = dragStartYRef.current
-    if (startY === null) return
-
-    const nextOffset = Math.max(-120, Math.min(140, event.clientY - startY))
-    setDragOffset(nextOffset)
-  }
-
-  const finishDrag = (clientY: number) => {
-    const startY = dragStartYRef.current
-    if (startY === null) return
-
-    const deltaY = clientY - startY
-    dragStartYRef.current = null
-    dragPointerIdRef.current = null
-    setDragOffset(0)
-
-    if (deltaY < -DETAILS_EXPAND_DRAG_PX) {
-      setIsExpanded(true)
-      return
-    }
-
-    if (isExpanded && deltaY > DETAILS_COMPACT_DRAG_PX) {
-      setIsExpanded(false)
-      return
-    }
-
-    if (deltaY > DETAILS_CLOSE_DRAG_PX) {
-      onClose()
-    }
-  }
-
-  const handleDragEnd = (event: ReactPointerEvent<HTMLElement>) => {
-    if (dragPointerIdRef.current !== event.pointerId) return
-    finishDrag(event.clientY)
-  }
+  // The sheet follows the finger and settles on a resting height (see
+  // sheet-drag.ts); a flick or a pull past compact closes it.
+  const { drag, grip } = useSheetDrag({
+    enabled: !isWide,
+    cardRef,
+    contentRef: copyScrollRef,
+    expanded: isExpanded,
+    limits: () => ({
+      compact: Math.min(window.innerHeight * 0.76, 680),
+      expanded: window.innerHeight - DETAILS_SHEET_GUTTER_PX,
+    }),
+    onSnap: (snap) => {
+      if (snap === 'close') onClose()
+      else setIsExpanded(snap === 'expanded')
+    },
+  })
 
   // On a phone the short card scrolls like any page: reaching its end (or
   // pushing on past it) opens the long description, no tap on More needed.
-  const copyScrollRef = useRef<HTMLDivElement | null>(null)
   const copyScrollNodeRef = useCallback((node: HTMLDivElement | null) => {
     copyScrollRef.current = node
     return overlayScrollbarRef(node)
@@ -6432,7 +6507,8 @@ const MovieDetailsCard = ({
     </button>
   )
   const detailsStyle = {
-    '--details-drag-y': `${dragOffset}px`,
+    '--details-drag-y': `${drag?.offset ?? 0}px`,
+    ...(drag ? { '--details-drag-h': `${drag.height}px` } : null),
     // A mood run dresses the card in the colours of the worlds it was made from.
     ...(premiumMood ? moodCardVars(premiumMood.palette) : null),
     // CSS images are fetched without CORS. A copy cached from such a request
@@ -6562,10 +6638,11 @@ const MovieDetailsCard = ({
         />
         <dialog
           open
+          ref={cardRef}
           className={cn(
             'warp-details-card',
             isExpanded && 'is-expanded',
-            dragOffset !== 0 && 'is-dragging',
+            drag && 'is-dragging',
           )}
           style={detailsStyle}
           aria-modal='true'
@@ -6591,13 +6668,7 @@ const MovieDetailsCard = ({
           </button>
           {isWide ? null : mobileReshuffleButton}
           {isWide ? null : (
-            <div
-              className='warp-details-grip-zone'
-              onPointerCancel={handleDragEnd}
-              onPointerDown={handleDragStart}
-              onPointerMove={handleDragMove}
-              onPointerUp={handleDragEnd}
-            >
+            <div className='warp-details-grip-zone' {...grip}>
               <span className='warp-details-handle' />
             </div>
           )}
@@ -6826,6 +6897,7 @@ const MovieDetailsCard = ({
                 <Suspense fallback={null}>
                   <ShareSheet
                     input={shareInput}
+                    movieId={movie.id}
                     link={shareLink(movie.id)}
                     onClose={() => setShareOpen(false)}
                   />
@@ -6853,12 +6925,18 @@ const MovieDetailsCard = ({
               aria-expanded={isExpanded}
               onClick={() => setIsExpanded((expanded) => !expanded)}
             >
-              <span>{isExpanded ? 'Less' : 'More'}</span>
-              {isExpanded ? (
-                <ChevronsUp aria-hidden='true' size={17} strokeWidth={2.8} />
-              ) : (
-                <ChevronsDown aria-hidden='true' size={17} strokeWidth={2.8} />
-              )}
+              <span className='warp-details-more-pill'>
+                <span>{isExpanded ? 'Less' : 'More'}</span>
+                {isExpanded ? (
+                  <ChevronsUp aria-hidden='true' size={17} strokeWidth={2.8} />
+                ) : (
+                  <ChevronsDown
+                    aria-hidden='true'
+                    size={17}
+                    strokeWidth={2.8}
+                  />
+                )}
+              </span>
             </button>
           )}
         </dialog>
