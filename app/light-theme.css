@@ -689,6 +689,11 @@
   color: rgb(33 26 16);
 }
 
+.warp-shell[data-theme="light"] .warp-watch-youtube-mark {
+  background: rgb(33 26 16);
+  box-shadow: 0 0 0 1px rgb(33 26 16 / 0.16);
+}
+
 .warp-shell[data-theme="light"] .warp-watch-row img,
 .warp-shell[data-theme="light"] .warp-watch-logo-blank {
   background: rgb(227 220 206);

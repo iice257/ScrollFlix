@@ -2950,10 +2950,28 @@
   .warp-watch-youtube {
     flex-shrink: 0;
     margin-top: 12px;
-    padding-left: 14px;
   }
 
-  .warp-watch-row > span:not(.warp-watch-logo-blank) {
+  /* The YouTube mark: the same 40px tile as the service logos. */
+  .warp-watch-youtube-mark {
+    display: grid;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    border-radius: 11px;
+    background: #fff;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16);
+  }
+
+  .warp-watch-youtube-mark svg {
+    width: 26px;
+    height: auto;
+    color: initial;
+  }
+
+  .warp-watch-row
+    > span:not(.warp-watch-logo-blank):not(.warp-watch-youtube-mark) {
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -6119,7 +6137,7 @@
     }
 
     .warp-details-card.is-expanded .warp-details-poster {
-      height: min(20dvh, 170px);
+      height: min(26dvh, 224px);
     }
 
     .warp-details-copy {
