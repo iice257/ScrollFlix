@@ -182,11 +182,41 @@ jobs:
             playwright-report/visual/
           retention-days: 14
 
-  # The required check for the visual shards above; the name is unchanged.
+  # The history lines on an iPhone's engine. Chrome's software GL cannot show
+  # what WebKit does with the transparent globe canvas, and a line defect that
+  # only appeared there once reached production. Runs in Playwright's image
+  # (WebKit and its libraries included), like the Mobile Safari e2e jobs.
+  visual-webkit:
+    name: Visual WebKit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: mcr.microsoft.com/playwright:v1.63.0-noble
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      - run: npx playwright test -c playwright.visual-webkit.config.ts
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: visual-webkit-diffs
+          path: |
+            test-results/visual-webkit/
+            playwright-report/visual-webkit/
+          retention-days: 14
+
+  # The required check for the visual jobs above; the name is unchanged.
   visual-gate:
     name: Visual baselines
     runs-on: ubuntu-latest
-    needs: [visual]
+    needs: [visual, visual-webkit]
     if: always()
     steps:
       - run: test "${{ needs.visual.result }}" = success
+      - run: test "${{ needs.visual-webkit.result }}" = success

@@ -33,6 +33,18 @@ export const DEVICES: Record<
 /** The session path every state that needs one is seeded with. */
 export const PATH_IDS = ['c900002', 'c900007', 'c900011', 'c900016', 'c900020']
 
+/**
+ * Films that sit next to each other on the fixture globe (its layout is fixed,
+ * and so is the film it starts facing), so a path through them draws links on
+ * the first screen after one scripted drag. Only the first 120 ids exist.
+ */
+export const LINE_FILMS = [73, 86, 107, 94, 99, 115, 65, 52, 60, 81].map(
+  (n) => `c${900000 + n}`,
+)
+
+/** A plain history path, or the four coloured Shuffle Pro paths. */
+export type LineScene = 'plain' | 'tiers'
+
 // ---------------------------------------------------------------------------
 // Determinism
 // ---------------------------------------------------------------------------
@@ -293,3 +305,66 @@ export const imagesSettled = async (page: Page, selector = 'img') => {
 
 export const shotName = (state: string, device: Device, scheme: Scheme) =>
   `${state}-${device}-${scheme}.png`
+
+// ---------------------------------------------------------------------------
+// Lines on the globe
+// ---------------------------------------------------------------------------
+
+/**
+ * Seeds a history path through LINE_FILMS with its globe lines switched on.
+ * Call after prepare(), so it runs after the page's own seeding.
+ */
+export const seedLines = (page: Page, scene: LineScene) =>
+  page.addInitScript(
+    ({ films, scene: kind }) => {
+      const tiers = ['frost', 'amethyst', 'jade', 'gold']
+      try {
+        window.localStorage.setItem('wtw:session-path-lines', '1')
+        window.localStorage.setItem(
+          'wtw:session-path:v1',
+          JSON.stringify(
+            films.map((id, at) => ({
+              id,
+              tier: kind === 'tiers' ? tiers[at % tiers.length] : null,
+            })),
+          ),
+        )
+      } catch {
+        // Storage unavailable: the test will show it.
+      }
+    },
+    { films: LINE_FILMS, scene },
+  )
+
+// Where the path's films sit on the first screen, and where to drag them to.
+const LINE_DRAGS: Record<
+  Device,
+  { from: [number, number]; to: [number, number] }
+> = {
+  desktop: { from: [380, 790], to: [720, 450] },
+  phone: { from: [55, 570], to: [195, 420] },
+}
+
+/**
+ * Brings the path's films to the middle of the globe with one scripted,
+ * frame-locked drag, then lets the inertia settle, so the links are in view
+ * and every run lands on the same frame.
+ */
+export const dragLinesIntoView = async (page: Page, device: Device) => {
+  const { from, to } = LINE_DRAGS[device]
+  await page.evaluate(() => window.__SF_TEST__.freeze())
+  await page.evaluate(() => window.__SF_TEST__.step(4))
+  await page.mouse.move(from[0], from[1])
+  await page.mouse.down()
+  for (let i = 1; i <= 10; i++) {
+    await page.mouse.move(
+      from[0] + ((to[0] - from[0]) * i) / 10,
+      from[1] + ((to[1] - from[1]) * i) / 10,
+    )
+    await page.evaluate(() => window.__SF_TEST__.step(1))
+  }
+  // Hold still for a few frames, so letting go leaves no inertia to vary.
+  await page.evaluate(() => window.__SF_TEST__.step(6))
+  await page.mouse.up()
+  await page.evaluate(() => window.__SF_TEST__.step(90))
+}
