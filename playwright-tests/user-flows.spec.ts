@@ -253,6 +253,58 @@ test.describe('Gallery user flows', () => {
     await expect(page.locator('.warp-details-card')).toHaveCount(0)
   })
 
+  test('the index can search all of TMDB for films the catalogue lacks', async ({
+    page,
+  }) => {
+    let asked = 0
+    await page.route('**/api/search*', async (route) => {
+      asked += 1
+      await route.fulfill({
+        json: {
+          films: [
+            {
+              id: 987654321,
+              title: 'Qzxv Obscure Feature',
+              originalTitle: 'Qzxv Obscure Feature',
+              originalLanguage: 'en',
+              year: '2019',
+              rating: 6.1,
+              votes: 3,
+              popularity: 1.2,
+              genres: ['Drama'],
+              posterPath: 'abcdefghij',
+              backdropPath: null,
+              overview: 'A film only TMDB knows.',
+            },
+          ],
+        },
+      })
+    })
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    const list = page.getByRole('region', { name: 'Movie list view' })
+    const search = page.getByRole('searchbox', {
+      name: 'Search titles, genres, moods',
+    })
+    await search.fill('qzxv obscure feature')
+    await expect(list.getByText('No title matches')).toBeVisible()
+    // Nothing is asked until the button is pressed.
+    expect(asked).toBe(0)
+
+    await list.getByRole('button', { name: /Search all of TMDB/ }).click()
+    await expect(list.getByRole('heading', { name: 'From TMDB' })).toBeVisible()
+    expect(asked).toBe(1)
+
+    await list.getByText('Qzxv Obscure Feature').first().click()
+    const card = page.locator('.warp-details-card')
+    await expect(card).toBeVisible()
+    await expect(card).toContainText('Qzxv Obscure Feature')
+    await expect(card).toContainText('A film only TMDB knows.')
+    // It is not in the catalogue, so there is nowhere to save it.
+    await expect(card.getByRole('button', { name: 'Save movie' })).toHaveCount(
+      0,
+    )
+  })
+
   test('searches the movie index by title and offers filters', async ({
     page,
   }) => {

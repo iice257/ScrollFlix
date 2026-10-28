@@ -1098,6 +1098,31 @@
   color: rgb(33 26 16 / 0.64);
 }
 
+.warp-shell[data-theme="light"] .warp-list-tmdb p {
+  color: rgb(33 26 16 / 0.6);
+}
+
+.warp-shell[data-theme="light"] .warp-list-tmdb-ask {
+  border: 1px dashed rgb(33 26 16 / 0.28);
+  background: rgb(33 26 16 / 0.04);
+  color: rgb(33 26 16 / 0.78);
+}
+
+.warp-shell[data-theme="light"] .warp-list-tmdb-ask strong {
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-list-tmdb-ask:hover,
+.warp-shell[data-theme="light"] .warp-list-tmdb-ask:focus-visible {
+  border-color: rgb(33 26 16 / 0.5);
+  background: rgb(33 26 16 / 0.09);
+  color: rgb(33 26 16);
+}
+
+.warp-shell[data-theme="light"] .warp-list-tmdb-skeleton {
+  background: rgb(33 26 16 / 0.06);
+}
+
 .warp-shell[data-theme="light"] .warp-list-empty {
   border-top: 1px solid rgb(33 26 16 / 0.2);
 }

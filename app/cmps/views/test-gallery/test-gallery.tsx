@@ -13,6 +13,7 @@ import {
   Clock,
   Dices,
   ExternalLink,
+  Globe,
   Hand,
   Heart,
   Info,
@@ -232,6 +233,7 @@ import { AmbientWeather } from './ambient-weather'
 import { AppearanceSetting, useDynamicHint } from './dynamic-theme-setting'
 import { perfFlag } from './perf-probe'
 import { stopsFromPath } from './share/path-art'
+import { MIN_TMDB_QUERY, searchTmdb } from './tmdb-search'
 import {
   readDeadTrailers,
   trailerButtonFor,
@@ -1562,6 +1564,12 @@ export const TestGalleryApp = () => {
   const [selectedOrigins, setSelectedOrigins] = useState<OriginId[]>([])
   const [contentFilter, setContentFilter] = useState<ContentFilter>('all')
   const [listSearchQuery, setListSearchQuery] = useState('')
+  // "Search all of TMDB": films beyond the catalogue, asked for with a button
+  // (never per keystroke) and kept by id so their cards keep working.
+  const [tmdbSearch, setTmdbSearch] =
+    useState<TmdbSearchState>(IDLE_TMDB_SEARCH)
+  const externalMoviesRef = useRef(new Map<string, TestMovie>())
+  const tmdbAbortRef = useRef<AbortController | null>(null)
   const [filterOpen, setFilterOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [libraryOpen, setLibraryOpen] = useState(false)
@@ -2122,6 +2130,33 @@ export const TestGalleryApp = () => {
   )
   const listMovies = searchResults ?? sortedFilteredMovies
   const listRanked = searchResults !== null
+  const knownMovieIds = useMemo(
+    () => new Set(movies.map((movie) => movie.id)),
+    [movies],
+  )
+  const handleSearchTmdb = useCallback(
+    (query: string) => {
+      tmdbAbortRef.current?.abort()
+      const controller = new AbortController()
+      tmdbAbortRef.current = controller
+      setTmdbSearch({ query, status: 'loading', movies: [] })
+      searchTmdb(query, knownMovieIds, fetch, controller.signal)
+        .then((found) => {
+          if (controller.signal.aborted) return
+          for (const movie of found)
+            externalMoviesRef.current.set(movie.id, movie)
+          setTmdbSearch({ query, status: 'ready', movies: found })
+        })
+        .catch(() => {
+          if (controller.signal.aborted) return
+          setTmdbSearch({ query, status: 'failed', movies: [] })
+        })
+    },
+    [knownMovieIds],
+  )
+  // A new query starts over: the button is back, the old extras are gone.
+  const tmdbForQuery =
+    tmdbSearch.query === listSearchQuery.trim() ? tmdbSearch : IDLE_TMDB_SEARCH
   // Getting the films ready for search a slice at a time while the index is
   // open means the first keystroke is not the one that pays for it.
   useEffect(() => {
@@ -2156,7 +2191,11 @@ export const TestGalleryApp = () => {
   }, [dwellId, dwellTitle, initialGalleryReady])
 
   const detailsMovie = useMemo(
-    () => movies.find((movie) => movie.id === detailsMovieId) ?? null,
+    () =>
+      movies.find((movie) => movie.id === detailsMovieId) ??
+      (detailsMovieId
+        ? (externalMoviesRef.current.get(detailsMovieId) ?? null)
+        : null),
     [detailsMovieId, movies],
   )
 
@@ -2226,7 +2265,11 @@ export const TestGalleryApp = () => {
   } | null>(null)
 
   const watchMovie = useMemo(
-    () => movies.find((movie) => movie.id === watchMovieId) ?? null,
+    () =>
+      movies.find((movie) => movie.id === watchMovieId) ??
+      (watchMovieId
+        ? (externalMoviesRef.current.get(watchMovieId) ?? null)
+        : null),
     [movies, watchMovieId],
   )
   const filterPresence = useExitPresence(filterOpen)
@@ -3249,6 +3292,8 @@ export const TestGalleryApp = () => {
           randomRequest={listRandomNonce}
           searchQuery={listSearchQuery}
           searchResultCount={listMovies.length}
+          tmdbSearch={tmdbForQuery}
+          onSearchTmdb={handleSearchTmdb}
           isFiltered={selectedFilterCount > 0}
           totalCount={movies.length}
           facetCatalog={facetCatalog}
@@ -3911,6 +3956,17 @@ const WarpWall = ({
 
 const RANKED_GROUP = 'Best matches'
 
+type TmdbSearchState = {
+  query: string
+  status: 'idle' | 'loading' | 'ready' | 'failed'
+  movies: TestMovie[]
+}
+const IDLE_TMDB_SEARCH: TmdbSearchState = {
+  query: '',
+  status: 'idle',
+  movies: [],
+}
+
 type WarpListProps = {
   activeMovieId: string | null
   errorMessage: string
@@ -3925,6 +3981,8 @@ type WarpListProps = {
   randomRequest: number
   searchQuery: string
   searchResultCount: number
+  tmdbSearch: TmdbSearchState
+  onSearchTmdb: (query: string) => void
   isFiltered: boolean
   totalCount: number
   facetCatalog: FacetCatalog
@@ -4274,6 +4332,8 @@ const WarpList = ({
   randomRequest,
   searchQuery,
   searchResultCount,
+  tmdbSearch,
+  onSearchTmdb,
   isFiltered,
   totalCount,
   facetCatalog,
@@ -4679,6 +4739,15 @@ const WarpList = ({
               Clear search
             </button>
           ) : null}
+          <TmdbMore
+            query={searchQuery}
+            state={tmdbSearch}
+            selectedGenres={selectedGenres}
+            onSearch={onSearchTmdb}
+            onOpenMovie={onOpenMovie}
+            onSelectMovie={onSelectMovie}
+            onToggleGenre={handleToggleGenre}
+          />
         </div>
       ) : (
         <div className='warp-list-groups'>
@@ -4755,9 +4824,107 @@ const WarpList = ({
               </section>
             )
           })}
+          <TmdbMore
+            query={searchQuery}
+            state={tmdbSearch}
+            selectedGenres={selectedGenres}
+            onSearch={onSearchTmdb}
+            onOpenMovie={onOpenMovie}
+            onSelectMovie={onSelectMovie}
+            onToggleGenre={handleToggleGenre}
+          />
         </div>
       )}
     </section>
+  )
+}
+
+type TmdbMoreProps = {
+  query: string
+  state: TmdbSearchState
+  selectedGenres: string[]
+  onSearch: (query: string) => void
+  onOpenMovie: (movie: TestMovie) => void
+  onSelectMovie: (movie: TestMovie) => void
+  onToggleGenre: (movie: TestMovie, genre: string) => void
+}
+
+// Under the index's matches: a way to ask TMDB itself, for films the
+// catalogue does not hold. It runs on a tap, never per keystroke, and its
+// films open like any other (but cannot be saved).
+const TmdbMore = ({
+  query,
+  state,
+  selectedGenres,
+  onSearch,
+  onOpenMovie,
+  onSelectMovie,
+  onToggleGenre,
+}: TmdbMoreProps) => {
+  const trimmed = query.trim()
+  if (trimmed.length < MIN_TMDB_QUERY) return null
+  if (state.status === 'loading')
+    return (
+      <div className='warp-list-tmdb' aria-busy='true'>
+        <div className='warp-list-tmdb-skeleton' />
+        <div className='warp-list-tmdb-skeleton' />
+        <div className='warp-list-tmdb-skeleton' />
+      </div>
+    )
+  if (state.status === 'ready' && state.movies.length)
+    return (
+      <section className='warp-list-group warp-list-tmdb-results'>
+        <div className='warp-list-group-heading is-static'>
+          <span>
+            <h2>From TMDB</h2>
+            <small>
+              {state.movies.length}{' '}
+              {state.movies.length === 1 ? 'title' : 'titles'} not in the
+              catalogue
+            </small>
+          </span>
+        </div>
+        <div
+          className='warp-list-rows'
+          style={{ '--group-row-count': state.movies.length } as CSSProperties}
+        >
+          <ListRowChunk
+            activeMovieId={null}
+            eager
+            forceVisible
+            isCollapsed={false}
+            randomPulseId={null}
+            rows={state.movies}
+            selectedGenres={selectedGenres}
+            onOpenMovie={onOpenMovie}
+            onSelectMovie={onSelectMovie}
+            onToggleGenre={onToggleGenre}
+          />
+        </div>
+      </section>
+    )
+  return (
+    <div className='warp-list-tmdb'>
+      {state.status === 'ready' ? (
+        <p>TMDB has nothing else for “{trimmed}”.</p>
+      ) : null}
+      {state.status === 'failed' ? <p>Couldn't reach TMDB right now.</p> : null}
+      {state.status === 'idle' || state.status === 'failed' ? (
+        <button
+          type='button'
+          className='warp-list-tmdb-ask'
+          onClick={() => onSearch(trimmed)}
+        >
+          <Globe aria-hidden='true' size={16} strokeWidth={2.4} />
+          <span>
+            {state.status === 'failed' ? 'Try again' : 'Not in the catalogue? '}
+            <strong>
+              {state.status === 'failed' ? '' : 'Search all of TMDB'}
+            </strong>
+          </span>
+        </button>
+      ) : null}
+    </div>
   )
 }
 
@@ -6847,15 +7014,17 @@ const MovieDetailsCard = ({
                     Watch trailer on YouTube
                   </a>
                 ) : null}
-                <button
-                  type='button'
-                  className={cn('warp-details-heart', saved && 'is-saved')}
-                  aria-pressed={saved}
-                  aria-label={saved ? 'Remove from saved' : 'Save movie'}
-                  onClick={() => onToggleSaved(movie)}
-                >
-                  <Heart aria-hidden='true' />
-                </button>
+                {movie.external ? null : (
+                  <button
+                    type='button'
+                    className={cn('warp-details-heart', saved && 'is-saved')}
+                    aria-pressed={saved}
+                    aria-label={saved ? 'Remove from saved' : 'Save movie'}
+                    onClick={() => onToggleSaved(movie)}
+                  >
+                    <Heart aria-hidden='true' />
+                  </button>
+                )}
                 <button
                   type='button'
                   className='warp-details-heart warp-details-share'
