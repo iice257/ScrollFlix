@@ -167,3 +167,15 @@ describe('sitemap generation', () => {
     expect(idx).not.toMatch(/vercel\.app/)
   })
 })
+
+describe('index.html share image', () => {
+  it('declares the size the default card is drawn at', async () => {
+    const { OG_IMAGE_WIDTH, OG_IMAGE_HEIGHT } = await import('../api/_lib/meta')
+    expect(html).toContain(
+      `<meta property="og:image:width" content="${OG_IMAGE_WIDTH}" />`,
+    )
+    expect(html).toContain(
+      `<meta property="og:image:height" content="${OG_IMAGE_HEIGHT}" />`,
+    )
+  })
+})

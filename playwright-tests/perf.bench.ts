@@ -176,10 +176,7 @@ const seedStorage = async (page: Page) => {
     ({ saved, path }) => {
       try {
         window.localStorage.setItem('wtw:saved:v1', JSON.stringify(saved))
-        window.sessionStorage.setItem(
-          'wtw:session-path:v1',
-          JSON.stringify(path),
-        )
+        window.localStorage.setItem('wtw:session-path:v1', JSON.stringify(path))
         // The first-load hints would sit over the globe.
         window.localStorage.setItem('wtw:spin-hint-seen', '1')
       } catch {}
@@ -267,6 +264,23 @@ const runScenario = async (page: Page, scenario: Scenario): Promise<Row> => {
 
   let rafPerSecond: number | null = null
   if (scenario.idle) {
+    // "Idle" starts once the posters have stopped arriving: every upload wakes
+    // the loop for a few frames, which is work, not a leak.
+    await page
+      .waitForFunction(
+        () => {
+          const el = document.querySelector('canvas[data-item-count]')
+          return (
+            el instanceof HTMLElement &&
+            Number(el.dataset.baseLoaded) >= Number(el.dataset.itemCount) &&
+            el.dataset.lodPending === '0'
+          )
+        },
+        undefined,
+        { timeout: 120_000 },
+      )
+      .catch(() => {})
+    await page.waitForTimeout(2_500)
     await page.evaluate(() => {
       ;(window as unknown as { __rafCalls: number }).__rafCalls = 0
     })

@@ -29,9 +29,12 @@ export type TierConfig = {
 export const DESKTOP_BUDGET_BYTES = 160 * MB
 export const PHONE_BUDGET_BYTES = 80 * MB
 
-// How many posters the globe lays out. Desktop is 2.4x the original 900;
-// phones and lightweight devices keep fewer.
-export const DESKTOP_GLOBE_COUNT = 2160
+// How many posters the globe lays out. Desktop is the catalogue's whole first
+// chunk (2,000 films in vote order), so the rest of the catalogue arriving
+// never changes the globe's films and never rebuilds it (a rebuild used to
+// reset the globe to its default front, always Con Air); phones and
+// lightweight devices keep fewer.
+export const DESKTOP_GLOBE_COUNT = 2000
 export const PHONE_GLOBE_COUNT = 1260
 
 // Bytes of a mip chain of `levels` levels, for a w x h image.
@@ -117,8 +120,8 @@ export const tierConfig = (desktop: boolean): TierConfig =>
   desktop
     ? {
         desktop,
-        baseWidth: 64,
-        baseHeight: 96,
+        baseWidth: 72,
+        baseHeight: 108,
         gutter: 2,
         baseMipLevels: 4,
         midWidth: 154,
@@ -132,14 +135,18 @@ export const tierConfig = (desktop: boolean): TierConfig =>
       }
     : {
         desktop,
-        baseWidth: 48,
-        baseHeight: 72,
+        baseWidth: 64,
+        baseHeight: 96,
         gutter: 2,
         baseMipLevels: 4,
-        midWidth: 154,
-        midHeight: 231,
+        // A lighter mid tier (from TMDB's w154): phone posters are drawn at
+        // most ~90 device px wide (the canvas caps DPR at 2), so a 104 px
+        // layer is sharp, costs a third of a 154 px one, and leaves room for
+        // more of them.
+        midWidth: 104,
+        midHeight: 156,
         midMipLevels: 3,
-        midLayers: 96,
+        midLayers: 160,
         detailWidth: 342,
         detailHeight: 513,
         detailMipLevels: 4,

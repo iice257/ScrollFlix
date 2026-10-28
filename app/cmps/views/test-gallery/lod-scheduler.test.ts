@@ -98,4 +98,27 @@ describe('planLod', () => {
     })
     expect(plan).toEqual({ mid: [], detail: [] })
   })
+
+  it('warm-up gives mid layers to small posters too, nearest the focus first', () => {
+    const posters = [
+      poster(2, { deviceWidthPx: 40, focusDistance: 0.6 }),
+      poster(0, { deviceWidthPx: 40, focusDistance: 0.1 }),
+      poster(1, { deviceWidthPx: 400, focusDistance: 0.3 }),
+    ]
+    const cold = planLod({ ...base, posters, angularSpeed: 0 })
+    expect(cold.mid).toEqual(['k1'])
+    const warm = planLod({ ...base, posters, angularSpeed: 0, warm: true })
+    expect(warm.mid).toEqual(['k0', 'k1', 'k2'])
+    // Still capped by the pool, and never while the globe is flung.
+    const capped = planLod({
+      ...base,
+      posters,
+      angularSpeed: 0,
+      warm: true,
+      midCapacity: 2,
+    })
+    expect(capped.mid).toEqual(['k0', 'k1'])
+    const fast = planLod({ ...base, posters, angularSpeed: 4, warm: true })
+    expect(fast.mid).toEqual([])
+  })
 })

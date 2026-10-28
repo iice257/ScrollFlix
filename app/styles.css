@@ -619,6 +619,19 @@
     transition: none;
   }
 
+  /* The card's w500 upgrade, over the w342 already showing; it fades in only
+     once decoded, so the poster never steps back to a blank. */
+  .warp-poster-frame img.warp-poster-upgrade {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    opacity: 0;
+  }
+
+  .warp-poster-frame img.warp-poster-upgrade[data-shown="true"] {
+    opacity: 1;
+  }
+
   .warp-poster-frame[data-poster-state="loaded"] .warp-poster-placeholder,
   .warp-poster-frame[data-poster-state="fallback"] .warp-poster-placeholder {
     opacity: 0;
@@ -671,59 +684,89 @@
     opacity: 0;
   }
 
-  .warp-gallery-preloader span {
+  .warp-preloader-card {
+    --loader-accent: #fff;
+    --loader-accent-soft: rgb(255 255 255 / 0.14);
+    position: relative;
     display: grid;
-    min-width: min(280px, calc(100vw - 48px));
-    gap: 10px;
-    border: 1px solid rgb(255 255 255 / 0.13);
-    border-radius: 18px;
-    background: rgb(255 255 255 / 0.07);
-    padding: 14px 16px;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    width: min(320px, calc(100vw - 48px));
+    justify-items: center;
+    gap: 14px;
+    border: 1px solid rgb(255 255 255 / 0.12);
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.09), rgb(255 255 255 / 0.04));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.1),
+      0 24px 60px rgb(0 0 0 / 0.5);
+    padding: 22px 22px 20px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
     animation: warp-preloader-pulse 1.1s ease-in-out infinite;
+    transition:
+      border-color 420ms ease,
+      background 420ms ease;
+  }
+
+  /* Slow connection: the same card turns amber, nothing moves. */
+  .warp-gallery-preloader[data-loader-state="slow"] .warp-preloader-card {
+    --loader-accent: #f2b04a;
+    --loader-accent-soft: rgb(242 176 74 / 0.16);
+    border-color: rgb(242 176 74 / 0.42);
+    background: linear-gradient(180deg, rgb(242 176 74 / 0.13), rgb(242 176 74 / 0.05));
   }
 
   /* Tapping the screen before it is ready: the card flashes a light red. */
-  .warp-gallery-preloader.is-denied span {
+  .warp-gallery-preloader.is-denied .warp-preloader-card {
     animation: warp-preloader-denied 560ms ease-out backwards;
   }
 
-  .warp-gallery-preloader strong,
-  .warp-gallery-preloader small {
+  .warp-preloader-title {
     display: block;
-    line-height: 1;
-    text-align: center;
-  }
-
-  .warp-gallery-preloader strong {
-    color: rgb(255 255 255 / 0.86);
+    min-height: 2.6em;
+    max-width: 22ch;
+    align-content: center;
+    color: rgb(255 255 255 / 0.9);
     font: inherit;
+    line-height: 1.3;
+    text-align: center;
+    text-wrap: balance;
+    transition: color 420ms ease;
   }
 
-  .warp-gallery-preloader small {
-    color: rgb(255 255 255 / 0.54);
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: 0.1em;
+  .warp-gallery-preloader[data-loader-state="slow"] .warp-preloader-title {
+    color: var(--loader-accent);
   }
 
-  .warp-gallery-preloader i {
+  .warp-preloader-bar {
     display: block;
-    height: 5px;
+    width: 100%;
+    height: 4px;
     overflow: hidden;
     border-radius: 999px;
     background: rgb(255 255 255 / 0.13);
   }
 
-  .warp-gallery-preloader b {
+  .warp-preloader-bar b {
     display: block;
     width: var(--gallery-load-percent, 0%);
     height: 100%;
     border-radius: inherit;
-    background: #fff;
-    box-shadow: 0 0 22px rgb(255 255 255 / 0.42);
-    transition: width 220ms ease;
+    background: var(--loader-accent);
+    transition:
+      width 220ms ease,
+      background 420ms ease;
+  }
+
+  .warp-preloader-percent {
+    display: block;
+    color: rgb(255 255 255 / 0.56);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    line-height: 1;
+    margin-top: -6px;
+    text-align: center;
   }
 
   .warp-wall-vignette {
@@ -1683,16 +1726,31 @@
 
   /* Loading screen: Skip reveals the globe with whatever has loaded so far. */
   .warp-preloader-skip {
-    justify-self: center;
+    min-height: 40px;
     border: 1px solid rgb(255 255 255 / 0.22);
     border-radius: 999px;
     background: rgb(255 255 255 / 0.1);
-    padding: 7px 18px;
+    padding: 0 20px;
     color: #fff;
     font: inherit;
-    letter-spacing: 0.12em;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
     pointer-events: auto;
-    transition: background 160ms ease;
+    transition:
+      background 160ms ease,
+      border-color 420ms ease,
+      transform 160ms ease;
+  }
+
+  .warp-preloader-skip b {
+    font-weight: 950;
+    letter-spacing: 0.12em;
+  }
+
+  .warp-gallery-preloader[data-loader-state="slow"] .warp-preloader-skip {
+    border-color: rgb(242 176 74 / 0.5);
+    background: var(--loader-accent-soft);
   }
 
   .warp-preloader-skip:hover,
@@ -1701,11 +1759,24 @@
     background: rgb(255 255 255 / 0.22);
   }
 
-  .warp-gallery-preloader em {
+  .warp-gallery-preloader[data-loader-state="slow"] .warp-preloader-skip:hover,
+  .warp-gallery-preloader[data-loader-state="slow"] .warp-preloader-skip:focus-visible {
+    background: rgb(242 176 74 / 0.28);
+  }
+
+  .warp-preloader-skip:focus-visible {
+    outline: 2px solid var(--loader-accent);
+    outline-offset: 3px;
+  }
+
+  .warp-preloader-skip:active {
+    transform: scale(0.98);
+  }
+
+  .warp-preloader-hint {
     max-width: 230px;
-    justify-self: center;
     color: rgb(255 255 255 / 0.5);
-    font-size: 10px;
+    font-size: 11px;
     font-style: normal;
     font-weight: 650;
     letter-spacing: 0.01em;
@@ -1934,8 +2005,7 @@
   }
 
   .warp-share-primary,
-  .warp-share-secondary,
-  .warp-share-link {
+  .warp-share-secondary {
     display: inline-flex;
     height: 46px;
     align-items: center;
@@ -1960,7 +2030,12 @@
     color: #050505;
   }
 
+  .warp-share-copy {
+    flex: 1 1 100%;
+  }
+
   .warp-share-secondary {
+    flex: 1 1 0;
     min-width: 46px;
     border: 1px solid rgb(255 255 255 / 0.2);
     background: rgb(255 255 255 / 0.08);
@@ -1968,19 +2043,8 @@
     color: #fff;
   }
 
-  .warp-share-link {
-    height: 38px;
-    justify-self: start;
-    border: 0;
-    background: transparent;
-    padding: 0 4px;
-    color: rgb(255 255 255 / 0.7);
-    font-size: 13px;
-  }
-
   .warp-share-primary svg,
-  .warp-share-secondary svg,
-  .warp-share-link svg {
+  .warp-share-secondary svg {
     width: 16px;
     height: 16px;
     stroke-width: 2.4;
@@ -1995,13 +2059,8 @@
     background: rgb(255 255 255 / 0.16);
   }
 
-  .warp-share-link:hover {
-    color: #fff;
-  }
-
   .warp-share-primary:focus-visible,
-  .warp-share-secondary:focus-visible,
-  .warp-share-link:focus-visible {
+  .warp-share-secondary:focus-visible {
     outline: 2px solid #fff;
     outline-offset: 2px;
   }
@@ -2027,11 +2086,6 @@
     font-weight: 650;
   }
 
-  .warp-share-note svg {
-    width: 13px;
-    height: 13px;
-  }
-
   @media (max-width: 720px) {
     .warp-share-layer {
       place-items: end center;
@@ -2050,9 +2104,13 @@
       gap: 18px;
     }
 
+    .warp-share-tilt {
+      display: grid;
+      justify-items: center;
+    }
+
     .warp-share-stage {
       width: min(260px, 100%);
-      justify-self: center;
     }
   }
 
@@ -2239,6 +2297,83 @@
     white-space: nowrap;
   }
 
+  /* The Index's title pill: the globe's pill with the poster beside the title.
+     The pill's radius is the poster's plus the gap around it, so the two
+     curves stay concentric. */
+  .warp-title-card.warp-index-pill {
+    --pill-gap: 7px;
+    --pill-poster-radius: 13px;
+    display: block;
+    width: min(420px, calc(100vw - 32px));
+    max-width: none;
+    min-width: 0;
+    border-radius: calc(var(--pill-poster-radius) + var(--pill-gap));
+    padding: var(--pill-gap);
+    text-align: left;
+    animation: warp-index-pill-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .warp-index-pill-face {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 40px minmax(0, 1fr);
+    align-items: center;
+    column-gap: 14px;
+    animation: warp-index-pill-swap 200ms ease-out both;
+  }
+
+  .warp-index-pill-poster {
+    display: block;
+    width: 40px;
+    height: 60px;
+    overflow: hidden;
+    border-radius: var(--pill-poster-radius);
+    background: rgb(0 0 0 / 0.08);
+    box-shadow: 0 6px 16px rgb(0 0 0 / 0.28);
+  }
+
+  .warp-index-pill-poster img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .warp-index-pill-copy {
+    display: grid;
+    min-width: 0;
+    gap: 7px;
+    padding-right: 12px;
+    justify-items: start;
+  }
+
+  @keyframes warp-index-pill-in {
+    from {
+      opacity: 0;
+      transform: translateY(14px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes warp-index-pill-swap {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .warp-index-pill,
+    .warp-index-pill-face {
+      animation: none;
+    }
+  }
+
   .warp-shuffle-button {
     display: flex;
     height: var(--warp-control-height);
@@ -2276,220 +2411,6 @@
     width: 17px;
     height: 17px;
     stroke-width: 2.2;
-  }
-
-  /* Now playing: on phones a shuffle's film waits in this bar above the title
-     pill instead of opening its card, so the globe stays free to spin. */
-  .warp-np-bar {
-    --np-height: 72px;
-    position: relative;
-    display: grid;
-    width: min(calc(100vw - 32px), 560px);
-    height: var(--np-height);
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    align-items: center;
-    column-gap: 4px;
-    padding: 6px 6px 6px 6px;
-    border: 1px solid rgb(255 255 255 / 0.14);
-    border-radius: 24px;
-    background: rgb(10 10 10 / 0.84);
-    color: #fff;
-    box-shadow: 0 18px 54px rgb(0 0 0 / 0.5);
-    backdrop-filter: blur(18px) saturate(1.2);
-    -webkit-backdrop-filter: blur(18px) saturate(1.2);
-    pointer-events: auto;
-    animation: np-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
-  .warp-np-bar[data-state="exit"] {
-    animation: np-out 200ms cubic-bezier(0.4, 0, 1, 1) both;
-    pointer-events: none;
-  }
-
-  @keyframes np-in {
-    from {
-      opacity: 0;
-      transform: translateY(14px);
-    }
-  }
-
-  @keyframes np-out {
-    to {
-      opacity: 0;
-      transform: translateY(14px);
-    }
-  }
-
-  .warp-np-body {
-    display: block;
-    min-width: 0;
-    height: 100%;
-    border: 0;
-    border-radius: 18px;
-    background: transparent;
-    padding: 0;
-    color: inherit;
-    cursor: pointer;
-    font: inherit;
-    text-align: left;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    transition: background 160ms ease;
-  }
-
-  .warp-np-body:focus-visible {
-    outline: 2px solid rgb(255 255 255 / 0.7);
-    outline-offset: 2px;
-  }
-
-  .warp-np-body:active {
-    background: rgb(255 255 255 / 0.06);
-  }
-
-  /* Both faces sit in one cell, so a swap crossfades without moving anything. */
-  .warp-np-faces {
-    display: grid;
-    height: 100%;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr);
-  }
-
-  .warp-np-face {
-    display: flex;
-    min-width: 0;
-    grid-area: 1 / 1;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .warp-np-face[data-swap="true"] {
-    animation: np-fade-in 200ms ease-out both;
-  }
-
-  .warp-np-face.is-leaving {
-    animation: np-fade-out 200ms ease-out both;
-    pointer-events: none;
-  }
-
-  @keyframes np-fade-in {
-    from {
-      opacity: 0;
-    }
-  }
-
-  @keyframes np-fade-out {
-    to {
-      opacity: 0;
-    }
-  }
-
-  .warp-np-poster {
-    display: block;
-    flex: none;
-    width: 40px;
-    height: 60px;
-    overflow: hidden;
-    border-radius: 9px;
-    background: rgb(255 255 255 / 0.1);
-    box-shadow: 0 6px 16px rgb(0 0 0 / 0.4);
-  }
-
-  .warp-np-poster img {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .warp-np-copy {
-    display: grid;
-    min-width: 0;
-    gap: 5px;
-  }
-
-  .warp-np-title,
-  .warp-np-meta {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .warp-np-title {
-    font-size: 16px;
-    font-weight: 800;
-    letter-spacing: -0.04em;
-    line-height: 1.1;
-  }
-
-  .warp-np-meta {
-    color: rgb(255 255 255 / 0.62);
-    font-size: 12px;
-    font-weight: 650;
-    letter-spacing: -0.005em;
-    line-height: 1.1;
-  }
-
-  .warp-np-action {
-    display: grid;
-    width: 44px;
-    height: 44px;
-    place-items: center;
-    border: 0;
-    border-radius: 999px;
-    background: rgb(255 255 255 / 0.1);
-    color: #fff;
-    cursor: pointer;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    transition:
-      background 160ms ease,
-      transform 160ms ease;
-  }
-
-  .warp-np-action svg {
-    width: 20px;
-    height: 20px;
-    stroke-width: 2.3;
-  }
-
-  .warp-np-action.is-primary {
-    background: #fff;
-    color: #0b0b0b;
-  }
-
-  .warp-np-action:focus-visible {
-    outline: 2px solid rgb(255 255 255 / 0.7);
-    outline-offset: 2px;
-  }
-
-  .warp-np-action:active {
-    transform: scale(0.94);
-  }
-
-  @media (hover: hover) {
-    .warp-np-action:not(.is-primary):hover {
-      background: rgb(255 255 255 / 0.18);
-    }
-
-    .warp-np-body:hover {
-      background: rgb(255 255 255 / 0.04);
-    }
-  }
-
-  /* The session path button floats above the bar rather than behind it. */
-  .warp-shell[data-now-playing="true"] .warp-path-button {
-    translate: 0 calc(-1 * var(--np-lift, 140px));
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .warp-np-bar,
-    .warp-np-bar[data-state="exit"] {
-      animation-name: np-fade-in;
-    }
-
-    .warp-np-bar[data-state="exit"] {
-      animation-name: np-fade-out;
-    }
   }
 
   .warp-gesture-debug {
@@ -2960,37 +2881,6 @@
     line-height: 0.94;
   }
 
-  .warp-watch-links {
-    display: grid;
-    gap: 8px;
-    margin-top: 22px;
-  }
-
-  .warp-watch-links button {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 48px;
-    border: 1px solid rgb(255 255 255 / 0.12);
-    border-radius: 14px;
-    background: rgb(255 255 255 / 0.06);
-    padding: 12px 14px;
-    color: #fff;
-    font-size: 14px;
-    font-weight: 850;
-    text-align: left;
-    transition:
-      border-color 160ms ease,
-      background 160ms ease,
-      transform 160ms ease;
-  }
-
-  .warp-watch-links button:disabled {
-    cursor: not-allowed;
-    opacity: 0.72;
-  }
-
   .warp-watch-close:hover,
   .warp-watch-close:focus-visible {
     outline: none;
@@ -2999,16 +2889,170 @@
   }
 
   .warp-watch-close:active,
-  .warp-watch-links button:not(:disabled):active {
+  a.warp-watch-row:active {
     transform: translateY(1px) scale(0.98);
   }
 
-  .warp-watch-links button span:last-child {
+  /* The whole card scrolls when the list is long, so every service and the
+     footer stay reachable on a short phone screen. */
+  .warp-watch-card {
+    max-height: calc(100dvh - 48px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 0.2) transparent;
+  }
+
+  .warp-watch-body {
+    display: grid;
+    gap: 18px;
+    margin-top: 20px;
+  }
+
+  .warp-watch-group h3 {
+    margin: 0 0 8px;
     color: rgb(255 255 255 / 0.42);
     font-size: 10px;
     font-weight: 900;
-    letter-spacing: 0.11em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
+  }
+
+  .warp-watch-group ul {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .warp-watch-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    min-height: 62px;
+    border: 1px solid rgb(255 255 255 / 0.1);
+    border-radius: 14px;
+    background: rgb(255 255 255 / 0.05);
+    padding: 10px 14px 10px 10px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 850;
+    text-decoration: none;
+    transition:
+      border-color 160ms ease,
+      background 160ms ease,
+      transform 160ms ease;
+  }
+
+  .warp-watch-youtube {
+    flex-shrink: 0;
+    margin-top: 12px;
+  }
+
+  /* The YouTube mark: the same 40px tile as the service logos. */
+  .warp-watch-youtube-mark {
+    display: grid;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    border-radius: 11px;
+    background: #fff;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16);
+  }
+
+  .warp-watch-youtube-mark svg {
+    width: 26px;
+    height: auto;
+    color: initial;
+  }
+
+  .warp-watch-row
+    > span:not(.warp-watch-logo-blank):not(.warp-watch-youtube-mark) {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .warp-watch-row img,
+  .warp-watch-logo-blank {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+    background: #16161a;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16);
+    object-fit: cover;
+  }
+
+  .warp-watch-row svg {
+    flex: none;
+    color: rgb(255 255 255 / 0.42);
+  }
+
+  /* What a row's link opens (the service's search, or the TMDB listing). */
+  .warp-watch-opens {
+    flex: none;
+    color: rgb(255 255 255 / 0.46);
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: 0.01em;
+  }
+
+  a.warp-watch-row:hover,
+  a.warp-watch-row:focus-visible {
+    outline: none;
+    border-color: rgb(255 255 255 / 0.28);
+    background: rgb(255 255 255 / 0.1);
+  }
+
+  .warp-watch-skeleton {
+    height: 62px;
+    border-radius: 14px;
+    background: rgb(255 255 255 / 0.06);
+    animation: warp-watch-pulse 1.2s ease-in-out infinite;
+  }
+
+  .warp-watch-skeleton:nth-child(2) {
+    animation-delay: 120ms;
+  }
+
+  .warp-watch-skeleton:nth-child(3) {
+    animation-delay: 240ms;
+  }
+
+  @keyframes warp-watch-pulse {
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  .warp-watch-note {
+    margin: 20px 0 0;
+    color: rgb(255 255 255 / 0.62);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.45;
+  }
+
+  .warp-watch-credit {
+    margin: 0;
+    color: rgb(255 255 255 / 0.42);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.5;
+  }
+
+  .warp-watch-credit a {
+    color: rgb(255 255 255 / 0.8);
+    text-underline-offset: 3px;
   }
 
   .warp-details-layer {
@@ -3383,6 +3427,58 @@
     transform: translateY(-1px);
   }
 
+  /* The services the film is confirmed on: logos on a dark capsule inside the
+     button, so a light or white logo (Prime Video) always reads. Real
+     listings only, faded in when they arrive. */
+  .warp-watch-badges {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 6px;
+    margin-right: -14px;
+    border-radius: 999px;
+    background: #0b0b0e;
+    padding: 4px;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.18);
+    animation: warp-watch-badges-in 260ms ease-out both;
+  }
+
+  .warp-watch-badges img {
+    width: 28px;
+    height: 28px;
+    border-radius: 9px;
+    background: #1d1d22;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16);
+    object-fit: cover;
+  }
+
+  .warp-watch-more {
+    display: grid;
+    min-width: 28px;
+    height: 28px;
+    place-items: center;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.16);
+    padding: 0 8px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 850;
+    letter-spacing: 0;
+  }
+
+  @keyframes warp-watch-badges-in {
+    from {
+      opacity: 0;
+      transform: translateX(-4px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .warp-watch-badges {
+      animation: none;
+    }
+  }
+
   .warp-details-watch:focus-visible {
     outline: 2px solid #fff;
     outline-offset: 3px;
@@ -3468,6 +3564,20 @@
   .warp-details-more:focus-visible {
     outline: none;
     color: #fff;
+  }
+
+  /* The label sits in a pill, so it reads (and is tapped) as a control even
+     over the list that scrolls under it. */
+  .warp-details-more-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid rgb(255 255 255 / 0.18);
+    border-radius: 999px;
+    background: rgb(28 28 32 / 0.88);
+    padding: 9px 16px;
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
   }
 
   .warp-details-expanded-content {
@@ -3962,7 +4072,9 @@
        list from re-recording everything around it. */
     contain: layout paint style;
     transition:
+      background 200ms ease,
       border-color 180ms ease,
+      box-shadow 200ms ease,
       color 180ms ease,
       opacity 180ms ease,
       transform 180ms ease;
@@ -4156,19 +4268,27 @@
 
   .warp-list-row.is-active {
     outline: none;
-    border-color: rgb(255 255 255 / 0.55);
+    border-color: transparent;
+    /* A capsule that hugs the round poster: its curve is the poster's plus the
+       gap, so the highlight reads as one shape with it. */
+    border-radius: 999px;
+    padding-inline: 11px 18px;
     background:
-      linear-gradient(90deg, rgb(255 255 255 / 0.2), transparent 55%),
-      rgb(255 255 255 / 0.03);
-    color: rgb(255 255 255 / 0.78);
-    box-shadow: inset 4px 0 0 #fff;
-    transform: translateX(6px);
+      radial-gradient(
+        120% 160% at 0% 50%,
+        rgb(255 255 255 / 0.22),
+        rgb(255 255 255 / 0.08) 55%,
+        rgb(255 255 255 / 0.05)
+      );
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.4);
   }
 
   .warp-list-row.is-random-pulse {
-    border-color: rgb(255 255 255 / 0.7);
-    background: linear-gradient(90deg, rgb(255 255 255 / 0.12), transparent);
-    transform: translateX(10px) scale(1.01);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.16);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.7);
+    transform: scale(1.012);
   }
 
   .warp-list-row:hover .warp-list-row-poster,
@@ -4350,6 +4470,12 @@
 
   .warp-filters-body .warp-fs-chip.is-active span:last-child:not(:first-child) {
     color: rgb(0 0 0 / 0.42);
+  }
+
+  .warp-filters-body .warp-fs-chip.warp-fs-more {
+    border-style: dashed;
+    background: transparent;
+    color: rgb(255 255 255 / 0.58);
   }
 
   .warp-filters-body .warp-fs-chip:disabled {
@@ -5304,6 +5430,31 @@
     line-height: 1.6;
   }
 
+  /* The credit reads as a link: underlined, and it lights up on hover and focus. */
+  .warp-about-credit-link {
+    border-radius: 3px;
+    color: #fff;
+    font-weight: 800;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    transition:
+      color 160ms ease,
+      text-decoration-color 160ms ease;
+  }
+
+  .warp-about-credit-link:hover,
+  .warp-about-credit-link:focus-visible {
+    color: #fff;
+    text-decoration-thickness: 2px;
+    text-decoration-color: rgb(255 255 255 / 0.9);
+  }
+
+  .warp-about-credit-link:focus-visible {
+    outline: 2px solid rgb(255 255 255 / 0.8);
+    outline-offset: 3px;
+  }
+
   .warp-about-section .warp-about-fineprint {
     color: rgb(255 255 255 / 0.45);
     font-size: 12px;
@@ -5771,6 +5922,15 @@
       padding: 9px 22px 10px;
     }
 
+    .warp-title-card.warp-index-pill {
+      /* Clear of the buttons in the bottom-right corner, like the dock row. */
+      width: min(400px, calc(100vw - 36px - var(--warp-control-height)));
+      max-width: none;
+      margin-right: calc(var(--warp-control-height) + 12px);
+      border-radius: calc(var(--pill-poster-radius) + var(--pill-gap));
+      padding: var(--pill-gap);
+    }
+
     .warp-title-card-name {
       font-size: 15px;
     }
@@ -5929,7 +6089,8 @@
     }
 
     .warp-details-card {
-      --details-max-height: calc(100dvh - 28px);
+      /* The layer leaves 54px above the card and 10px below it. */
+      --details-max-height: calc(100dvh - 64px);
       grid-template-columns: 1fr;
       grid-template-rows: auto minmax(0, 1fr);
       align-items: stretch;
@@ -5939,7 +6100,10 @@
       padding: 0;
       border-radius: 28px;
       box-shadow: 0 -32px 140px rgb(0 0 0 / 0.78);
-      animation: warp-details-sheet-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+      /* Backwards only: filling forwards would hold the end keyframe's
+         transform over the drag offset. */
+      animation: warp-details-sheet-in 520ms cubic-bezier(0.16, 1, 0.3, 1)
+        backwards;
     }
 
     .warp-details-layer[data-motion="exit"] .warp-details-card {
@@ -5947,7 +6111,13 @@
     }
 
     .warp-details-card.is-expanded {
-      height: calc(100dvh - 28px);
+      height: calc(100dvh - 64px);
+    }
+
+    /* While a finger is on the sheet its height is the finger's. */
+    .warp-details-card.is-dragging {
+      height: var(--details-drag-h, auto);
+      max-height: none;
     }
 
     .warp-details-ambient {
@@ -5967,7 +6137,7 @@
     }
 
     .warp-details-card.is-expanded .warp-details-poster {
-      height: min(20dvh, 170px);
+      height: min(26dvh, 224px);
     }
 
     .warp-details-copy {
@@ -6066,6 +6236,18 @@
       height: 38px;
       padding-inline: 18px;
       font-size: 13px;
+    }
+
+    .warp-watch-badges img {
+      width: 24px;
+      height: 24px;
+      border-radius: 8px;
+    }
+
+    .warp-watch-more {
+      min-width: 24px;
+      height: 24px;
+      font-size: 11px;
     }
 
     .warp-details-next-mobile {
@@ -6187,7 +6369,7 @@
     .warp-details-backdrop,
     .warp-filter-panel,
     .warp-gallery-preloader,
-    .warp-gallery-preloader span,
+    .warp-preloader-card,
     .warp-filters-view,
     .warp-list,
     .warp-poster-frame img,
@@ -6195,6 +6377,7 @@
     .warp-poster-placeholder::after,
     .warp-watch-backdrop,
     .warp-watch-card,
+    .warp-watch-skeleton,
     .warp-drawer-scrim {
       transition: none;
       animation: none;
@@ -6251,25 +6434,6 @@
   .warp-shell[data-details-open="true"] .warp-saved-button {
     opacity: 0;
     pointer-events: none;
-  }
-
-  .warp-saved-count {
-    position: absolute;
-    top: -6px;
-    right: -6px;
-    display: grid;
-    min-width: 19px;
-    height: 19px;
-    place-items: center;
-    border: 2px solid #000;
-    border-radius: 999px;
-    background: #fff;
-    padding: 0 4px;
-    color: #000;
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: -0.02em;
-    line-height: 1;
   }
 
   .warp-saved-drawer {
@@ -6535,6 +6699,14 @@
       background 160ms ease,
       border-color 160ms ease,
       transform 160ms ease;
+  }
+
+  /* Waiting for the film's text: the same shape, quiet and not clickable. */
+  .warp-details-trailer.is-loading,
+  .warp-details-trailer-pill.is-loading {
+    cursor: default;
+    opacity: 0.55;
+    pointer-events: none;
   }
 
   .warp-details-trailer-pill:hover {

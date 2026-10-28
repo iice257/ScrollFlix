@@ -10,6 +10,7 @@ import {
   ChevronsDown,
   ChevronsUp,
   Clapperboard,
+  Clock,
   Dices,
   ExternalLink,
   Hand,
@@ -38,7 +39,7 @@ import {
   type CSSProperties,
   Fragment,
   type ReactNode,
-  type PointerEvent as ReactPointerEvent,
+  type RefObject,
   Suspense,
   type SyntheticEvent,
   lazy,
@@ -100,11 +101,22 @@ import {
   toTitleKey,
   withWeightedRatings,
 } from './catalog-loader'
+import {
+  COLLECTION_FILTERS,
+  type CollectionId,
+  type CountrySummary,
+  filterMoviesByCollections,
+  filterMoviesByCountry,
+  getCountrySummaries,
+} from './collections'
 import { constellationSetting } from './constellation'
+import { searchMovies, warmSearch } from './film-search'
+import { countGenresAndFilters } from './filter-count'
 import { formatGenreCount } from './genre-count'
 import { sessionPathSetting } from './globe-lines'
 import type { LineKind } from './globe-lines-nudge'
 import { LineNudge, type LineNudges, useLineNudges } from './globe-lines-tip'
+import { IndexPill } from './index-pill'
 import {
   InfiniteMovieMenu,
   type InfiniteMovieMenuControl,
@@ -113,11 +125,16 @@ import {
 } from './infinite-movie-menu'
 import { matchesFilmLink, pickLandingMovie } from './landing'
 import {
+  PREROLL_SPAN,
+  type PlannedPick,
   centeredScrollTop,
   glideStart,
   pickRandomRow,
+  prerollWindow,
+  usablePick,
   visibleGenreTags,
 } from './list-scroll'
+import { loadTarget, useLoaderState, useSmartProgress } from './loader-state'
 import { MoodFunnel, MoodLine, MoodNudge } from './moods/mood-entry'
 import { landMoodRun } from './moods/mood-run-plan'
 import type { MoodPick } from './moods/mood-runs'
@@ -134,27 +151,26 @@ import {
   topGenres,
 } from './moods/taste'
 import {
-  buildNowPlayingMeta,
-  shouldShowNowPlaying,
-  usesNowPlayingBar,
-} from './now-playing'
-import { NowPlayingBar, type NowPlayingFilm } from './now-playing-bar'
+  ORIGIN_GROUPS,
+  type OriginId,
+  countOrigins,
+  filterMoviesByOrigins,
+} from './origin-groups'
 import { PartyLayer } from './party/party-layer'
 import type { PartyMovieInfo } from './party/party-parts'
 import { toPartyFilm, usePartyGame } from './party/use-party'
 import {
-  STARTER_ALPHA_COUNT,
-  firstByKey,
+  STARTER_INDEX_COUNT,
   getWarmPosterUrl,
   loadPosterBlob,
   seedStarterSet,
 } from './poster-cache'
 import { PosterFlight, type ViewRect } from './poster-flight'
+import { notePosterUrlLoaded, startingPosterUrl } from './poster-loaded'
 import {
   backdropUrl,
   pickBackdropSize,
   pickPosterSize,
-  posterSrcSet,
   posterUrl,
 } from './poster-sizes'
 import { savedStore } from './saved-store'
@@ -166,6 +182,7 @@ import {
 } from './search-facets'
 import { type PathPoint, sessionPathStore } from './session-path'
 import { shareLink } from './share/share-link'
+import { type ShufflePool, createShufflePool } from './shuffle-pool'
 import { devModeStore } from './shuffle-pro/dev-mode'
 import {
   GoldenHourNote,
@@ -206,6 +223,10 @@ import {
   useShuffleProController,
 } from './shuffle-pro/use-shuffle-pro'
 import { DESKTOP_GLOBE_COUNT } from './texture-tiers'
+import { useDismissLayer } from './use-dismiss-layer'
+import { useSheetDrag } from './use-sheet-drag'
+import { WatchBadges, WatchOptionsList, useWatchBadges } from './watch-options'
+import { prefetchWatch } from './watch-providers'
 import './session-path.css'
 import { AmbientWeather } from './ambient-weather'
 import { AppearanceSetting, useDynamicHint } from './dynamic-theme-setting'
@@ -218,6 +239,7 @@ import {
 } from './trailer/trailer-logic'
 import { useDynamicSky } from './use-dynamic-sky'
 import { useTitleTranslation } from './use-title-translation'
+import { youtubeWatchHref } from './watch-links'
 import { WeatherLayer, type WeatherStorm } from './weather-layer'
 
 // TestMovie, the catalogue loading and the legacy id migration live in
@@ -243,6 +265,7 @@ type ListGrouping =
   | 'runtime'
   | 'popularity'
   | 'votes'
+  | 'country'
 type LoadState = 'loading' | 'ready' | 'error'
 type ContentFilter = 'all' | 'movies' | 'series'
 export type RuntimeFilter =
@@ -276,14 +299,16 @@ const galleryWindowSize = () => {
     return DESKTOP_GLOBE_COUNT
   }
 }
-// Posters now come from the TMDB CDN, so the first-load screen can no longer
-// wait for all of them. Once chunk 0 is in and the placeholders are up, the
-// screen lets go after this long and the posters fill in behind it.
-const FIRST_LOAD_MAX_LOCK_MS = 3000
 const MIN_DECISION_FILTER_RESULTS = 24
-const DETAILS_EXPAND_DRAG_PX = 42
-const DETAILS_CLOSE_DRAG_PX = 68
-const DETAILS_COMPACT_DRAG_PX = 38
+// The popups with no backdrop: a press outside them (and outside the button
+// that toggles them) closes them.
+const FILTER_POPUP_SELECTOR = '.warp-filter-panel, .warp-filter-button'
+const SORT_POPUP_SELECTOR = '.warp-sort-panel, .warp-sort-button'
+const closestElement = (node: Node, selector: string) =>
+  (node instanceof Element ? node : node.parentElement)?.closest(selector)
+
+// The phone sheet's layer leaves 54 px above the card and 10 px below it.
+const DETAILS_SHEET_GUTTER_PX = 64
 const EXIT_ANIMATION_MS = 220
 // Loaded when someone first shares, so the artwork code stays out of the
 // initial bundle.
@@ -315,10 +340,40 @@ const NO_IDS: readonly string[] = []
 const NO_PATH: readonly PathPoint[] = []
 // How long a mood run waits for the globe to be rebuilt for the new films.
 const MOOD_RUN_WAIT_MS = 4000
+// How often a catalogue merge waiting for the globe to be still looks again.
+const CATALOG_STILL_RETRY_MS = 400
+// The shuffle pool's top-ups: a beat after each shuffle (its card loads
+// first), and a little after the globe is up.
+// How long a film must stay the active one before its Watch listing is
+// fetched ahead of its card.
+const WATCH_DWELL_MS = 600
+const SHUFFLE_REFILL_DELAY_MS = 1500
+const SHUFFLE_FIRST_FILL_DELAY_MS = 2500
+
+// The Index's shuffle preroll: a beat after the list settles, a few at a time,
+// and each url only once per visit.
+const PREROLL_START_DELAY_MS = 500
+const PREROLL_LANES = 3
+const prerolledPosters = new Set<string>()
+
+// Fetches and decodes a poster at low priority, with CORS (the URL is shared
+// with the globe and the card).
+const preloadPosterImage = (url: string) =>
+  new Promise<void>((resolve, reject) => {
+    const image = new Image()
+    image.crossOrigin = 'anonymous'
+    image.decoding = 'async'
+    image.fetchPriority = 'low'
+    image.onload = () => {
+      notePosterUrlLoaded(url)
+      image.decode().then(resolve, resolve)
+    }
+    image.onerror = reject
+    image.src = url
+  })
 
 type Theme = 'dark' | 'light'
-// `quiet` lands the globe on the film without a card following it.
-type SpinRequest = { itemId: string; nonce: number; quiet?: boolean }
+type SpinRequest = { itemId: string; nonce: number }
 
 // The saved choice: Dark, Light or Dynamic. Anything unknown is Dark.
 const readThemePref = (): ThemePref => {
@@ -659,39 +714,65 @@ const detailsBackdropUrl = (movie: TestMovie) =>
         ),
       )
     : posterBackdropUrl(movie)
-// The card's poster column: clamp(240px, 25vw, 330px) on desktop, and about
-// two thirds of min(30dvh, 250px) on phones.
-const DETAIL_POSTER_SIZES =
-  '(max-width: 720px) min(20dvh, 167px), clamp(240px, 25vw, 330px)'
+// A film's index-row thumbnail: the size its 46 px tile needs on this screen.
+const listPosterUrl = (movie: TestMovie) =>
+  movie.posterPath
+    ? posterUrl(
+        movie.posterPath,
+        pickPosterSize(LIST_POSTER_CSS_WIDTH * readDpr()),
+      )
+    : (movie.posterListUrl ?? movie.posterUrl)
 const readDpr = () =>
   typeof window === 'undefined' ? 1 : Math.min(3, window.devicePixelRatio || 1)
 
-const MoviePoster = ({
+// One poster per film: a card that changes film in place (an index shuffle)
+// must not keep the last film's image and its "loaded" state on screen while
+// the new title and details are already showing. The key remounts it, so the
+// new film starts from its placeholder and thumbnail and the sharp image fades
+// in once decoded.
+const MoviePoster = (props: MoviePosterProps) => (
+  <MoviePosterImage key={props.movie.id} {...props} />
+)
+
+// Posters that have already been decoded in this session. Opening one of them
+// again starts on the sharp image: no placeholder, no thumbnail, no fade.
+const decodedPosters = new Set<string>()
+
+const MoviePosterImage = ({
   movie,
   loading = 'lazy',
   priority = false,
   size = 'thumb',
 }: MoviePosterProps) => {
-  const [loadState, setLoadState] = useState<PosterLoadState>('loading')
+  const decodedKey = `${movie.id}|${size}`
+  const [loadState, setLoadState] = useState<PosterLoadState>(() =>
+    decodedPosters.has(decodedKey) ? 'loaded' : 'loading',
+  )
   const [attempt, setAttempt] = useState(0)
   // A copy fetched around the HTTP cache, used after a failed first try.
   const [recovered, setRecovered] = useState<string | null>(null)
   const path = movie.posterPath
+  // The card shows w342 first: the file the globe's opened poster, the
+  // flight and the shuffle preroll already fetch, so it is usually cached.
   const src =
     size === 'detail'
       ? path
-        ? posterUrl(path, 'w500')
+        ? posterUrl(path, 'w342')
         : (movie.posterDetailUrl ?? movie.posterUrl)
       : size === 'list'
-        ? path
-          ? posterUrl(path, pickPosterSize(LIST_POSTER_CSS_WIDTH * readDpr()))
-          : (movie.posterListUrl ?? movie.posterUrl)
+        ? listPosterUrl(movie)
         : movie.posterUrl
-  const srcSet = size === 'detail' && path ? posterSrcSet(path) : undefined
-  // The detail card sits on the thumbnail the globe already loaded, and the
-  // sharper image fades in over it, so opening a poster never flashes empty.
-  const baseSrc =
-    size === 'detail' && movie.posterDetailUrl ? movie.posterUrl : null
+  // On a dense desktop screen, w500 follows once w342 is showing, as a
+  // layer over it, so the poster never steps back to a blank or a fill.
+  const upgradeSrc =
+    size === 'detail' && path && wantsDetailUpgrade()
+      ? posterUrl(path, 'w500')
+      : null
+  const [upgraded, setUpgraded] = useState(false)
+  // The detail card starts from whatever the globe has already loaded for this
+  // film (see posterBaseLayers) and each sharper image fades in over the one
+  // below once decoded, so opening a poster never shows an empty frame.
+  const baseSrcs = size === 'detail' ? posterBaseLayers(movie) : []
 
   useEffect(() => {
     if (loadState !== 'error') return
@@ -733,24 +814,15 @@ const MoviePoster = ({
           : undefined
       }
     >
-      {baseSrc ? (
-        <img
-          className='warp-poster-base'
-          src={baseSrc}
-          alt=''
-          aria-hidden='true'
-          crossOrigin='anonymous'
-          decoding='async'
-        />
-      ) : null}
+      {baseSrcs.map((base) => (
+        <PosterBaseLayer key={base} src={base} />
+      ))}
       <img
         key={attempt}
         src={recovered ?? getWarmPosterUrl(src) ?? src}
-        srcSet={recovered ? undefined : srcSet}
-        sizes={srcSet ? DETAIL_POSTER_SIZES : undefined}
         alt=''
         decoding='async'
-        fetchPriority={priority ? 'high' : undefined}
+        fetchPriority={priority || size === 'detail' ? 'high' : 'low'}
         // TMDB only sends CORS headers when asked and does not vary on it, so
         // a plain request would cache a copy the globe's WebGL cannot use.
         crossOrigin={movie.posterDetailUrl ? 'anonymous' : undefined}
@@ -758,16 +830,81 @@ const MoviePoster = ({
         onError={() => setLoadState('error')}
         // The fade starts once the pixels are decoded, not when the bytes land.
         onLoad={(event) => {
-          const reveal = () => setLoadState('loaded')
+          const reveal = () => {
+            decodedPosters.add(decodedKey)
+            notePosterUrlLoaded(src)
+            setLoadState('loaded')
+          }
           const image = event.currentTarget
           if (typeof image.decode === 'function')
             image.decode().then(reveal, reveal)
           else reveal()
         }}
       />
+      {upgradeSrc && loadState === 'loaded' ? (
+        <img
+          className='warp-poster-upgrade'
+          data-shown={upgraded ? 'true' : undefined}
+          src={upgradeSrc}
+          alt=''
+          aria-hidden='true'
+          crossOrigin='anonymous'
+          decoding='async'
+          onLoad={(event) => {
+            const image = event.currentTarget
+            const show = () => {
+              notePosterUrlLoaded(upgradeSrc)
+              setUpgraded(true)
+            }
+            if (typeof image.decode === 'function')
+              image.decode().then(show, show)
+            else show()
+          }}
+        />
+      ) : null}
     </span>
   )
 }
+
+// A layer under the card's poster: a size the globe has already loaded. It is
+// never removed once painted; a failed one simply goes, rather than leaving a
+// broken-image icon.
+const PosterBaseLayer = ({ src }: { src: string }) => {
+  const [failed, setFailed] = useState(false)
+  return failed ? null : (
+    <img
+      className='warp-poster-base'
+      src={src}
+      alt=''
+      aria-hidden='true'
+      crossOrigin='anonymous'
+      decoding='async'
+      onError={() => setFailed(true)}
+    />
+  )
+}
+
+// The images the card (and the flight animation) start from, smallest first: a
+// tiny w92 (the globe's own back-of-globe size, a few KB), then the best size
+// the globe has loaded for this film, else w154. Everything sits under the
+// w342 the card shows next, so there is always something painted.
+export const posterBaseLayers = (
+  movie: Pick<TestMovie, 'posterPath' | 'posterUrl' | 'posterDetailUrl'>,
+) => {
+  const path = movie.posterPath
+  if (!path) return movie.posterDetailUrl ? [movie.posterUrl] : []
+  const low = posterUrl(path, 'w92')
+  const mid = startingPosterUrl(path, posterUrl(path, 'w154'))
+  return mid === low ? [low] : [low, mid]
+}
+
+// Whether the card's poster is drawn wide enough to gain from w500 over
+// w342: desktops only (phones keep the lighter file), at 1.25x and up.
+const wantsDetailUpgrade = () =>
+  typeof window !== 'undefined' &&
+  !detectLightweightDevice() &&
+  Math.min(330, Math.max(240, window.innerWidth * 0.25)) * readDpr() >
+    342 * 1.15
 
 const useExitPresence = <T,>(
   isOpen: boolean,
@@ -814,16 +951,6 @@ export const filterMoviesByGenres = (
 ) => {
   if (!selectedGenres.length) return movies
   return movies.filter((movie) => getGenreOverlap(movie, selectedGenres) > 0)
-}
-
-export const filterMoviesByTitleSearch = (
-  movies: TestMovie[],
-  searchQuery: string,
-) => {
-  const query = toTitleKey(searchQuery.trim())
-  if (!query) return movies
-
-  return movies.filter((movie) => getTitleKey(movie).includes(query))
 }
 
 const movieHasAnyGenre = (movie: TestMovie, genres: string[]) => {
@@ -967,6 +1094,7 @@ export type SortRule = { key: ListGrouping; direction: SortDirection | null }
 
 export const DEFAULT_SORT_DIRECTION: Record<ListGrouping, SortDirection> = {
   alpha: 'asc',
+  country: 'desc',
   popularity: 'desc',
   rating: 'desc',
   runtime: 'asc',
@@ -974,10 +1102,10 @@ export const DEFAULT_SORT_DIRECTION: Record<ListGrouping, SortDirection> = {
   year: 'desc',
 }
 
-// The index opens newest first, then A–Z. Reset returns to exactly this.
+// The index opens newest first, then most popular. Reset returns to exactly this.
 export const DEFAULT_SORT_RULES: SortRule[] = [
   { key: 'year', direction: 'desc' },
-  { key: 'alpha', direction: 'asc' },
+  { key: 'popularity', direction: 'desc' },
 ]
 
 export const isDefaultSortRules = (rules: SortRule[]) =>
@@ -1015,6 +1143,17 @@ const compareMoviesByRule = (
 ) => {
   const sign = direction === 'desc' ? -1 : 1
   if (key === 'alpha') return sign * compareTitleKeys(movieA, movieB)
+  if (key === 'country') {
+    // Films with no country always come last.
+    if (!movieA.countries || !movieB.countries) {
+      return movieA.countries === movieB.countries
+        ? 0
+        : movieA.countries
+          ? -1
+          : 1
+    }
+    return sign * movieA.countries.localeCompare(movieB.countries)
+  }
   const valueA = getSortValue(movieA, key)
   const valueB = getSortValue(movieB, key)
   if (valueA === null || valueB === null) {
@@ -1033,13 +1172,9 @@ export const getActiveSortRules = (rules: SortRule[]) => {
     : [{ key: 'alpha' as const, direction: 'asc' as const }]
 }
 
-export const sortMoviesByRules = (movies: TestMovie[], rules: SortRule[]) => {
-  const active = getActiveSortRules(rules)
-  // Grouping by initial letter only lists titles that start with a letter.
-  const sortableMovies =
-    active[0].key === 'alpha' ? movies.filter(hasLatinLeadingTitle) : movies
-
-  return [...sortableMovies].sort((movieA, movieB) => {
+const compareByRules =
+  (active: ReturnType<typeof getActiveSortRules>) =>
+  (movieA: TestMovie, movieB: TestMovie) => {
     for (const rule of active) {
       const order = compareMoviesByRule(
         movieA,
@@ -1050,7 +1185,43 @@ export const sortMoviesByRules = (movies: TestMovie[], rules: SortRule[]) => {
       if (order) return order
     }
     return compareTitleKeys(movieA, movieB)
-  })
+  }
+
+// Grouping by initial letter only lists titles that start with a letter.
+const sortableFor = (
+  movies: readonly TestMovie[],
+  active: ReturnType<typeof getActiveSortRules>,
+) => (active[0].key === 'alpha' ? movies.filter(hasLatinLeadingTitle) : movies)
+
+export const sortMoviesByRules = (movies: TestMovie[], rules: SortRule[]) => {
+  const active = getActiveSortRules(rules)
+  return [...sortableFor(movies, active)].sort(compareByRules(active))
+}
+
+// The first `count` films sortMoviesByRules would list, without sorting the
+// whole catalogue (one pass, keeping the best few).
+export const firstByRules = (
+  movies: readonly TestMovie[],
+  rules: SortRule[],
+  count: number,
+) => {
+  const active = getActiveSortRules(rules)
+  const compare = compareByRules(active)
+  const best: TestMovie[] = []
+  for (const movie of sortableFor(movies, active)) {
+    if (best.length >= count && compare(movie, best[best.length - 1]) >= 0)
+      continue
+    let low = 0
+    let high = best.length
+    while (low < high) {
+      const mid = (low + high) >> 1
+      if (compare(best[mid], movie) <= 0) low = mid + 1
+      else high = mid
+    }
+    best.splice(low, 0, movie)
+    if (best.length > count) best.pop()
+  }
+  return best
 }
 
 export const sortMoviesForList = (
@@ -1166,6 +1337,10 @@ export const groupMoviesByRuntime = (movies: TestMovie[]) =>
 export const groupMoviesByVotes = (movies: TestMovie[]) =>
   groupBy(movies, getVotesGroupKey)
 
+// Films with no country share the "Unknown" group.
+export const groupMoviesByCountry = (movies: TestMovie[]) =>
+  groupBy(movies, (movie) => movie.countries || UNKNOWN_GROUP)
+
 export const groupMoviesByPopularity = (movies: TestMovie[]) => {
   const groups = getPopularityGroups(movies)
   return groupBy(movies, (movie) => groups.get(movie.id) ?? UNKNOWN_GROUP)
@@ -1186,6 +1361,8 @@ export const groupMoviesForList = (
       return groupMoviesByPopularity(movies)
     case 'votes':
       return groupMoviesByVotes(movies)
+    case 'country':
+      return groupMoviesByCountry(movies)
     default:
       return groupMoviesByYear(movies)
   }
@@ -1203,17 +1380,24 @@ const getGroupOrder = (group: string, grouping: ListGrouping) => {
 }
 
 // Group headers follow the sort direction; unknown groups always come last.
+// Countries are ordered by how many films each holds (`sizes`), then by name.
 export const compareListGroups = (
   groupA: string,
   groupB: string,
   grouping: ListGrouping,
   direction: SortDirection,
+  sizes?: { a: number; b: number },
 ) => {
   const unknownA = isUnknownGroup(groupA)
   const unknownB = isUnknownGroup(groupB)
   if (unknownA || unknownB) return Number(unknownA) - Number(unknownB)
   const sign = direction === 'desc' ? -1 : 1
   if (grouping === 'alpha') return sign * groupA.localeCompare(groupB)
+  if (grouping === 'country') {
+    return (
+      sign * ((sizes?.a ?? 0) - (sizes?.b ?? 0)) || groupA.localeCompare(groupB)
+    )
+  }
   return (
     sign * (getGroupOrder(groupA, grouping) - getGroupOrder(groupB, grouping))
   )
@@ -1251,6 +1435,12 @@ const SORT_OPTIONS: Array<{
     asc: 'Fewest votes',
     desc: 'Most votes',
   },
+  {
+    key: 'country',
+    label: 'Country',
+    asc: 'Fewest films first',
+    desc: 'Most films first',
+  },
 ]
 const SORT_LABELS = Object.fromEntries(
   SORT_OPTIONS.map((option) => [option.key, option.label]),
@@ -1274,6 +1464,8 @@ const getMovieListGroupKey = (
       return getVotesGroupKey(movie)
     case 'popularity':
       return popularityGroups?.get(movie.id) ?? UNKNOWN_GROUP
+    case 'country':
+      return movie.countries || UNKNOWN_GROUP
     default:
       return movie.year || '----'
   }
@@ -1363,18 +1555,26 @@ export const TestGalleryApp = () => {
     useState<RuntimeFilter | null>(null)
   const [selectedYear, setSelectedYear] = useState<YearFilter | null>(null)
   const [ratingMin, setRatingMin] = useState<number | null>(null)
+  const [selectedCollections, setSelectedCollections] = useState<
+    CollectionId[]
+  >([])
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null)
+  const [selectedOrigins, setSelectedOrigins] = useState<OriginId[]>([])
   const [contentFilter, setContentFilter] = useState<ContentFilter>('all')
   const [listSearchQuery, setListSearchQuery] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
-  const [savedOpen, setSavedOpen] = useState(false)
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [moodsOpen, setMoodsOpen] = useState(false)
   // The run recap's share sheet, opened from the Easter egg shelf.
   const [recapOpen, setRecapOpen] = useState(false)
-  // The session path's drawer and its share sheet.
-  const [pathOpen, setPathOpen] = useState(false)
+  // The History and Favourites drawer (one button, two tabs) and the history
+  // share sheet.
+  const [libraryTab, setLibraryTab] = useState<LibraryTab>('history')
   const [pathShareOpen, setPathShareOpen] = useState(false)
   const [moodNudge, setMoodNudge] = useState(false)
+  // Shuffles since the moods were last opened: what the mood line follows.
+  const [moodSkips, setMoodSkips] = useState(0)
   const [moodShuffleNonce, setMoodShuffleNonce] = useState(0)
   // The bonus run a mood landing earned, waiting for the wall to be rebuilt.
   const pendingMoodRunRef = useRef<MoodRunStart | null>(null)
@@ -1386,7 +1586,11 @@ export const TestGalleryApp = () => {
   const moodNudgeSpentRef = useRef(readSessionFlag(MOOD_NUDGE_STORAGE_KEY))
   const [aboutMaximized, setAboutMaximized] = useState(false)
   const [initialGalleryReady, setInitialGalleryReady] = useState(false)
-  const [galleryLoadPercent, setGalleryLoadPercent] = useState(0)
+  // The Smart Loader's milestones: the first catalogue chunk's download
+  // (0..1), and the share of on-screen posters settled (null until the globe
+  // is built).
+  const [catalogProgress, setCatalogProgress] = useState(0)
+  const [postersPercent, setPostersPercent] = useState<number | null>(null)
   const [loadState, setLoadState] = useState<LoadState>(
     getCachedFirstChunk() ? 'ready' : 'loading',
   )
@@ -1400,18 +1604,22 @@ export const TestGalleryApp = () => {
   const theme: Theme = resolveTheme(themePref, sky)
   const ambientWeather =
     themePref === 'dynamic' ? resolveDynamic(sky).effect : null
-  // Keeps the first films of the index, and a few random ones, on the device,
-  // so the next visit starts populated. Waits for the catalogue to settle.
+  // Keeps the first films of the index (as it opens: newest first, then A-Z)
+  // and a few random ones on the device, with their list thumbnails ready, so
+  // opening the index shows its first rows at once. Waits for the catalogue
+  // to settle; the films the index lists first change when more arrive.
   useEffect(() => {
     if (!movies.length || prefersSavedData()) return
     const timer = window.setTimeout(() => {
       const toFilm = (movie: TestMovie) => ({
         id: movie.id,
         thumbUrl: movie.posterUrl,
-        listUrl: movie.posterListUrl ?? movie.posterUrl,
+        listUrl: listPosterUrl(movie),
       })
       seedStarterSet(
-        firstByKey(movies, getTitleKey, STARTER_ALPHA_COUNT).map(toFilm),
+        firstByRules(movies, DEFAULT_SORT_RULES, STARTER_INDEX_COUNT).map(
+          toFilm,
+        ),
         movies.slice(0, galleryWindowSize()).map(toFilm),
       )
     }, 3000)
@@ -1495,12 +1703,9 @@ export const TestGalleryApp = () => {
     }
   }, [])
   const [spinRequest, setSpinRequest] = useState<SpinRequest | null>(null)
-  // On phones a shuffle's film waits in the now-playing bar instead of its
-  // card opening. `expandDetailsFor` makes that film's card open fully, not
-  // as the summary step.
-  const [nowPlayingId, setNowPlayingId] = useState<string | null>(null)
-  const [expandDetailsFor, setExpandDetailsFor] = useState<string | null>(null)
   const [spinHintSeen, setSpinHintSeen] = useState(readSpinHintSeen)
+  // The Index's title pill stays dormant until a shuffle has landed on a film.
+  const [indexShuffled, setIndexShuffled] = useState(false)
 
   const markSpinHintSeen = useCallback(() => {
     setSpinHintSeen((seen) => {
@@ -1522,7 +1727,9 @@ export const TestGalleryApp = () => {
   useEffect(() => {
     let cancelled = false
 
-    loadFirstChunk()
+    loadFirstChunk((fraction) => {
+      if (!cancelled) setCatalogProgress(fraction)
+    })
       .then((nextMovies) => {
         if (cancelled) return
         setMovies((currentMovies) =>
@@ -1530,9 +1737,9 @@ export const TestGalleryApp = () => {
             ? currentMovies
             : nextMovies,
         )
-        setActiveMovieId(
-          (currentMovieId) => currentMovieId ?? nextMovies[0]?.id ?? null,
-        )
+        // No default film here: the landing pick (made in the same render the
+        // films arrive in) is the first one shown, so the title never flashes
+        // the catalogue's first film before it.
         setLoadState('ready')
       })
       .catch((error: unknown) => {
@@ -1620,40 +1827,107 @@ export const TestGalleryApp = () => {
     !prefersSavedData() || browsingCatalog || linkedNeedsCatalog
   const fullCatalogWanted =
     !detectLightweightDevice() || browsingCatalog || linkedNeedsCatalog
+  // Parsing the rest of the catalogue and re-rendering the page with it takes
+  // the main thread for a while (over a second on a slow device), so it waits
+  // until the globe is still: no press, no spin, no Shuffle Pro run. A freeze
+  // in the middle of a hold or a spin is what a visitor would feel.
+  const globeBusyRef = useRef<() => boolean>(() => false)
   useEffect(() => {
     if (!initialGalleryReady || loadState !== 'ready' || !catalogWanted) return
     let cancelled = false
-    const timer = window.setTimeout(() => {
-      loadAllMovies({
-        lightweight: detectLightweightDevice(),
-        full: fullCatalogWanted,
-      })
-        .then((allMovies) => {
-          if (cancelled) return
-          setMovies((currentMovies) =>
-            currentMovies.length >= allMovies.length
-              ? currentMovies
-              : allMovies,
-          )
-          if (fullCatalogWanted) setCatalogComplete(true)
-        })
-        .catch(() => {
-          // The first chunk still works on its own; the rest is extra.
-        })
-    }, 400)
+    let timer = 0
+    const whenStill = (run: () => void) => {
+      if (cancelled) return
+      if (globeBusyRef.current() && !browsingCatalog) {
+        timer = window.setTimeout(() => whenStill(run), CATALOG_STILL_RETRY_MS)
+        return
+      }
+      run()
+    }
+    timer = window.setTimeout(
+      () =>
+        whenStill(() => {
+          loadAllMovies({
+            lightweight: detectLightweightDevice(),
+            full: fullCatalogWanted,
+          })
+            .then((allMovies) =>
+              whenStill(() => {
+                setMovies((currentMovies) =>
+                  currentMovies.length >= allMovies.length
+                    ? currentMovies
+                    : allMovies,
+                )
+                if (fullCatalogWanted) setCatalogComplete(true)
+              }),
+            )
+            .catch(() => {
+              // The first chunk still works on its own; the rest is extra.
+            })
+        }),
+      400,
+    )
     return () => {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [catalogWanted, fullCatalogWanted, initialGalleryReady, loadState])
+  }, [
+    browsingCatalog,
+    catalogWanted,
+    fullCatalogWanted,
+    initialGalleryReady,
+    loadState,
+  ])
 
   const genreSummaries = useMemo(() => getGenreSummaries(movies), [movies])
 
   const decadeOptions = useMemo(() => getDecadeSummaries(movies), [movies])
 
+  const countrySummaries = useMemo(() => getCountrySummaries(movies), [movies])
+
+  const originCounts = useMemo(() => countOrigins(movies), [movies])
+
+  // Same lists the Filters page renders, so the About figure follows them.
+  const genreAndFilterCount = useMemo(
+    () =>
+      countGenresAndFilters({
+        genres: genreSummaries.map((summary) => summary.genre),
+        groups: [
+          CONTENT_FILTERS,
+          MOVIE_RUNTIME_FILTERS,
+          decadeOptions,
+          RATING_PRESETS,
+          MOOD_FILTERS,
+          COLLECTION_FILTERS,
+          ORIGIN_GROUPS,
+          countrySummaries
+            .slice(0, COUNTRY_CHIPS_SHOWN)
+            .map((summary) => summary.country),
+        ],
+      }),
+    [genreSummaries, decadeOptions, countrySummaries],
+  )
+
   const baseMovies = useMemo(
-    () => filterMoviesByYearAndRating(movies, selectedYear, ratingMin),
-    [movies, selectedYear, ratingMin],
+    () =>
+      filterMoviesByOrigins(
+        filterMoviesByCountry(
+          filterMoviesByCollections(
+            filterMoviesByYearAndRating(movies, selectedYear, ratingMin),
+            selectedCollections,
+          ),
+          selectedCountry,
+        ),
+        selectedOrigins,
+      ),
+    [
+      movies,
+      selectedYear,
+      ratingMin,
+      selectedCollections,
+      selectedCountry,
+      selectedOrigins,
+    ],
   )
 
   const genreFilteredMovies = useMemo(
@@ -1678,6 +1952,9 @@ export const TestGalleryApp = () => {
     (selectedRuntimeFilter ? 1 : 0) +
     (selectedYear ? 1 : 0) +
     (ratingMin !== null ? 1 : 0) +
+    selectedCollections.length +
+    selectedOrigins.length +
+    (selectedCountry ? 1 : 0) +
     (contentFilter !== 'all' ? 1 : 0)
 
   const visibleMovies = useStableList(
@@ -1749,6 +2026,8 @@ export const TestGalleryApp = () => {
         : undefined,
     [tasteWeights],
   )
+  const weightOfRef = useRef(weightOf)
+  weightOfRef.current = weightOf
 
   // The first centred movie of a page load is random (and never "Marmaduke").
   // Chosen once, during render, so the globe's first build already faces it.
@@ -1779,35 +2058,53 @@ export const TestGalleryApp = () => {
 
   const handleGalleryReady = useCallback(() => {
     if (loadState === 'ready' && visibleMovies.length) {
-      setGalleryLoadPercent(100)
       setInitialGalleryReady(true)
     }
   }, [loadState, visibleMovies.length])
 
-  useEffect(() => {
-    if (initialGalleryReady || loadState !== 'ready') return
-    if (!visibleMovies.length) return
-    const timer = window.setTimeout(
-      () => setInitialGalleryReady(true),
-      FIRST_LOAD_MAX_LOCK_MS,
-    )
-    return () => window.clearTimeout(timer)
-  }, [initialGalleryReady, loadState, visibleMovies.length])
-
+  // Only the loader shows this: once the gallery is up (ready or skipped),
+  // the globe's later progress is not page state, since every update would
+  // re-render the whole page while the rest of the globe loads.
+  const initialGalleryReadyRef = useRef(initialGalleryReady)
+  initialGalleryReadyRef.current = initialGalleryReady
   const handleGalleryLoadProgress = useCallback((percent: number) => {
-    setGalleryLoadPercent(Math.round(percent))
-    if (percent >= 100) setInitialGalleryReady(true)
+    if (initialGalleryReadyRef.current) return
+    setPostersPercent(percent)
   }, [])
+
+  // No auto-dismiss: the screen stays until the posters on screen are in or
+  // the visitor skips (every slot already shows a placeholder, so Skip never
+  // reveals an empty globe). The bar follows real milestones; after 6 s with
+  // no real progress it turns amber and says so.
+  const loadMilestones = {
+    catalog: catalogProgress,
+    catalogDone: loadState === 'ready',
+    globeBuilt: postersPercent !== null,
+    posters: (postersPercent ?? 0) / 100,
+  }
+  const loaderActive = mode === 'wall' && !initialGalleryReady
+  const galleryLoadPercent = useSmartProgress(
+    loaderActive,
+    loadMilestones,
+    initialGalleryReady,
+  )
+  const loaderState = useLoaderState(
+    loaderActive,
+    Math.round(loadTarget(loadMilestones).target),
+  )
 
   useEffect(() => {
     if (mode !== 'wall') return
+    // Until the landing pick is applied (the effect above), there is no film
+    // to replace.
+    if (activeMovieId === null && landingId) return
     if (
       visibleMovies.length > 0 &&
       !visibleMovies.some((movie) => movie.id === activeMovieId)
     ) {
       setActiveMovieId(visibleMovies[0].id)
     }
-  }, [activeMovieId, mode, visibleMovies])
+  }, [activeMovieId, landingId, mode, visibleMovies])
 
   // Sorting comes first: filtering keeps the order, so a keystroke in the
   // search box never re-sorts the whole catalogue, and the list follows the
@@ -1817,10 +2114,19 @@ export const TestGalleryApp = () => {
     [filteredMovies, sortRules],
   )
   const deferredSearchQuery = useDeferredValue(listSearchQuery)
-  const listMovies = useMemo(
-    () => filterMoviesByTitleSearch(sortedFilteredMovies, deferredSearchQuery),
+  // With a query the list is ranked by how well each film matches (typos,
+  // years, genres, countries and plot words included) instead of grouped.
+  const searchResults = useMemo(
+    () => searchMovies(sortedFilteredMovies, deferredSearchQuery),
     [sortedFilteredMovies, deferredSearchQuery],
   )
+  const listMovies = searchResults ?? sortedFilteredMovies
+  const listRanked = searchResults !== null
+  // Getting the films ready for search a slice at a time while the index is
+  // open means the first keystroke is not the one that pays for it.
+  useEffect(() => {
+    if (mode === 'list') return warmSearch(sortedFilteredMovies)
+  }, [mode, sortedFilteredMovies])
   useEffect(() => {
     if (mode !== 'list' || !listMovies.length) return
     if (!listMovies.some((movie) => movie.id === activeMovieId)) {
@@ -1828,13 +2134,26 @@ export const TestGalleryApp = () => {
     }
   }, [activeMovieId, listMovies, mode])
 
-  const activeMovie = useMemo(
-    () =>
-      movies.find((movie) => movie.id === activeMovieId) ??
-      visibleMovies[0] ??
-      null,
-    [activeMovieId, movies, visibleMovies],
-  )
+  const activeMovie = useMemo(() => {
+    const shownId = activeMovieId ?? landingId
+    return (
+      movies.find((movie) => movie.id === shownId) ?? visibleMovies[0] ?? null
+    )
+  }, [activeMovieId, landingId, movies, visibleMovies])
+
+  // The film the globe has settled on (its title pill, one tap from the
+  // card) gets its Watch listing and logos ready after a short dwell, so a
+  // spin past a film costs nothing.
+  const dwellId = activeMovie?.id
+  const dwellTitle = activeMovie?.title
+  useEffect(() => {
+    if (!dwellId || !dwellTitle || !initialGalleryReady) return
+    const timer = window.setTimeout(
+      () => prefetchWatch(dwellId, dwellTitle),
+      WATCH_DWELL_MS,
+    )
+    return () => window.clearTimeout(timer)
+  }, [dwellId, dwellTitle, initialGalleryReady])
 
   const detailsMovie = useMemo(
     () => movies.find((movie) => movie.id === detailsMovieId) ?? null,
@@ -1857,7 +2176,7 @@ export const TestGalleryApp = () => {
       setWatchMovieId(null)
       setFilterOpen(false)
       setAboutOpen(false)
-      setSavedOpen(false)
+      setLibraryOpen(false)
       setSortOpen(false)
     },
   })
@@ -1912,8 +2231,7 @@ export const TestGalleryApp = () => {
   )
   const filterPresence = useExitPresence(filterOpen)
   const aboutPresence = useExitPresence(aboutOpen)
-  const savedPresence = useExitPresence(savedOpen)
-  const pathPresence = useExitPresence(pathOpen)
+  const libraryPresence = useExitPresence(libraryOpen)
   const moodsPresence = useExitPresence(moodsOpen)
   const savedEntries = useSyncExternalStore(
     savedStore.subscribe,
@@ -1932,62 +2250,6 @@ export const TestGalleryApp = () => {
   const watchPresence = useExitPresence(Boolean(watchMovie), watchMovie)
   const detailsPresence = useExitPresence(Boolean(detailsMovie), detailsMovie)
 
-  // The now-playing bar's film, while nothing else has taken over the screen.
-  // When it no longer applies the film is dropped, not parked for later.
-  const nowPlayingMovie = useMemo(
-    () =>
-      nowPlayingId
-        ? (visibleMovies.find((movie) => movie.id === nowPlayingId) ?? null)
-        : null,
-    [nowPlayingId, visibleMovies],
-  )
-  const nowPlayingVisible = shouldShowNowPlaying({
-    isMobile: isMobileViewport,
-    immersive,
-    partyActive: party.phase !== 'off',
-    mode,
-    hasFilm: Boolean(nowPlayingMovie),
-    galleryReady: initialGalleryReady,
-    detailsOpen: Boolean(detailsMovieId),
-    // 'armed' is only a press on the globe that might become a hold.
-    runActive:
-      shuffleProSnapshot.phase !== 'idle' &&
-      shuffleProSnapshot.phase !== 'armed',
-    overlayOpen:
-      filterOpen ||
-      aboutOpen ||
-      savedOpen ||
-      pathOpen ||
-      moodsOpen ||
-      sortOpen ||
-      recapOpen ||
-      pathShareOpen ||
-      Boolean(watchMovieId),
-  })
-  useEffect(() => {
-    if (!nowPlayingVisible) setNowPlayingId(null)
-  }, [nowPlayingVisible])
-  const nowPlayingFilm = useMemo<NowPlayingFilm | null>(
-    () =>
-      nowPlayingMovie && nowPlayingVisible
-        ? {
-            id: nowPlayingMovie.id,
-            title: nowPlayingMovie.title,
-            meta: buildNowPlayingMeta({
-              year: nowPlayingMovie.year,
-              rating:
-                nowPlayingMovie.ratingValue === null
-                  ? ''
-                  : nowPlayingMovie.rating,
-              runtime: formatRuntimeLabel(nowPlayingMovie),
-            }),
-            posterUrl: nowPlayingMovie.posterUrl,
-            placeholderColor: nowPlayingMovie.placeholderColor,
-          }
-        : null,
-    [nowPlayingMovie, nowPlayingVisible],
-  )
-
   useAudioUnlockOnGesture()
   useInterfaceSounds()
   useSoundEffects({
@@ -2005,6 +2267,11 @@ export const TestGalleryApp = () => {
     }
     wasShuffleSpinning.current = shuffleSpinning
   }, [shuffleSpinning, shuffleProController])
+  const isGlobeMovingRef = useRef(isGlobeMoving)
+  isGlobeMovingRef.current = isGlobeMoving
+  globeBusyRef.current = () =>
+    isGlobeMovingRef.current ||
+    shuffleProController.getSnapshot().phase !== 'idle'
 
   const toggleGenre = useCallback((genre: string) => {
     setSelectedGenres((currentGenres) =>
@@ -2020,6 +2287,9 @@ export const TestGalleryApp = () => {
     setContentFilter('all')
     setSelectedYear(null)
     setRatingMin(null)
+    setSelectedCollections([])
+    setSelectedCountry(null)
+    setSelectedOrigins([])
     setSelectedGenres([])
     setSelectedMoodFilters([])
     setSelectedRuntimeFilter(null)
@@ -2035,6 +2305,26 @@ export const TestGalleryApp = () => {
         ? currentFilters.filter((filter) => filter !== moodFilter)
         : [...currentFilters, moodFilter],
     )
+  }, [])
+
+  const toggleCollection = useCallback((id: CollectionId) => {
+    setSelectedCollections((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id],
+    )
+  }, [])
+
+  const toggleOrigin = useCallback((id: OriginId) => {
+    setSelectedOrigins((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id],
+    )
+  }, [])
+
+  const toggleCountry = useCallback((country: string) => {
+    setSelectedCountry((current) => (current === country ? null : country))
   }, [])
 
   const toggleRuntimeFilter = useCallback((runtimeFilter: RuntimeFilter) => {
@@ -2134,9 +2424,14 @@ export const TestGalleryApp = () => {
   const filterSectionProps: FilterSectionsProps = {
     allActive: selectedFilterCount === 0,
     contentFilter,
+    countries: countrySummaries,
+    originCounts,
+    selectedOrigins,
     decades: decadeOptions,
     genres: genreSummaries,
     ratingMin,
+    selectedCollections,
+    selectedCountry,
     runtimeFilter: selectedRuntimeFilter,
     selectedGenres,
     selectedMoodFilters,
@@ -2145,6 +2440,9 @@ export const TestGalleryApp = () => {
     onClear: clearAllFilters,
     onClearGenres: clearGenres,
     onSelectContentFilter: selectContentFilter,
+    onToggleCollection: toggleCollection,
+    onToggleCountry: toggleCountry,
+    onToggleOrigin: toggleOrigin,
     onToggleGenre: toggleGenre,
     onToggleMoodFilter: toggleMoodFilter,
     onToggleRating: toggleRatingMin,
@@ -2158,7 +2456,7 @@ export const TestGalleryApp = () => {
     setWatchMovieId(null)
     setFilterOpen(false)
     setAboutOpen(false)
-    setSavedOpen(false)
+    setLibraryOpen(false)
   }, [])
 
   // A shared link opens its film's card once the catalogue is in. The address
@@ -2213,12 +2511,12 @@ export const TestGalleryApp = () => {
       }
       const from = menuControlRef.current?.getPosterRect(movie.id)
       if (!from) return
-      // Start from the sharp tier the globe has already fetched for the pick
-      // (the same URL, so it is cached), never down at the w154 thumbnail.
+      // The card's first image (w342, which the globe's opened poster also
+      // fetches), over the w154 thumbnail the globe already has.
       const images = movie.posterPath
         ? [
-            posterUrl(movie.posterPath, readDpr() >= 1.5 ? 'w500' : 'w342'),
-            movie.posterUrl,
+            posterUrl(movie.posterPath, 'w342'),
+            ...posterBaseLayers(movie).reverse(),
           ]
         : [movie.posterUrl]
       setPosterFlight({ movieId: movie.id, from, images })
@@ -2244,18 +2542,11 @@ export const TestGalleryApp = () => {
   useEffect(() => {
     if (!detailsMovieId) {
       setPosterFlight(null)
-      setExpandDetailsFor(null)
     }
   }, [detailsMovieId])
 
   const handleOpenFromGlobe = useCallback(
-    (movie: TestMovie, source: 'tap' | 'shuffle' | 'land') => {
-      // A quiet landing hands its film to the now-playing bar; no card.
-      if (source === 'land') {
-        sessionPathStore.add(movie.id)
-        setNowPlayingId(movie.id)
-        return
-      }
+    (movie: TestMovie, source: 'tap' | 'shuffle') => {
       // In the party game a landing is the player's pick. The film's card
       // stays shut until they have guessed, so it can't give the answer away.
       if (source === 'shuffle' && game.canLand) {
@@ -2282,13 +2573,14 @@ export const TestGalleryApp = () => {
     unlockAudio()
     void loadMoodPage()
     setMoodNudge(false)
+    setMoodSkips(0)
     moodNudgeSpentRef.current = true
     writeSessionFlag(MOOD_NUDGE_STORAGE_KEY)
     setDetailsMovieId(null)
     setWatchMovieId(null)
     setFilterOpen(false)
     setAboutOpen(false)
-    setSavedOpen(false)
+    setLibraryOpen(false)
     setSortOpen(false)
     setMoodsOpen(true)
   }, [])
@@ -2325,6 +2617,58 @@ export const TestGalleryApp = () => {
     [clearAllFilters, countForMoods, shuffleProController],
   )
 
+  // The next shuffle's candidates, with their card posters loaded ahead (see
+  // shuffle-pool.ts). Topped up a beat after each shuffle, so the refills
+  // never compete with the card that shuffle opens.
+  const shufflePoolRef = useRef<ShufflePool | null>(null)
+  shufflePoolRef.current ??= createShufflePool((id) => {
+    const movie = visibleMoviesRef.current.find((film) => film.id === id)
+    // The candidate's Watch listing and service logos come along, so its
+    // card opens with the badges already in place.
+    if (movie) prefetchWatch(movie.id, movie.title)
+    return movie?.posterPath
+      ? preloadPosterImage(posterUrl(movie.posterPath, 'w342'))
+      : Promise.resolve()
+  })
+  const refillTimerRef = useRef(0)
+  const scheduleShuffleRefill = useCallback(
+    (excludeId: string | null, delayMs = SHUFFLE_REFILL_DELAY_MS) => {
+      window.clearTimeout(refillTimerRef.current)
+      refillTimerRef.current = window.setTimeout(() => {
+        shufflePoolRef.current?.refill(() =>
+          pickOtherMovie(
+            visibleMoviesRef.current,
+            excludeId,
+            Math.random,
+            weightOfRef.current,
+          ),
+        )
+      }, delayMs)
+    },
+    [],
+  )
+  useEffect(() => () => window.clearTimeout(refillTimerRef.current), [])
+  // A shuffle's film: a loaded candidate from the pool when there is one,
+  // else a fresh draw with the same rules.
+  const pickShuffleMovie = useCallback(() => {
+    const onGlobe = new Set(visibleMovies.map((movie) => movie.id))
+    const movieId =
+      shufflePoolRef.current?.take(
+        activeMovieId,
+        (id) => onGlobe.has(id),
+        Math.random,
+      ) ?? pickOtherMovie(visibleMovies, activeMovieId, Math.random, weightOf)
+    scheduleShuffleRefill(movieId)
+    return movieId
+  }, [activeMovieId, scheduleShuffleRefill, visibleMovies, weightOf])
+  // The first candidates load once the globe is up, and again when the
+  // films on it change (not on every new active film).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: visibleMovies is the trigger
+  useEffect(() => {
+    if (!initialGalleryReady) return
+    scheduleShuffleRefill(null, SHUFFLE_FIRST_FILL_DELAY_MS)
+  }, [initialGalleryReady, scheduleShuffleRefill, visibleMovies])
+
   const handleShuffle = useCallback(() => {
     unlockAudio()
     if (mode === 'list') {
@@ -2333,12 +2677,7 @@ export const TestGalleryApp = () => {
       setListRandomNonce((nonce) => nonce + 1)
       return
     }
-    const movieId = pickOtherMovie(
-      visibleMovies,
-      activeMovieId,
-      Math.random,
-      weightOf,
-    )
+    const movieId = pickShuffleMovie()
     if (!movieId) return
     sessionPathStore.add(movieId)
     // Streak rules decide whether this shuffle becomes a Shuffle Pro run.
@@ -2350,6 +2689,7 @@ export const TestGalleryApp = () => {
       shuffleProController.startAutomatic(trigger, movieId)
       return
     }
+    setMoodSkips((count) => count + 1)
     // A few quick shuffles in a row, far from an Easter egg: offer the moods.
     if (!moodNudgeSpentRef.current) {
       const noted = noteShuffleForNudge(recentShufflesRef.current, Date.now())
@@ -2367,24 +2707,8 @@ export const TestGalleryApp = () => {
     setSpinRequest({
       itemId: movieId,
       nonce: performance.now(),
-      quiet: usesNowPlayingBar({
-        isMobile: isMobileViewport,
-        immersive,
-        partyActive: party.phase !== 'off',
-        mode,
-      }),
     })
-  }, [
-    activeMovieId,
-    detailsMovieId,
-    immersive,
-    isMobileViewport,
-    mode,
-    party.phase,
-    shuffleProController,
-    visibleMovies,
-    weightOf,
-  ])
+  }, [detailsMovieId, immersive, mode, pickShuffleMovie, shuffleProController])
 
   // Skip finishes a Shuffle Pro run. Ordinary shuffles can't be skipped.
   const handleSkip = useCallback(() => {
@@ -2480,13 +2804,16 @@ export const TestGalleryApp = () => {
     selectedRuntimeFilter,
     selectedYear,
     ratingMin,
+    selectedCollections,
+    selectedCountry,
+    selectedOrigins,
     contentFilter,
     sortRules,
     listSearchQuery,
     mode,
     Boolean(watchMovieId),
     aboutOpen,
-    savedOpen,
+    libraryOpen,
   ])
   const streakBreakReady = useRef(false)
   // biome-ignore lint/correctness/useExhaustiveDependencies: the signature carries the inputs
@@ -2496,8 +2823,6 @@ export const TestGalleryApp = () => {
       return
     }
     shuffleProController.noteAction({ type: 'break' })
-    // Filters, sort, search and view changes retire the bar's film too.
-    setNowPlayingId(null)
   }, [streakBreakSignature])
 
   // The premium card closing (or being replaced) fades the sky out.
@@ -2532,8 +2857,7 @@ export const TestGalleryApp = () => {
         detailsMovieId ||
         watchMovieId ||
         aboutOpen ||
-        savedOpen ||
-        pathOpen ||
+        libraryOpen ||
         moodsOpen ||
         filterOpen ||
         sortOpen ||
@@ -2552,8 +2876,7 @@ export const TestGalleryApp = () => {
     filterOpen,
     immersive,
     moodsOpen,
-    pathOpen,
-    savedOpen,
+    libraryOpen,
     shuffleProController,
     sortOpen,
     watchMovieId,
@@ -2573,6 +2896,7 @@ export const TestGalleryApp = () => {
 
   const handlePickRandomMovie = useCallback((movie: TestMovie) => {
     setActiveMovieId(movie.id)
+    setIndexShuffled(true)
     setFilterOpen(false)
     setAboutOpen(false)
     setDetailsMovieId(
@@ -2581,45 +2905,20 @@ export const TestGalleryApp = () => {
     reopenDetailsAfterListShuffleRef.current = false
   }, [])
 
-  useEffect(() => {
-    if (
-      !detailsMovieId &&
-      !watchMovieId &&
-      !aboutOpen &&
-      !savedOpen &&
-      !pathOpen &&
-      !moodsOpen &&
-      !filterOpen &&
-      !sortOpen
-    )
-      return
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      // Close only the top-most layer: watch links, then details, then About,
-      // then Saved, then panels.
-      if (moodsOpen) setMoodsOpen(false)
-      else if (watchMovieId) setWatchMovieId(null)
-      else if (detailsMovieId) setDetailsMovieId(null)
-      else if (aboutOpen) setAboutOpen(false)
-      else if (savedOpen) setSavedOpen(false)
-      else if (pathOpen) setPathOpen(false)
-      else if (sortOpen) setSortOpen(false)
-      else setFilterOpen(false)
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [
-    aboutOpen,
-    detailsMovieId,
-    filterOpen,
-    moodsOpen,
-    pathOpen,
-    savedOpen,
-    sortOpen,
-    watchMovieId,
-  ])
+  // Every card, sheet and popup joins one dismiss stack in the order it opens:
+  // Escape closes the topmost, and the Filters and Sort popups (which have no
+  // backdrop) also close on a press outside. Focus goes back to the opener.
+  useDismissLayer(moodsOpen, () => setMoodsOpen(false))
+  useDismissLayer(Boolean(watchMovieId), () => setWatchMovieId(null))
+  useDismissLayer(Boolean(detailsMovieId), () => setDetailsMovieId(null))
+  useDismissLayer(aboutOpen, () => setAboutOpen(false))
+  useDismissLayer(libraryOpen, () => setLibraryOpen(false))
+  useDismissLayer(sortOpen && mode === 'list', () => setSortOpen(false), {
+    inside: (node) => Boolean(closestElement(node, SORT_POPUP_SELECTOR)),
+  })
+  useDismissLayer(filterOpen, () => setFilterOpen(false), {
+    inside: (node) => Boolean(closestElement(node, FILTER_POPUP_SELECTOR)),
+  })
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -2634,8 +2933,7 @@ export const TestGalleryApp = () => {
         overlayOpen: Boolean(
           watchMovieId ||
             aboutOpen ||
-            savedOpen ||
-            pathOpen ||
+            libraryOpen ||
             moodsOpen ||
             party.phase === 'setup' ||
             party.phase === 'final' ||
@@ -2701,8 +2999,7 @@ export const TestGalleryApp = () => {
     promptFullscreenHint,
     moodsOpen,
     party.phase,
-    pathOpen,
-    savedOpen,
+    libraryOpen,
     initialGalleryReady,
     listMovies.length,
     mode,
@@ -2748,13 +3045,6 @@ export const TestGalleryApp = () => {
   // plain tap that shuffles. Losing focus mid-hold just lets the hold go.
   const handleShuffleRef = useRef(handleShuffle)
   handleShuffleRef.current = handleShuffle
-  const shuffleFromBar = useCallback(() => handleShuffleRef.current(), [])
-  // The bar opens its film's card straight into the full state.
-  const openNowPlaying = useCallback(() => {
-    if (!nowPlayingMovie) return
-    setExpandDetailsFor(nowPlayingMovie.id)
-    handleOpenMovie(nowPlayingMovie)
-  }, [handleOpenMovie, nowPlayingMovie])
 
   // A bonus run from the mood page: a Shuffle Pro run in the picked worlds'
   // colours. False when it could not start, so the landing falls back to an
@@ -2866,7 +3156,6 @@ export const TestGalleryApp = () => {
       data-details-open={detailsPresence.isPresent ? 'true' : 'false'}
       data-filter-open={filterPresence.isPresent ? 'true' : 'false'}
       data-gallery-ready={initialGalleryReady ? 'true' : 'false'}
-      data-now-playing={nowPlayingFilm ? 'true' : undefined}
       data-mode={mode}
       data-theme={theme}
       data-theme-pref={themePref}
@@ -2956,6 +3245,7 @@ export const TestGalleryApp = () => {
           groupDirection={getActiveSortRules(sortRules)[0].direction}
           loadState={loadState}
           movies={listMovies}
+          ranked={listRanked}
           randomRequest={listRandomNonce}
           searchQuery={listSearchQuery}
           searchResultCount={listMovies.length}
@@ -3027,17 +3317,22 @@ export const TestGalleryApp = () => {
           else startTransition(() => setMode(nextMode))
         }}
         dockTop={
-          mode === 'wall' ? (
-            <>
-              <NowPlayingBar
-                film={nowPlayingFilm}
-                onOpen={openNowPlaying}
-                onShuffle={shuffleFromBar}
+          mode === 'list' ? (
+            indexShuffled && activeMovie && partyOff ? (
+              <IndexPill
+                film={{
+                  id: activeMovie.id,
+                  title: activeMovie.title,
+                  meta: formatMovieMeta(activeMovie),
+                  posterUrl: activeMovie.posterUrl,
+                  placeholderColor: activeMovie.placeholderColor,
+                }}
+                onOpen={() => handleOpenMovie(activeMovie)}
               />
-              {initialGalleryReady &&
-              !spinHintSeen &&
-              !detailsMovieId &&
-              !nowPlayingFilm ? (
+            ) : null
+          ) : mode === 'wall' ? (
+            <>
+              {initialGalleryReady && !spinHintSeen && !detailsMovieId ? (
                 <div
                   className='warp-spin-hint'
                   role='note'
@@ -3099,7 +3394,7 @@ export const TestGalleryApp = () => {
                 </button>
               ) : null}
               {initialGalleryReady && partyOff ? (
-                <MoodLine onOpen={openMoods} />
+                <MoodLine onOpen={openMoods} skips={moodSkips} />
               ) : null}
             </>
           ) : null
@@ -3207,47 +3502,21 @@ export const TestGalleryApp = () => {
         }
       />
 
-      {pathLinesOn && sessionPath.length >= 2 ? (
-        <button
-          type='button'
-          className={cn(
-            'warp-saved-button warp-path-button',
-            pathOpen && 'is-active',
-          )}
-          aria-label={`Session path, ${sessionPath.length} films`}
-          aria-expanded={pathOpen}
-          onClick={() => {
-            setPathOpen((isOpen) => !isOpen)
-            setSavedOpen(false)
-            setAboutOpen(false)
-            setFilterOpen(false)
-          }}
-        >
-          <Route aria-hidden='true' />
-        </button>
-      ) : null}
       <button
         type='button'
-        className={cn('warp-saved-button', savedOpen && 'is-active')}
-        aria-label={
-          savedMovies.length
-            ? `Saved movies, ${savedMovies.length}`
-            : 'Saved movies'
-        }
-        aria-expanded={savedOpen}
+        className={cn(
+          'warp-saved-button warp-history-button',
+          libraryOpen && 'is-active',
+        )}
+        aria-label='History and favourites'
+        aria-expanded={libraryOpen}
         onClick={() => {
-          setSavedOpen((isOpen) => !isOpen)
-          setPathOpen(false)
+          setLibraryOpen((isOpen) => !isOpen)
           setAboutOpen(false)
           setFilterOpen(false)
         }}
       >
-        <Heart aria-hidden='true' />
-        {savedMovies.length ? (
-          <span className='warp-saved-count' aria-hidden='true'>
-            {savedMovies.length > 99 ? '99+' : savedMovies.length}
-          </span>
-        ) : null}
+        <Route aria-hidden='true' />
       </button>
       <button
         type='button'
@@ -3256,63 +3525,43 @@ export const TestGalleryApp = () => {
         aria-expanded={aboutOpen}
         onClick={() => {
           setAboutOpen((isOpen) => !isOpen)
-          setSavedOpen(false)
-          setPathOpen(false)
+          setLibraryOpen(false)
           setFilterOpen(false)
         }}
       >
         <Info aria-hidden='true' />
       </button>
 
-      {savedPresence.isPresent ? (
+      {libraryPresence.isPresent ? (
         <>
           <button
             type='button'
             className='warp-drawer-scrim'
-            data-motion={savedPresence.motionPhase}
-            aria-label='Close saved movies'
+            data-motion={libraryPresence.motionPhase}
+            aria-label='Close history and favourites'
             tabIndex={-1}
-            onClick={() => setSavedOpen(false)}
+            onClick={() => setLibraryOpen(false)}
           />
-          <SavedDrawer
-            motionPhase={savedPresence.motionPhase}
-            movies={savedMovies}
-            taste={topGenres(tasteProfile)}
-            onClose={() => setSavedOpen(false)}
-            onOpenMovie={handleOpenMovie}
-            onRemove={(movie) => savedStore.remove(movie.id)}
-          />
-        </>
-      ) : null}
-
-      {pathPresence.isPresent ? (
-        <>
-          <button
-            type='button'
-            className='warp-drawer-scrim'
-            data-motion={pathPresence.motionPhase}
-            aria-label='Close session path'
-            tabIndex={-1}
-            onClick={() => setPathOpen(false)}
-          />
-          <PathDrawer
-            motionPhase={pathPresence.motionPhase}
+          <LibraryDrawer
+            motionPhase={libraryPresence.motionPhase}
+            tab={libraryTab}
+            onTab={setLibraryTab}
             path={sessionPath}
             movies={movies}
             currentId={activeMovieId}
-            onClose={() => setPathOpen(false)}
-            onRetrace={(movie) => {
-              setPathOpen(false)
+            saved={savedMovies}
+            taste={topGenres(tasteProfile)}
+            onClose={() => setLibraryOpen(false)}
+            onOpenMovie={(movie) => {
+              setLibraryOpen(false)
               handleOpenMovie(movie)
             }}
+            onRemoveSaved={(movie) => savedStore.remove(movie.id)}
             onShare={() => {
-              setPathOpen(false)
+              setLibraryOpen(false)
               setPathShareOpen(true)
             }}
-            onClear={() => {
-              sessionPathStore.clear()
-              setPathOpen(false)
-            }}
+            onClearHistory={() => sessionPathStore.clear()}
           />
         </>
       ) : null}
@@ -3370,7 +3619,7 @@ export const TestGalleryApp = () => {
       !moodsOpen &&
       !filterOpen &&
       !aboutOpen &&
-      !savedOpen ? (
+      !libraryOpen ? (
         <MoodNudge onOpen={openMoods} onDismiss={dismissMoodNudge} />
       ) : null}
 
@@ -3393,6 +3642,7 @@ export const TestGalleryApp = () => {
           ref={preloaderRef}
           className='warp-gallery-preloader'
           data-state={initialGalleryReady ? 'ready' : 'loading'}
+          data-loader-state={loaderState}
           onAnimationEnd={(event) => {
             if (event.animationName === 'warp-preloader-denied') {
               event.currentTarget.classList.remove('is-denied')
@@ -3402,9 +3652,13 @@ export const TestGalleryApp = () => {
           aria-live='polite'
         >
           <div className='warp-preloader-stack'>
-            <span>
-              <strong>Building gallery</strong>
-              <i>
+            <span className='warp-preloader-card'>
+              <strong className='warp-preloader-title'>
+                {loaderState === 'slow'
+                  ? 'This is taking longer than it should'
+                  : 'Building gallery'}
+              </strong>
+              <i className='warp-preloader-bar'>
                 <b
                   style={
                     {
@@ -3413,15 +3667,27 @@ export const TestGalleryApp = () => {
                   }
                 />
               </i>
-              <small>{galleryLoadPercent}%</small>
+              <small className='warp-preloader-percent'>
+                {galleryLoadPercent}%
+              </small>
               <button
                 type='button'
                 className='warp-preloader-skip'
                 onClick={() => setInitialGalleryReady(true)}
               >
-                Skip first time load
+                {loaderState === 'slow' ? (
+                  <>
+                    Poor connection? <b>Skip</b>
+                  </>
+                ) : (
+                  'Skip first time load'
+                )}
               </button>
-              <em>Images will load in the background</em>
+              <em className='warp-preloader-hint'>
+                {loaderState === 'slow'
+                  ? '(images may be pixelated)'
+                  : 'Images will load in the background'}
+              </em>
             </span>
             <LoaderSoundToggle />
           </div>
@@ -3469,7 +3735,7 @@ export const TestGalleryApp = () => {
           themePref={themePref}
           sky={sky}
           onThemeChange={changeTheme}
-          genreCount={genreSummaries.length}
+          genreCount={genreAndFilterCount}
           globeCount={visibleMovies.length}
           maximized={aboutMaximized}
           motionPhase={aboutPresence.motionPhase}
@@ -3504,7 +3770,6 @@ export const TestGalleryApp = () => {
           movies={movies}
           motionPhase={detailsPresence.motionPhase}
           movie={detailsPresence.value}
-          startExpanded={expandDetailsFor === detailsPresence.value.id}
           premiumTier={
             premiumFrame?.movieId === detailsPresence.value.id
               ? premiumFrame.tier
@@ -3538,7 +3803,7 @@ type WarpWallProps = {
   movies: TestMovie[]
   onLoadProgress: (percent: number) => void
   onMovingChange: (moving: boolean) => void
-  onOpenMovie: (movie: TestMovie, source: 'tap' | 'shuffle' | 'land') => void
+  onOpenMovie: (movie: TestMovie, source: 'tap' | 'shuffle') => void
   onReady: () => void
   onEngineAttached: (items: readonly { id: string }[]) => void
   onSelectMovie: (movie: TestMovie) => void
@@ -3597,7 +3862,7 @@ const WarpWall = ({
   )
 
   const handleOpenItem = useCallback(
-    (item: (typeof menuItems)[number], source: 'tap' | 'shuffle' | 'land') =>
+    (item: (typeof menuItems)[number], source: 'tap' | 'shuffle') =>
       onOpenMovie(item.payload, source),
     [onOpenMovie],
   )
@@ -3644,6 +3909,8 @@ const WarpWall = ({
   )
 }
 
+const RANKED_GROUP = 'Best matches'
+
 type WarpListProps = {
   activeMovieId: string | null
   errorMessage: string
@@ -3651,6 +3918,9 @@ type WarpListProps = {
   groupDirection: SortDirection
   loadState: LoadState
   movies: TestMovie[]
+  // The films are in match order (a search is active): one "Best matches"
+  // group instead of the sort's groups.
+  ranked: boolean
   // Bumped by the dock's Shuffle to pick and scroll to a random movie.
   randomRequest: number
   searchQuery: string
@@ -4000,6 +4270,7 @@ const WarpList = ({
   groupDirection,
   loadState,
   movies,
+  ranked,
   randomRequest,
   searchQuery,
   searchResultCount,
@@ -4039,11 +4310,16 @@ const WarpList = ({
 
   const groupedMovies = useMemo(
     () =>
-      Object.entries(groupMoviesForList(movies, grouping)).sort(
-        ([groupA], [groupB]) =>
-          compareListGroups(groupA, groupB, grouping, groupDirection),
-      ),
-    [groupDirection, grouping, movies],
+      ranked
+        ? [[RANKED_GROUP, movies] as [string, TestMovie[]]]
+        : Object.entries(groupMoviesForList(movies, grouping)).sort(
+            ([groupA, filmsA], [groupB, filmsB]) =>
+              compareListGroups(groupA, groupB, grouping, groupDirection, {
+                a: filmsA.length,
+                b: filmsB.length,
+              }),
+          ),
+    [groupDirection, grouping, movies, ranked],
   )
   const popularityGroups = useMemo(
     () => (grouping === 'popularity' ? getPopularityGroups(movies) : undefined),
@@ -4197,12 +4473,53 @@ const WarpList = ({
     }
   }, [movies])
 
+  // The next shuffle is decided ahead of time, so its thumbnails (the pick and
+  // nine rows either side, which the list glides past) can be in before it
+  // fires. A shuffle takes the planned film while it still applies.
+  const plannedPickRef = useRef<PlannedPick<TestMovie> | null>(null)
+  useEffect(() => {
+    const row = pickRandomRow(movies, activeMovieId, Math.random)
+    if (!row) {
+      plannedPickRef.current = null
+      return
+    }
+    plannedPickRef.current = { row, rows: movies }
+    if (prefersSavedData()) return
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      // The rows' own thumbnails, and the pill's poster for the pick itself.
+      const urls = [
+        ...prerollWindow(movies, movies.indexOf(row), PREROLL_SPAN).map(
+          listPosterUrl,
+        ),
+        row.posterUrl,
+      ].filter((url) => !prerolledPosters.has(url))
+      const queue = [...urls]
+      const worker = async () => {
+        for (let url = queue.shift(); url; url = queue.shift()) {
+          if (cancelled) return
+          prerolledPosters.add(url)
+          await preloadPosterImage(url).catch(() => {})
+        }
+      }
+      for (let lane = 0; lane < PREROLL_LANES; lane += 1) void worker()
+    }, PREROLL_START_DELAY_MS)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [movies, activeMovieId])
+
   const handlePickRandomMovie = () => {
     // From every film in the list, not the rows that happen to be mounted.
-    const movie = pickRandomRow(movies, activeMovieId, Math.random)
+    const movie =
+      usablePick(plannedPickRef.current, movies, activeMovieId) ??
+      pickRandomRow(movies, activeMovieId, Math.random)
     if (!movie) return
 
-    const movieGroup = getMovieListGroupKey(movie, grouping, popularityGroups)
+    const movieGroup = ranked
+      ? RANKED_GROUP
+      : getMovieListGroupKey(movie, grouping, popularityGroups)
     setCollapsedGroups((currentGroups) => {
       if (!currentGroups.has(movieGroup)) return currentGroups
       const nextGroups = new Set(currentGroups)
@@ -4700,13 +5017,73 @@ const SortPanel = ({
   )
 }
 
+const COUNTRY_CHIPS_SHOWN = 12
+
+// The biggest film-making countries first; "More" lists the rest. A selected
+// country always shows, even when it would be folded away.
+const CountryChips = ({
+  countries,
+  selectedCountry,
+  onToggleCountry,
+}: Pick<
+  FilterSectionsProps,
+  'countries' | 'selectedCountry' | 'onToggleCountry'
+>) => {
+  const [expanded, setExpanded] = useState(false)
+  if (!countries.length) return null
+  const shown = expanded ? countries : countries.slice(0, COUNTRY_CHIPS_SHOWN)
+  const folded = countries.length - COUNTRY_CHIPS_SHOWN
+  const selected = selectedCountry
+    ? countries.find((item) => item.country === selectedCountry)
+    : undefined
+  const chips =
+    selected && !shown.includes(selected) ? [...shown, selected] : shown
+  return (
+    <section className='warp-fs-section' data-section='countries'>
+      <p>Country</p>
+      <div className='warp-fs-chips'>
+        {chips.map(({ country, count }) => (
+          <button
+            type='button'
+            className={cn(
+              'warp-fs-chip',
+              selectedCountry === country && 'is-active',
+            )}
+            key={country}
+            aria-pressed={selectedCountry === country}
+            onClick={() => onToggleCountry(country)}
+          >
+            <span>{country}</span>
+            <span>{formatGenreCount(count)}</span>
+          </button>
+        ))}
+        {folded > 0 ? (
+          <button
+            type='button'
+            className='warp-fs-chip warp-fs-more'
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            <span>{expanded ? 'Fewer' : `${folded} more`}</span>
+          </button>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
 type FilterSectionsProps = {
   allActive: boolean
   contentFilter: ContentFilter
+  countries: CountrySummary[]
+  originCounts: ReadonlyMap<OriginId, number>
+  selectedOrigins: OriginId[]
   decades: number[]
   genres: GenreSummary[]
   ratingMin: number | null
   runtimeFilter: RuntimeFilter | null
+  selectedCollections: CollectionId[]
+  selectedCountry: string | null
   selectedGenres: string[]
   selectedMoodFilters: MoodFilter[]
   selectedYear: YearFilter | null
@@ -4714,6 +5091,9 @@ type FilterSectionsProps = {
   onClear: () => void
   onClearGenres: () => void
   onSelectContentFilter: (contentFilter: ContentFilter) => void
+  onToggleCollection: (id: CollectionId) => void
+  onToggleCountry: (country: string) => void
+  onToggleOrigin: (id: OriginId) => void
   onToggleGenre: (genre: string) => void
   onToggleMoodFilter: (moodFilter: MoodFilter) => void
   onToggleRating: (min: number) => void
@@ -4725,10 +5105,15 @@ type FilterSectionsProps = {
 const FilterSections = ({
   allActive,
   contentFilter,
+  countries,
+  originCounts,
+  selectedOrigins,
   decades,
   genres,
   ratingMin,
   runtimeFilter,
+  selectedCollections,
+  selectedCountry,
   selectedGenres,
   selectedMoodFilters,
   selectedYear,
@@ -4736,6 +5121,9 @@ const FilterSections = ({
   onClear,
   onClearGenres,
   onSelectContentFilter,
+  onToggleCollection,
+  onToggleCountry,
+  onToggleOrigin,
   onToggleGenre,
   onToggleMoodFilter,
   onToggleRating,
@@ -4873,6 +5261,55 @@ const FilterSections = ({
           ))}
         </div>
       </section>
+      <section className='warp-fs-section' data-section='origins'>
+        <p>Origin and style</p>
+        <div className='warp-fs-chips'>
+          {ORIGIN_GROUPS.map((group) => {
+            const count = originCounts.get(group.id) ?? 0
+            return (
+              <button
+                type='button'
+                className={cn(
+                  'warp-fs-chip',
+                  selectedOrigins.includes(group.id) && 'is-active',
+                )}
+                key={group.id}
+                title={group.hint}
+                aria-pressed={selectedOrigins.includes(group.id)}
+                onClick={() => onToggleOrigin(group.id)}
+              >
+                <span>{group.label}</span>
+                <span>{formatGenreCount(count)}</span>
+              </button>
+            )
+          })}
+        </div>
+      </section>
+      <section className='warp-fs-section' data-section='collections'>
+        <p>Collections</p>
+        <div className='warp-fs-chips'>
+          {COLLECTION_FILTERS.map((filter) => (
+            <button
+              type='button'
+              className={cn(
+                'warp-fs-chip',
+                selectedCollections.includes(filter.id) && 'is-active',
+              )}
+              key={filter.id}
+              title={filter.hint}
+              aria-pressed={selectedCollections.includes(filter.id)}
+              onClick={() => onToggleCollection(filter.id)}
+            >
+              <span>{filter.label}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+      <CountryChips
+        countries={countries}
+        selectedCountry={selectedCountry}
+        onToggleCountry={onToggleCountry}
+      />
       <section className='warp-fs-section' data-section='genres'>
         <p>Genres</p>
         <small>The more the merrier</small>
@@ -5248,7 +5685,7 @@ const SessionPathSetting = ({
 }) => (
   <GlobeLineSetting
     kind='path'
-    label='Session path'
+    label='History on globe'
     store={sessionPathSetting}
     nudges={nudges}
     light={light}
@@ -5265,7 +5702,7 @@ const FavoriteLinksSetting = ({
 }) => (
   <GlobeLineSetting
     kind='links'
-    label='Favorite links'
+    label='Favourites on globe'
     store={constellationSetting}
     nudges={nudges}
     light={light}
@@ -5394,11 +5831,11 @@ const AboutDrawer = ({
               <dd>{formatFilmCount(movieCount)}</dd>
             </div>
             <div>
-              <dt>Posters on the globe</dt>
+              <dt>Gallery snapshot</dt>
               <dd>{globeCount.toLocaleString()}</dd>
             </div>
             <div>
-              <dt>Genres</dt>
+              <dt>Genres and filters</dt>
               <dd>{genreCount}</dd>
             </div>
           </dl>
@@ -5447,8 +5884,12 @@ const AboutDrawer = ({
         <section className='warp-about-section'>
           <h3>Watch links</h3>
           <p>
-            Links are a work in progress and are disabled for now. You can find
-            any movie seen here with a quick Google search.
+            Watch lists the legal services that carry a film in your country,
+            from JustWatch's listings through TMDB; the logos beside the button
+            are the ones it confirms for streaming or free. Each opens that
+            service's own search (or the film's TMDB listing), and the YouTube
+            link opens the trailer. With no listing, ScrollFlix makes no claim.
+            It doesn't host or stream any films.
           </p>
         </section>
 
@@ -5456,11 +5897,22 @@ const AboutDrawer = ({
           <h3>Credits</h3>
           <p>
             Carefully put together by my humble self -{' '}
-            <a href='https://kingsleyaremu.com/'>ICE</a>.
+            <a
+              className='warp-about-credit-link'
+              href='https://kingsleyaremu.com/'
+            >
+              ICE
+            </a>
+            .
           </p>
           <p>
             Follow along on{' '}
-            <a href='https://x.com/scrollflix' target='_blank' rel='noreferrer'>
+            <a
+              className='warp-about-credit-link'
+              href='https://x.com/scrollflix'
+              target='_blank'
+              rel='noreferrer'
+            >
               X @scrollflix
             </a>
             .
@@ -5520,121 +5972,68 @@ const AboutDrawer = ({
   )
 }
 
-type SavedDrawerProps = {
-  motionPhase: MotionPhase
-  movies: TestMovie[]
-  // The genres the saved films lean on, once there are enough to say.
-  taste: string[]
-  onClose: () => void
-  onOpenMovie: (movie: TestMovie) => void
-  onRemove: (movie: TestMovie) => void
-}
+type LibraryTab = 'history' | 'favourites'
 
-// Rises from the heart button exactly like the compact About drawer.
-const SavedDrawer = ({
-  motionPhase,
-  movies,
-  taste,
-  onClose,
-  onOpenMovie,
-  onRemove,
-}: SavedDrawerProps) => (
-  <aside
-    ref={overlayScrollbarRef}
-    className='warp-about-drawer warp-saved-drawer'
-    data-motion={motionPhase}
-    aria-label='Saved movies'
-  >
-    <header className='warp-about-drawer-heading'>
-      <div>
-        <h2>Saved</h2>
-        <p>
-          {movies.length
-            ? `${movies.length} ${movies.length === 1 ? 'movie' : 'movies'}`
-            : 'Your shortlist'}
-        </p>
-      </div>
-      <button
-        type='button'
-        className='warp-about-drawer-close'
-        aria-label='Close saved movies'
-        onClick={onClose}
-      >
-        <X aria-hidden='true' />
-      </button>
-    </header>
-    {taste.length ? (
-      <p className='warp-saved-taste'>
-        <Sparkles aria-hidden='true' />
-        <span>
-          Your shuffles lean towards <strong>{taste.join(' and ')}</strong>.
-        </span>
-      </p>
-    ) : null}
-    {movies.length ? (
-      <ul className='warp-saved-list' ref={overlayScrollbarRef}>
-        {movies.map((movie) => (
-          <li key={movie.id}>
-            <button
-              type='button'
-              className='warp-saved-row'
-              onClick={() => onOpenMovie(movie)}
-            >
-              <span className='warp-saved-thumb'>
-                <MoviePoster movie={movie} size='list' />
-              </span>
-              <span className='warp-saved-copy'>
-                <strong>{movie.title}</strong>
-                <small>
-                  {[movie.year, movie.rating ? `★ ${movie.rating}` : null]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </small>
-              </span>
-            </button>
-            <button
-              type='button'
-              className='warp-saved-remove'
-              aria-label={`Remove ${movie.title} from saved`}
-              onClick={() => onRemove(movie)}
-            >
-              <X aria-hidden='true' />
-            </button>
-          </li>
-        ))}
-      </ul>
-    ) : (
-      <p className='warp-saved-empty'>
-        Nothing saved yet. Tap ♥ on any movie card to keep it here.
-      </p>
-    )}
-  </aside>
-)
-
-type PathDrawerProps = {
+type LibraryDrawerProps = {
   motionPhase: MotionPhase
+  tab: LibraryTab
+  onTab: (tab: LibraryTab) => void
   path: readonly PathPoint[]
   movies: TestMovie[]
   // The film the globe is on, marked as where you are.
   currentId: string | null
+  saved: TestMovie[]
+  // The genres the saved films lean on, once there are enough to say.
+  taste: string[]
   onClose: () => void
-  onRetrace: (movie: TestMovie) => void
+  onOpenMovie: (movie: TestMovie) => void
+  onRemoveSaved: (movie: TestMovie) => void
   onShare: () => void
-  onClear: () => void
+  onClearHistory: () => void
 }
 
-// The session path as a timeline: where this visit has been, oldest first, so
-// any step can be walked back to. Rises from its button like the Saved drawer.
-const PathDrawer = ({
+// One switch for a kind of line over the globe, shown inside its tab.
+const GlobeSwitch = ({
+  label,
+  store,
+}: {
+  label: string
+  store: typeof sessionPathSetting
+}) => {
+  const on = useSyncExternalStore(store.subscribe, store.get, store.get)
+  return (
+    <button
+      type='button'
+      role='switch'
+      aria-checked={on}
+      className='warp-path-toggle'
+      onClick={() => store.set(!on)}
+    >
+      <span>{label}</span>
+      <i className='warp-path-switch' />
+    </button>
+  )
+}
+
+// History and Favourites in one drawer that rises from one button. History is
+// the trail of films landed on (oldest first, so any step can be walked back
+// to) and Favourites the saved films; both live in this browser until accounts
+// arrive, and each has its own "show on globe" switch.
+const LibraryDrawer = ({
   motionPhase,
+  tab,
+  onTab,
   path,
   movies,
   currentId,
+  saved,
+  taste,
   onClose,
-  onRetrace,
+  onOpenMovie,
+  onRemoveSaved,
   onShare,
-  onClear,
-}: PathDrawerProps) => {
+  onClearHistory,
+}: LibraryDrawerProps) => {
   const byId = useMemo(
     () => new Map(movies.map((movie) => [movie.id, movie])),
     [movies],
@@ -5643,106 +6042,199 @@ const PathDrawer = ({
     const movie = byId.get(point.id)
     return movie ? [{ point, movie, index }] : []
   })
-  const showOnGlobe = useSyncExternalStore(
-    sessionPathSetting.subscribe,
-    sessionPathSetting.get,
-    sessionPathSetting.get,
-  )
   const listRef = useRef<HTMLOListElement | null>(null)
   const pathScrollRef = useOverlayScrollbar(listRef)
-  // Open on the newest step.
+  // The history opens on its newest step.
   useEffect(() => {
     const list = listRef.current
-    if (list) list.scrollTop = list.scrollHeight
-  }, [])
+    if (tab === 'history' && list) list.scrollTop = list.scrollHeight
+  }, [tab])
+  const tabs: { id: LibraryTab; label: string; count: number }[] = [
+    { id: 'history', label: 'History', count: steps.length },
+    { id: 'favourites', label: 'Favourites', count: saved.length },
+  ]
 
   return (
     <aside
       ref={overlayScrollbarRef}
-      className='warp-about-drawer warp-saved-drawer warp-path-drawer'
+      className='warp-about-drawer warp-saved-drawer warp-library-drawer'
       data-motion={motionPhase}
-      aria-label='Session path'
+      aria-label='History and favourites'
     >
       <header className='warp-about-drawer-heading'>
-        <div>
-          <h2>Session path</h2>
-          <p>
-            {steps.length} {steps.length === 1 ? 'film' : 'films'} this visit
-          </p>
+        <div role='tablist' className='warp-library-tabs'>
+          {tabs.map(({ id, label, count }) => (
+            <button
+              type='button'
+              role='tab'
+              key={id}
+              id={`warp-library-tab-${id}`}
+              aria-selected={tab === id}
+              aria-controls={`warp-library-panel-${id}`}
+              className={cn('warp-library-tab', tab === id && 'is-active')}
+              onClick={() => onTab(id)}
+            >
+              {id === 'history' ? (
+                <Clock aria-hidden='true' />
+              ) : (
+                <Heart aria-hidden='true' />
+              )}
+              <span>{label}</span>
+              {count ? <b>{count > 99 ? '99+' : count}</b> : null}
+            </button>
+          ))}
         </div>
         <button
           type='button'
           className='warp-about-drawer-close'
-          aria-label='Close session path'
+          aria-label='Close history and favourites'
           onClick={onClose}
         >
           <X aria-hidden='true' />
         </button>
       </header>
-      <button
-        type='button'
-        role='switch'
-        aria-checked={showOnGlobe}
-        className='warp-path-toggle'
-        onClick={() => sessionPathSetting.set(!showOnGlobe)}
-      >
-        <span>Show on globe</span>
-        <i className='warp-path-switch' />
-      </button>
-      <ol className='warp-path-list' ref={pathScrollRef}>
-        {steps.map(({ point, movie, index }, place) => (
-          <li
-            key={`${point.id}-${index}`}
-            data-tier={point.tier ?? undefined}
-            data-here={
-              place === steps.length - 1 && movie.id === currentId
-                ? 'true'
-                : undefined
-            }
-          >
-            <i className='warp-path-dot' />
-            <button
-              type='button'
-              className='warp-saved-row'
-              onClick={() => onRetrace(movie)}
-            >
-              <span className='warp-saved-thumb'>
-                <MoviePoster movie={movie} size='list' />
+      {tab === 'history' ? (
+        <div
+          role='tabpanel'
+          id='warp-library-panel-history'
+          aria-labelledby='warp-library-tab-history'
+          className='warp-library-panel'
+        >
+          <GlobeSwitch
+            label='Show history on globe'
+            store={sessionPathSetting}
+          />
+          {steps.length ? (
+            <ol className='warp-path-list' ref={pathScrollRef}>
+              {steps.map(({ point, movie, index }, place) => (
+                <li
+                  key={`${point.id}-${index}`}
+                  data-tier={point.tier ?? undefined}
+                  data-here={
+                    place === steps.length - 1 && movie.id === currentId
+                      ? 'true'
+                      : undefined
+                  }
+                >
+                  <i className='warp-path-dot' />
+                  <button
+                    type='button'
+                    className='warp-saved-row'
+                    onClick={() => onOpenMovie(movie)}
+                  >
+                    <span className='warp-saved-thumb'>
+                      <MoviePoster movie={movie} size='list' />
+                    </span>
+                    <span className='warp-saved-copy'>
+                      <strong>{movie.title}</strong>
+                      <small>
+                        {point.tier
+                          ? `Shuffle Pro · ${TIER_LABELS[point.tier]}`
+                          : [
+                              movie.year,
+                              movie.rating ? `★ ${movie.rating}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                        {place === steps.length - 1 ? ' · latest' : ''}
+                      </small>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className='warp-saved-empty'>
+              Nothing yet. The films you land on or open are kept here.
+            </p>
+          )}
+          {steps.length ? (
+            <div className='warp-path-actions'>
+              {steps.length >= 2 ? (
+                <button
+                  type='button'
+                  className='warp-path-share'
+                  onClick={onShare}
+                >
+                  <Share2 aria-hidden='true' />
+                  Share path
+                </button>
+              ) : null}
+              <button
+                type='button'
+                className='warp-path-clear'
+                onClick={onClearHistory}
+              >
+                Clear history
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div
+          role='tabpanel'
+          id='warp-library-panel-favourites'
+          aria-labelledby='warp-library-tab-favourites'
+          className='warp-library-panel'
+        >
+          <GlobeSwitch
+            label='Show favourites on globe'
+            store={constellationSetting}
+          />
+          {taste.length ? (
+            <p className='warp-saved-taste'>
+              <Sparkles aria-hidden='true' />
+              <span>
+                Your shuffles lean towards{' '}
+                <strong>{taste.join(' and ')}</strong>.
               </span>
-              <span className='warp-saved-copy'>
-                <strong>{movie.title}</strong>
-                <small>
-                  {point.tier
-                    ? `Shuffle Pro · ${TIER_LABELS[point.tier]}`
-                    : [movie.year, movie.rating ? `★ ${movie.rating}` : null]
-                        .filter(Boolean)
-                        .join(' · ')}
-                  {place === steps.length - 1 ? ' · latest' : ''}
-                </small>
-              </span>
-            </button>
-          </li>
-        ))}
-      </ol>
-      <div className='warp-path-actions'>
-        <button type='button' className='warp-path-share' onClick={onShare}>
-          <Share2 aria-hidden='true' />
-          Share path
-        </button>
-        <button type='button' className='warp-path-clear' onClick={onClear}>
-          Clear
-        </button>
-      </div>
+            </p>
+          ) : null}
+          {saved.length ? (
+            <ul className='warp-saved-list' ref={overlayScrollbarRef}>
+              {saved.map((movie) => (
+                <li key={movie.id}>
+                  <button
+                    type='button'
+                    className='warp-saved-row'
+                    onClick={() => onOpenMovie(movie)}
+                  >
+                    <span className='warp-saved-thumb'>
+                      <MoviePoster movie={movie} size='list' />
+                    </span>
+                    <span className='warp-saved-copy'>
+                      <strong>{movie.title}</strong>
+                      <small>
+                        {[movie.year, movie.rating ? `★ ${movie.rating}` : null]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </small>
+                    </span>
+                  </button>
+                  <button
+                    type='button'
+                    className='warp-saved-remove'
+                    aria-label={`Remove ${movie.title} from favourites`}
+                    onClick={() => onRemoveSaved(movie)}
+                  >
+                    <X aria-hidden='true' />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className='warp-saved-empty'>
+              Nothing here yet. Tap ♥ on any movie card to keep it here.
+            </p>
+          )}
+        </div>
+      )}
+      <p className='warp-library-note'>
+        Kept in this browser. Accounts to sync them are coming soon.
+      </p>
     </aside>
   )
 }
-
-const WATCH_LINKS = [
-  { label: 'Netflix', meta: 'Subscription' },
-  { label: 'Prime Video', meta: 'Rent or buy' },
-  { label: 'Apple TV', meta: 'Rent or buy' },
-  { label: 'YouTube', meta: 'Trailer' },
-]
 
 type WatchLinksDialogProps = {
   motionPhase: MotionPhase
@@ -5756,50 +6248,72 @@ const WatchLinksDialog = ({
   movie,
   onClose,
   onOpenAbout,
-}: WatchLinksDialogProps) => (
-  <section
-    className='warp-watch-layer'
-    data-motion={motionPhase}
-    aria-label={`${movie.title} watch links`}
-  >
-    <button
-      type='button'
-      className='warp-watch-backdrop'
-      aria-label='Close watch links'
-      onClick={onClose}
-    />
-    <dialog
-      className='warp-watch-card'
-      aria-label={`${movie.title} watch options`}
-      aria-modal='true'
-      open
+}: WatchLinksDialogProps) => {
+  // The YouTube entry opens the film's first trailer that still plays.
+  const movieText = useMovieText(movie)
+  const youtubeHref = youtubeWatchHref(
+    movieText?.trailerKeys?.length ? movieText.trailerKeys : movie.trailerKeys,
+    readDeadTrailers(),
+    movie.title,
+    /^\d{4}$/.test(movie.year) ? movie.year : undefined,
+  )
+  return (
+    <section
+      className='warp-watch-layer'
+      data-motion={motionPhase}
+      aria-label={`${movie.title} watch links`}
     >
       <button
         type='button'
-        className='warp-watch-close'
+        className='warp-watch-backdrop'
         aria-label='Close watch links'
         onClick={onClose}
+      />
+      <dialog
+        className='warp-watch-card'
+        aria-label={`${movie.title} watch options`}
+        aria-modal='true'
+        open
       >
-        Close
-      </button>
-      <p className='warp-watch-kicker'>Watch options</p>
-      <h2>{movie.title}</h2>
-      <p className='warp-watch-meta'>{formatMovieMeta(movie)}</p>
-      <div className='warp-watch-links'>
-        {WATCH_LINKS.map((link) => (
-          <button type='button' key={link.label} disabled>
-            <span>{link.label}</span>
-            <span>{link.meta}</span>
-          </button>
-        ))}
-      </div>
-      <button type='button' className='warp-watch-about' onClick={onOpenAbout}>
-        <Info aria-hidden='true' />
-        About ScrollFlix and where these links come from
-      </button>
-    </dialog>
-  </section>
-)
+        <button
+          type='button'
+          className='warp-watch-close'
+          aria-label='Close watch links'
+          onClick={onClose}
+        >
+          Close
+        </button>
+        <p className='warp-watch-kicker'>Watch options</p>
+        <h2>{movie.title}</h2>
+        <p className='warp-watch-meta'>{formatMovieMeta(movie)}</p>
+        <WatchOptionsList movieId={movie.id} title={movie.title} />
+        <a
+          className='warp-watch-row warp-watch-youtube'
+          href={youtubeHref}
+          target='_blank'
+          rel='noopener noreferrer'
+        >
+          <span className='warp-watch-youtube-mark' aria-hidden='true'>
+            <svg viewBox='0 0 28 20' focusable='false'>
+              <rect width='28' height='20' rx='5.5' fill='#f00' />
+              <path d='M11.2 5.8v8.4L18.6 10z' fill='#fff' />
+            </svg>
+          </span>
+          <span>Trailer on YouTube</span>
+          <ExternalLink aria-hidden='true' size={14} />
+        </a>
+        <button
+          type='button'
+          className='warp-watch-about'
+          onClick={onOpenAbout}
+        >
+          <Info aria-hidden='true' />
+          About ScrollFlix and these links
+        </button>
+      </dialog>
+    </section>
+  )
+}
 
 type MovieCardFilter =
   | { kind: 'year'; year: number }
@@ -5812,7 +6326,6 @@ type MovieDetailsCardProps = {
   motionPhase: MotionPhase
   movie: TestMovie
   // Opens straight into the full card, skipping the summary step.
-  startExpanded: boolean
   premiumTier: Tier | null
   // Set when the premium card came from a mood-page bonus run.
   premiumMood: MoodPresentation | null
@@ -5825,11 +6338,40 @@ type MovieDetailsCardProps = {
   onWatch: (movie: TestMovie) => void
 }
 
+// Calls onEnd when scrolling carries the element to its end.
+const useExpandAtScrollEnd = (
+  ref: RefObject<HTMLElement | null>,
+  active: boolean,
+  onEnd: () => void,
+) => {
+  const onEndRef = useRef(onEnd)
+  onEndRef.current = onEnd
+  useEffect(() => {
+    const element = ref.current
+    if (!active || !element) return
+    const armedAt = performance.now() + 500
+    const atEnd = () =>
+      element.scrollTop + element.clientHeight >= element.scrollHeight - 2
+    let lastTop = element.scrollTop
+    // Momentum or a wheel that reaches the end opens the long description; a
+    // finger pulling on past the end is followed by the sheet itself (see
+    // useSheetContentDrag).
+    const handleScroll = () => {
+      const top = element.scrollTop
+      const movedDown = top > lastTop
+      lastTop = top
+      if (performance.now() < armedAt) return
+      if (movedDown && top > 0 && atEnd()) onEndRef.current()
+    }
+    element.addEventListener('scroll', handleScroll, { passive: true })
+    return () => element.removeEventListener('scroll', handleScroll)
+  }, [active, ref])
+}
+
 const MovieDetailsCard = ({
   movies,
   motionPhase,
   movie,
-  startExpanded,
   premiumTier,
   premiumMood,
   saved,
@@ -5870,63 +6412,42 @@ const MovieDetailsCard = ({
   // Wide screens get a centred panel with everything visible; small screens
   // keep the draggable bottom sheet with a More/Less toggle.
   const isWide = useMediaQuery('(min-width: 901px)')
-  const [isExpanded, setIsExpanded] = useState(startExpanded)
-  const startExpandedRef = useRef(startExpanded)
-  startExpandedRef.current = startExpanded
-  const [dragOffset, setDragOffset] = useState(0)
-  const dragStartYRef = useRef<number | null>(null)
-  const dragPointerIdRef = useRef<number | null>(null)
+  const [isExpanded, setIsExpanded] = useState(false)
+  const cardRef = useRef<HTMLDialogElement | null>(null)
+  const copyScrollRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (movie.id) {
-      setIsExpanded(startExpandedRef.current)
-      setDragOffset(0)
+      setIsExpanded(false)
     }
   }, [movie.id])
 
-  const handleDragStart = (event: ReactPointerEvent<HTMLElement>) => {
-    dragStartYRef.current = event.clientY
-    dragPointerIdRef.current = event.pointerId
-    event.currentTarget.setPointerCapture?.(event.pointerId)
-  }
+  // The sheet follows the finger and settles on a resting height (see
+  // sheet-drag.ts); a flick or a pull past compact closes it.
+  const { drag, grip } = useSheetDrag({
+    enabled: !isWide,
+    cardRef,
+    contentRef: copyScrollRef,
+    expanded: isExpanded,
+    limits: () => ({
+      compact: Math.min(window.innerHeight * 0.76, 680),
+      expanded: window.innerHeight - DETAILS_SHEET_GUTTER_PX,
+    }),
+    onSnap: (snap) => {
+      if (snap === 'close') onClose()
+      else setIsExpanded(snap === 'expanded')
+    },
+  })
 
-  const handleDragMove = (event: ReactPointerEvent<HTMLElement>) => {
-    if (dragPointerIdRef.current !== event.pointerId) return
-    const startY = dragStartYRef.current
-    if (startY === null) return
-
-    const nextOffset = Math.max(-120, Math.min(140, event.clientY - startY))
-    setDragOffset(nextOffset)
-  }
-
-  const finishDrag = (clientY: number) => {
-    const startY = dragStartYRef.current
-    if (startY === null) return
-
-    const deltaY = clientY - startY
-    dragStartYRef.current = null
-    dragPointerIdRef.current = null
-    setDragOffset(0)
-
-    if (deltaY < -DETAILS_EXPAND_DRAG_PX) {
-      setIsExpanded(true)
-      return
-    }
-
-    if (isExpanded && deltaY > DETAILS_COMPACT_DRAG_PX) {
-      setIsExpanded(false)
-      return
-    }
-
-    if (deltaY > DETAILS_CLOSE_DRAG_PX) {
-      onClose()
-    }
-  }
-
-  const handleDragEnd = (event: ReactPointerEvent<HTMLElement>) => {
-    if (dragPointerIdRef.current !== event.pointerId) return
-    finishDrag(event.clientY)
-  }
+  // On a phone the short card scrolls like any page: reaching its end (or
+  // pushing on past it) opens the long description, no tap on More needed.
+  const copyScrollNodeRef = useCallback((node: HTMLDivElement | null) => {
+    copyScrollRef.current = node
+    return overlayScrollbarRef(node)
+  }, [])
+  useExpandAtScrollEnd(copyScrollRef, !isWide && !isExpanded, () =>
+    setIsExpanded(true),
+  )
 
   const showFullContent = isWide || isExpanded
   const yearNumber = Number.parseInt(movie.year, 10)
@@ -5999,16 +6520,18 @@ const MovieDetailsCard = ({
     </button>
   )
   const detailsStyle = {
-    '--details-drag-y': `${dragOffset}px`,
+    '--details-drag-y': `${drag?.offset ?? 0}px`,
+    ...(drag ? { '--details-drag-h': `${drag.height}px` } : null),
     // A mood run dresses the card in the colours of the worlds it was made from.
     ...(premiumMood ? moodCardVars(premiumMood.palette) : null),
     // CSS images are fetched without CORS. A copy cached from such a request
     // has no CORS headers and breaks the same URL for the globe and index
-    // tiles, so catalogue films use a size nothing else requests (w92 is the
-    // index, w154 the globe, w342 the card); see posterBackdropUrl.
+    // tiles, so catalogue films use a URL nothing else requests; see
+    // posterBackdropUrl.
     '--details-backdrop': `url(${JSON.stringify(detailsBackdropUrl(movie))})`,
   } as CSSProperties
   const movieText = useMovieText(movie)
+  const watchBadges = useWatchBadges(movie.id, movie.title)
   const originalTitle = movieText?.originalTitle || movie.originalTitle || ''
   const titleTranslation = useTitleTranslation(movie.title, {
     hasOriginalTitle: Boolean(originalTitle),
@@ -6016,7 +6539,13 @@ const MovieDetailsCard = ({
   const trailerKeys = movieText?.trailerKeys?.length
     ? movieText.trailerKeys
     : (movie.trailerKeys ?? [])
-  const trailerButton = trailerButtonFor(trailerKeys, deadTrailers)
+  // While the film's text is on its way the keys are unknown, so a disabled
+  // placeholder holds the spot and nothing jumps when they arrive.
+  const trailerButton = trailerButtonFor(
+    trailerKeys,
+    deadTrailers,
+    movieText === null,
+  )
   // On phones the trailer entry sits on the poster as a frosted pill, so the
   // action row keeps its three buttons. Wide screens use the row button.
   const trailerPill =
@@ -6026,6 +6555,16 @@ const MovieDetailsCard = ({
         className='warp-details-trailer-pill'
         aria-haspopup='dialog'
         onClick={() => setTrailerOpen(true)}
+      >
+        <Play aria-hidden='true' size={14} strokeWidth={2.6} />
+        Trailer
+      </button>
+    ) : trailerButton.kind === 'loading' ? (
+      <button
+        type='button'
+        className='warp-details-trailer-pill is-loading'
+        disabled
+        aria-busy='true'
       >
         <Play aria-hidden='true' size={14} strokeWidth={2.6} />
         Trailer
@@ -6112,10 +6651,11 @@ const MovieDetailsCard = ({
         />
         <dialog
           open
+          ref={cardRef}
           className={cn(
             'warp-details-card',
             isExpanded && 'is-expanded',
-            dragOffset !== 0 && 'is-dragging',
+            drag && 'is-dragging',
           )}
           style={detailsStyle}
           aria-modal='true'
@@ -6141,13 +6681,7 @@ const MovieDetailsCard = ({
           </button>
           {isWide ? null : mobileReshuffleButton}
           {isWide ? null : (
-            <div
-              className='warp-details-grip-zone'
-              onPointerCancel={handleDragEnd}
-              onPointerDown={handleDragStart}
-              onPointerMove={handleDragMove}
-              onPointerUp={handleDragEnd}
-            >
+            <div className='warp-details-grip-zone' {...grip}>
               <span className='warp-details-handle' />
             </div>
           )}
@@ -6160,7 +6694,7 @@ const MovieDetailsCard = ({
             poster
           )}
           <div className='warp-details-copy'>
-            <div className='warp-details-copy-scroll' ref={overlayScrollbarRef}>
+            <div className='warp-details-copy-scroll' ref={copyScrollNodeRef}>
               {premiumTier ? (
                 <PremiumPlate tier={premiumTier} mood={premiumMood} />
               ) : null}
@@ -6256,10 +6790,16 @@ const MovieDetailsCard = ({
                 <button
                   type='button'
                   className='warp-details-watch'
+                  aria-label={
+                    watchBadges.providers.length
+                      ? `Watch: on ${watchBadges.providers.map((provider) => provider.name).join(', ')}${watchBadges.more ? ` and ${watchBadges.more} more` : ''}`
+                      : 'Watch'
+                  }
                   onClick={() => onWatch(movie)}
                 >
                   <Play aria-hidden='true' size={15} strokeWidth={2.6} />
-                  Where to watch
+                  Watch
+                  <WatchBadges {...watchBadges} />
                 </button>
                 {!isWide ? null : trailerButton.kind === 'play' ? (
                   <button
@@ -6267,6 +6807,20 @@ const MovieDetailsCard = ({
                     className='warp-details-trailer'
                     aria-haspopup='dialog'
                     onClick={() => setTrailerOpen(true)}
+                  >
+                    <Clapperboard
+                      aria-hidden='true'
+                      size={15}
+                      strokeWidth={2.4}
+                    />
+                    Play trailer
+                  </button>
+                ) : trailerButton.kind === 'loading' ? (
+                  <button
+                    type='button'
+                    className='warp-details-trailer is-loading'
+                    disabled
+                    aria-busy='true'
                   >
                     <Clapperboard
                       aria-hidden='true'
@@ -6356,6 +6910,7 @@ const MovieDetailsCard = ({
                 <Suspense fallback={null}>
                   <ShareSheet
                     input={shareInput}
+                    movieId={movie.id}
                     link={shareLink(movie.id)}
                     onClose={() => setShareOpen(false)}
                   />
@@ -6383,12 +6938,18 @@ const MovieDetailsCard = ({
               aria-expanded={isExpanded}
               onClick={() => setIsExpanded((expanded) => !expanded)}
             >
-              <span>{isExpanded ? 'Less' : 'More'}</span>
-              {isExpanded ? (
-                <ChevronsUp aria-hidden='true' size={17} strokeWidth={2.8} />
-              ) : (
-                <ChevronsDown aria-hidden='true' size={17} strokeWidth={2.8} />
-              )}
+              <span className='warp-details-more-pill'>
+                <span>{isExpanded ? 'Less' : 'More'}</span>
+                {isExpanded ? (
+                  <ChevronsUp aria-hidden='true' size={17} strokeWidth={2.8} />
+                ) : (
+                  <ChevronsDown
+                    aria-hidden='true'
+                    size={17}
+                    strokeWidth={2.8}
+                  />
+                )}
+              </span>
             </button>
           )}
         </dialog>

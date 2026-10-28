@@ -30,12 +30,15 @@ import {
   recordShareClip,
   renderShareImage,
   shareFileName,
+  warmFilmCard,
 } from './share-output'
 
 type ShareSheetProps = {
   // A film's pick, the recap of a person's runs, or the session path. One of
   // the three.
   input?: ShareInput
+  // The film's id, so its link-preview card can be warmed while the sheet is open.
+  movieId?: string
   recap?: RecapScene
   path?: PathScene
   link: string
@@ -51,7 +54,14 @@ const PREVIEW_HOLD_SECONDS = 1.6
 
 // The share sheet: a live preview of the artwork, a choice of image or clip,
 // and Share / Save / Copy link. Everything is made on this device.
-const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
+const ShareSheet = ({
+  input,
+  movieId,
+  recap,
+  path,
+  link,
+  onClose,
+}: ShareSheetProps) => {
   const subject = path
     ? 'The way I got here'
     : recap
@@ -77,6 +87,8 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
     url: string
   } | null>(null)
   const [notice, setNotice] = useState('')
+  const [linkCopied, setLinkCopied] = useState(false)
+  const linkTimerRef = useRef(0)
   const [busy, setBusy] = useState(false)
   const preparedRef = useRef<ShareRenderable | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -118,6 +130,13 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
     }
   }, [])
 
+  // The link is the main thing shared, so ask for its preview card as soon as
+  // the sheet opens: it is ready by the time the link is pasted.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once per opened sheet
+  useEffect(() => {
+    if (movieId && !path && !recap) warmFilmCard(movieId)
+  }, [])
+
   // Space and Enter inside the sheet act on its buttons, never on the page's
   // shortcuts (Space shuffles) behind it.
   const sheetRef = useRef<HTMLDialogElement | null>(null)
@@ -138,6 +157,7 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
     () => () => {
       recordAbortRef.current?.abort()
       window.clearTimeout(noticeTimerRef.current)
+      window.clearTimeout(linkTimerRef.current)
     },
     [],
   )
@@ -257,8 +277,15 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
     }
   }
 
+  // The button itself says it worked, then goes back to its label.
   const copyLink = async () => {
-    flash((await copyText(link)) ? 'Link copied.' : 'Could not copy the link.')
+    if (!(await copyText(link))) {
+      flash('Could not copy the link.')
+      return
+    }
+    setLinkCopied(true)
+    window.clearTimeout(linkTimerRef.current)
+    linkTimerRef.current = window.setTimeout(() => setLinkCopied(false), 2000)
   }
 
   const needsClip = format === 'clip' && !clip
@@ -387,10 +414,28 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
             </p>
 
             <div className='warp-share-actions'>
+              <button
+                type='button'
+                className='warp-share-primary warp-share-copy'
+                onClick={() => void copyLink()}
+              >
+                {linkCopied ? (
+                  <Check aria-hidden='true' />
+                ) : (
+                  <Link2 aria-hidden='true' />
+                )}
+                <span aria-live='polite'>
+                  {linkCopied
+                    ? 'Link copied'
+                    : recap || path
+                      ? 'Copy link to ScrollFlix'
+                      : 'Copy link to this film'}
+                </span>
+              </button>
               {needsClip ? (
                 <button
                   type='button'
-                  className='warp-share-primary'
+                  className='warp-share-secondary'
                   disabled={!ready || phase === 'recording'}
                   onClick={() => void startRecording()}
                 >
@@ -401,12 +446,12 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
                 <>
                   <button
                     type='button'
-                    className='warp-share-primary'
+                    className='warp-share-secondary'
                     disabled={!ready || busy}
                     onClick={() => void share()}
                   >
                     <Share2 aria-hidden='true' />
-                    Share
+                    {format === 'clip' ? 'Share clip' : 'Share image'}
                   </button>
                   <button
                     type='button'
@@ -432,25 +477,7 @@ const ShareSheet = ({ input, recap, path, link, onClose }: ShareSheetProps) => {
               ) : null}
             </div>
 
-            <button
-              type='button'
-              className='warp-share-link'
-              onClick={() => void copyLink()}
-            >
-              <Link2 aria-hidden='true' />
-              {recap || path
-                ? 'Copy link to ScrollFlix'
-                : 'Copy link to this film'}
-            </button>
-
-            <output className='warp-share-note'>
-              {notice || (
-                <>
-                  <Check aria-hidden='true' /> Made on your device. Nothing is
-                  uploaded.
-                </>
-              )}
-            </output>
+            <output className='warp-share-note'>{notice}</output>
           </div>
         </div>
       </dialog>

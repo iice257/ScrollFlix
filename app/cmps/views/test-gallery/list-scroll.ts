@@ -66,3 +66,29 @@ export const visibleGenreTags = (
   const rest = genres.filter((genre) => !selected.includes(genre))
   return [...picked, ...rest].slice(0, limit)
 }
+
+// How many rows either side of the planned shuffle pick get their thumbnails
+// fetched ahead of the shuffle (so the pick and its neighbours, which the list
+// glides past, never pop in).
+export const PREROLL_SPAN = 9
+
+// The pick and `span` rows either side of it, in list order.
+export const prerollWindow = <T>(
+  rows: readonly T[],
+  index: number,
+  span = PREROLL_SPAN,
+): T[] =>
+  index < 0 ? [] : rows.slice(Math.max(0, index - span), index + span + 1)
+
+export type PlannedPick<T> = { row: T; rows: readonly T[] }
+
+// The planned pick, if it still applies: made for this very list (a filter,
+// sort or search builds a new one) and not the film already showing.
+export const usablePick = <T extends { id: string }>(
+  planned: PlannedPick<T> | null,
+  rows: readonly T[],
+  currentId: string | null,
+): T | null =>
+  planned && planned.rows === rows && planned.row.id !== currentId
+    ? planned.row
+    : null

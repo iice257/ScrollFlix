@@ -27,9 +27,35 @@ const sourceSize = (source: DrawSource) =>
     ? { w: source.naturalWidth, h: source.naturalHeight }
     : { w: source.width, h: source.height }
 
-// Draws a poster into a cell canvas: the poster in the middle, its edge
-// pixels stretched across the gutter. Works on OffscreenCanvas (the worker)
-// and on a plain canvas (the main-thread fallback).
+// Where a source of srcW x srcH is drawn inside a width x height cell: scaled
+// to fit (never cropped), centred. Sources within 2% of the cell's ratio fill
+// it, so ordinary 2:3 posters are untouched and no sliver bar appears.
+export const letterboxRect = (
+  srcW: number,
+  srcH: number,
+  width: number,
+  height: number,
+) => {
+  const full = { x: 0, y: 0, w: width, h: height }
+  if (srcW <= 0 || srcH <= 0) return full
+  const srcRatio = srcW / srcH
+  const cellRatio = width / height
+  if (Math.abs(srcRatio / cellRatio - 1) < 0.02) return full
+  if (srcRatio > cellRatio) {
+    const h = width / srcRatio
+    return { x: 0, y: (height - h) / 2, w: width, h }
+  }
+  const w = height * srcRatio
+  return { x: (width - w) / 2, y: 0, w, h: height }
+}
+
+// The slot colour the shader shows for an empty cell, so bars read as slot.
+const BAR_COLOUR = '#050505'
+
+// Draws a poster into a cell canvas: the poster in the middle (letterboxed if
+// it is not 2:3), its edge pixels stretched across the gutter. Works on
+// OffscreenCanvas (the worker) and on a plain canvas (the main-thread
+// fallback).
 export const renderCell = (source: DrawSource, cell: CellSpec): PosterImage => {
   const { width, height, gutter: g } = cell
   const totalW = width + g * 2
@@ -48,18 +74,33 @@ export const renderCell = (source: DrawSource, cell: CellSpec): PosterImage => {
   if (!context) throw new Error('no 2d context')
   context.imageSmoothingEnabled = true
   context.imageSmoothingQuality = 'high'
-  context.drawImage(source, g, g, width, height)
+  const { w, h } = sourceSize(source)
+  const box = letterboxRect(w, h, width, height)
+  const letterboxed = box.w < width || box.h < height
+  if (letterboxed) {
+    context.fillStyle = BAR_COLOUR
+    context.fillRect(0, 0, totalW, totalH)
+  }
+  context.drawImage(source, g + box.x, g + box.y, box.w, box.h)
   if (g > 0) {
-    const { w, h } = sourceSize(source)
-    // Edges, then corners, each from a single source pixel row or column.
-    context.drawImage(source, 0, 0, 1, h, 0, g, g, height)
-    context.drawImage(source, w - 1, 0, 1, h, g + width, g, g, height)
-    context.drawImage(source, 0, 0, w, 1, g, 0, width, g)
-    context.drawImage(source, 0, h - 1, w, 1, g, g + height, width, g)
-    context.drawImage(source, 0, 0, 1, 1, 0, 0, g, g)
-    context.drawImage(source, w - 1, 0, 1, 1, g + width, 0, g, g)
-    context.drawImage(source, 0, h - 1, 1, 1, 0, g + height, g, g)
-    context.drawImage(source, w - 1, h - 1, 1, 1, g + width, g + height, g, g)
+    // Edges, then corners, each from a single source pixel row or column,
+    // only on the sides where the poster reaches the cell edge.
+    const left = box.x === 0
+    const top = box.y === 0
+    if (left) {
+      context.drawImage(source, 0, 0, 1, h, 0, g + box.y, g, box.h)
+      context.drawImage(source, w - 1, 0, 1, h, g + width, g + box.y, g, box.h)
+    }
+    if (top) {
+      context.drawImage(source, 0, 0, w, 1, g + box.x, 0, box.w, g)
+      context.drawImage(source, 0, h - 1, w, 1, g + box.x, g + height, box.w, g)
+    }
+    if (left && top) {
+      context.drawImage(source, 0, 0, 1, 1, 0, 0, g, g)
+      context.drawImage(source, w - 1, 0, 1, 1, g + width, 0, g, g)
+      context.drawImage(source, 0, h - 1, 1, 1, 0, g + height, g, g)
+      context.drawImage(source, w - 1, h - 1, 1, 1, g + width, g + height, g, g)
+    }
   }
   if (offscreen && 'transferToImageBitmap' in canvas)
     return (canvas as OffscreenCanvas).transferToImageBitmap()
@@ -106,12 +147,15 @@ export const realDeps = (): DecodeDeps => ({
   renderCell,
 })
 
+// One fetch and decode, drawn into every cell asked for (the globe's atlas
+// cell and a sharper layer from the same download), or the decoded image
+// itself when no cell is asked for.
 const decodeOne = async (
   url: string,
-  cell: CellSpec | null,
+  cells: readonly CellSpec[] | null,
   deps: DecodeDeps,
   signal?: AbortSignal,
-): Promise<PosterImage> => {
+): Promise<PosterImage[]> => {
   let source: DrawSource
   if (deps.createImageBitmap) {
     const response = await deps.fetch(url, { mode: 'cors', signal })
@@ -124,9 +168,9 @@ const decodeOne = async (
   } else {
     source = await deps.loadImage(url, signal)
   }
-  if (!cell) return source
+  if (!cells) return [source]
   try {
-    return deps.renderCell(source, cell)
+    return cells.map((cell) => deps.renderCell(source, cell))
   } finally {
     if ('close' in source) source.close()
   }
@@ -140,7 +184,16 @@ export const decodeFirst = async (
   cell: CellSpec | null,
   deps: DecodeDeps,
   signal?: AbortSignal,
-): Promise<PosterImage> => {
+): Promise<PosterImage> =>
+  (await decodeFirstCells(urls, cell ? [cell] : null, deps, signal))[0]
+
+// decodeFirst for several cells from one download, in the order asked for.
+export const decodeFirstCells = async (
+  urls: readonly string[],
+  cells: readonly CellSpec[] | null,
+  deps: DecodeDeps,
+  signal?: AbortSignal,
+): Promise<PosterImage[]> => {
   let lastError: unknown = new Error('no poster urls')
   for (const url of urls) {
     if (signal?.aborted) throw new DOMException('cancelled', 'AbortError')
@@ -150,7 +203,7 @@ export const decodeFirst = async (
     signal?.addEventListener('abort', forward, { once: true })
     const timer = setTimeout(forward, URL_TIMEOUT_MS)
     try {
-      return await decodeOne(url, cell, deps, attempt.signal)
+      return await decodeOne(url, cells, deps, attempt.signal)
     } catch (error) {
       if (signal?.aborted) throw error
       lastError = error
@@ -163,8 +216,8 @@ export const decodeFirst = async (
 }
 
 export type WorkerIn =
-  | { t: 'load'; key: string; urls: string[]; cell: CellSpec | null }
+  | { t: 'load'; key: string; urls: string[]; cells: CellSpec[] | null }
   | { t: 'cancel'; key: string }
 export type WorkerOut =
-  | { t: 'ok'; key: string; bitmap: ImageBitmap }
+  | { t: 'ok'; key: string; bitmaps: ImageBitmap[] }
   | { t: 'fail'; key: string }

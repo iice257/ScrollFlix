@@ -26,9 +26,10 @@ import {
   prewarmHoneycombLayout,
 } from './honeycomb-layout'
 import { createLayerPool } from './layer-pool'
-import { type LodPoster, planLod } from './lod-scheduler'
+import { type LodPoster, SHARPNESS_SLACK, planLod } from './lod-scheduler'
 import { perfProbe } from './perf-probe'
 import { buildPosterIndex } from './poster-index'
+import { notePosterUrlLoaded } from './poster-loaded'
 import {
   type CellSpec,
   type PosterImage,
@@ -85,18 +86,18 @@ type InfiniteMovieMenuProps<T> = {
   loadState: 'loading' | 'ready' | 'error'
   scale?: number
   onActiveItemChange: (item: InfiniteMovieMenuItem<T>) => void
+  // Share (0-100) of the posters on screen that have settled, while the
+  // globe's first load runs.
   onLoadProgress?: (percent: number) => void
   isActive?: boolean
   onMovingChange?: (moving: boolean) => void
   // `source` tells a user's tap apart from a shuffle landing on the poster.
-  // 'land' is a quiet shuffle landing: the globe does not focus the poster.
   onOpenItem?: (
     item: InfiniteMovieMenuItem<T>,
-    source: 'tap' | 'shuffle' | 'land',
+    source: 'tap' | 'shuffle',
   ) => void
   // Spin to this item, then open it (Shuffle). The nonce re-triggers repeats.
-  // `quiet` lands without focusing the poster, for when no card follows.
-  spinRequest?: { itemId: string; nonce: number; quiet?: boolean } | null
+  spinRequest?: { itemId: string; nonce: number } | null
   onReady?: () => void
   // Called once a globe built for this exact set of items is running (the
   // globe is rebuilt, a little late, when the films change).
@@ -309,17 +310,15 @@ const isTypingTarget = (target: EventTarget | null) =>
     ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
 const FALLBACK_ITEM_COUNT = 128
 const INITIAL_TEXTURE_LOAD_CONCURRENCY = 24
-// The globe is revealed once every poster has settled (loaded, or failed after
-// its quick retries and fallen back to the placeholder), or after the safety
-// net so a stalled request can never hold the page hostage.
+// The globe is ready once every poster on screen has settled (loaded, or
+// failed after its quick retries and kept its placeholder); the rest of the
+// globe fills in behind the loader's back. The safety net ends the wait for a
+// stalled request without claiming the posters arrived.
 const POSTER_SETTLE_RETRY_DELAYS_MS = [800, 2400]
 const GLOBE_READY_SAFETY_NET_MS = 25000
-// Open early: when this share of the posters has settled and this long has
-// passed, or at the later time with a smaller share.
-const GLOBE_READY_EARLY_FRACTION = 0.92
-const GLOBE_READY_EARLY_MIN_MS = 4000
-const GLOBE_READY_LATE_FRACTION = 0.75
-const GLOBE_READY_LATE_MS = 9000
+// Without a measured frame (a paused engine), this share of the posters
+// nearest the front stands in for the ones on screen.
+const FALLBACK_VISIBLE_SHARE = 0.15
 // Longest stretch of texture uploads before handing the thread back.
 const UPLOAD_SLICE_MS = 8
 // A poster fades in from its empty slot, once, in this long (shorter with
@@ -389,22 +388,85 @@ const POSTER_REPRIORITISE_MS = 300
 // The posters' LOD is re-planned at most this often while the globe moves,
 // and once more when it settles.
 const LOD_PLAN_INTERVAL_MS = 120
-// Mip chains are rebuilt at most this often while posters land.
+// Below this angular speed (rad/s) the globe counts as at rest and the idle
+// mid-tier warm-up may run.
+const WARMUP_SPEED_MAX = 0.05
+// The base atlas's mip chain is rebuilt at most this often while posters land.
 const MIP_BATCH_MS = 150
 // A tier image that failed is not asked for again for this long.
 const LOD_RETRY_MS = 30000
 const LOADER_CONCURRENCY = 12
+// Once the posters on screen are in, the rest of the globe (the back) fills in
+// behind the visitor: few at a time, only while nothing is moving, and with
+// the atlas's mips rebuilt rarely. Otherwise a slow GPU spends the first
+// seconds of every spin on work nobody is looking at.
+const LOADER_CONCURRENCY_BACKGROUND = 4
+// While the visitor is pressing or spinning, the background drops to this.
+const LOADER_CONCURRENCY_BUSY = 1
+const BACKGROUND_PAUSE_MS = 250
+const MIP_BATCH_BACKGROUND_MS = 700
+const MIP_BATCH_BUSY_MS = 1500
+// While a card is open the globe's own loading keeps to a few slots, so the
+// card's poster (and the opened poster's sharp tier, which jumps the queue)
+// is not competing with a dozen background downloads.
+const LOADER_CONCURRENCY_CARD_OPEN = 3
 // A tier upgrade cross-fades over this long.
 const LOD_FADE_MS = 150
 // What the shader's poster mapping shows of a poster: the whole poster spans
 // this share of the quad's width, and the visible rounded rectangle covers it
 // from 0.11 to 0.89 of the quad's height.
 const POSTER_WIDTH_OF_QUAD = 0.766
-// Loader priorities: the base tier first, then the opened poster's detail,
-// then whatever the LOD plan ranks.
+// Loader priorities (lower first): the opened poster, the base tier of the
+// posters on screen (by facing), the detail and mid tiers the LOD plan ranks,
+// and last the base tier of the posters out of view, so the posters being
+// looked at sharpen before the back of the globe fills in.
 const PRIORITY_OPENED = -1
 const PRIORITY_DETAIL = 5000
 const PRIORITY_MID = 10000
+const PRIORITY_OFFSCREEN_BASE = 20000
+
+// Muted colours for films the catalogue has no average colour for.
+const PLACEHOLDER_PALETTE = [
+  [0x3a, 0x2f, 0x45],
+  [0x2c, 0x3e, 0x4a],
+  [0x4a, 0x3a, 0x2c],
+  [0x2f, 0x45, 0x3a],
+  [0x45, 0x2c, 0x33],
+  [0x3d, 0x3d, 0x4f],
+] as const
+
+// A slot's placeholder colour: the film's average colour, else a muted one
+// picked by position so neighbours differ.
+export const placeholderRgb = (
+  colour: string | undefined,
+  index: number,
+): [number, number, number] => {
+  const match = colour ? /^#?([0-9a-f]{6})$/i.exec(colour) : null
+  if (match) {
+    const rgb = Number.parseInt(match[1], 16)
+    return [(rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255]
+  }
+  const [r, g, b] =
+    PLACEHOLDER_PALETTE[
+      (Math.imul(index, 2654435761) >>> 0) % PLACEHOLDER_PALETTE.length
+    ]
+  return [r, g, b]
+}
+
+const closeImages = (images: readonly PosterImage[]) => {
+  for (const image of images) if ('close' in image) image.close()
+}
+
+// The film a newly built globe turns to: the landing pick on the first build,
+// then whatever film is on show, if the new set still has it.
+export const faceTargetFor = (
+  initialFaceId: string | null,
+  activeId: string | null,
+  items: readonly { id: string }[],
+) => {
+  const id = initialFaceId ?? activeId
+  return id && items.some((item) => item.id === id) ? id : null
+}
 
 // A poster's TMDB path, from the item or from its thumbnail url.
 const posterPathOf = (item: { posterPath?: string; image: string }) =>
@@ -417,6 +479,8 @@ declare global {
       textures: number
       engines: number
       lod?: () => unknown
+      // The first load: posters on screen, how many settled, which are left.
+      load?: () => unknown
     }
   }
 }
@@ -585,6 +649,15 @@ export const pickWinner = (
   return winner
 }
 
+// Placeholder blocks across and down a poster (see the shader's placeholder).
+const PLACEHOLDER_BLOCKS = [4, 6] as const
+
+// The poster is 2:3; its corners are this share of its width. The detail card
+// uses 5.5%; on the globe the posters are small, so a rounder 9% keeps them
+// from reading as rectangles (past about 11% they start to look like pills).
+export const POSTER_ASPECT = 1.5
+export const POSTER_CORNER_RADIUS = 0.09
+
 const vertexShaderSource = `#version 300 es
 uniform mat4 uWorldMatrix;
 uniform mat4 uViewMatrix;
@@ -669,6 +742,8 @@ uniform vec4 uTint;
 uniform float uLodFade;
 // Per-poster reveal clock: the time each cell's full poster arrived (0 = none).
 uniform sampler2D uRevealTex;
+// Per-poster placeholder colour (the film's average colour, or a random one).
+uniform sampler2D uColorTex;
 uniform float uRevealActive;
 uniform float uRevealSeconds;
 uniform float uNow;
@@ -681,10 +756,33 @@ in float vAlpha;
 flat in int vInstanceId;
 flat in vec4 vLod;
 
-float roundedRectMask(vec2 uv) {
-  vec2 q = abs(uv - vec2(0.5)) - vec2(0.34, 0.39);
-  float dist = length(max(q, 0.0)) - 0.11;
-  return 1.0 - smoothstep(0.0, 0.024, dist);
+// Coverage of the poster's own rounded rectangle (poster space, 0..1 across
+// the poster), anti-aliased by one screen pixel at any zoom. Distances are in
+// poster widths, so the corner radius is the same share of the poster as on
+// the detail card.
+float posterMask(vec2 poster) {
+  vec2 q = abs((poster - vec2(0.5)) * vec2(1.0, ${POSTER_ASPECT})) - vec2(0.5, ${POSTER_ASPECT / 2}) + vec2(${POSTER_CORNER_RADIUS});
+  float dist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - ${POSTER_CORNER_RADIUS};
+  float aa = max(fwidth(dist), 0.00001);
+  return clamp(0.5 - dist / aa, 0.0, 1.0);
+}
+
+float hash13(vec3 p) {
+  p = fract(p * 0.1031);
+  p += dot(p, p.zyx + 31.32);
+  return fract((p.x + p.y) * p.z);
+}
+
+// What a slot shows until its poster arrives: a coarse grid of blocks around
+// the film's colour, so the globe is full from its first frame without a
+// single request. It reads as a placeholder (big, flat pixels), never as art.
+vec4 placeholder(vec2 poster, int itemIndex) {
+  vec3 base = texelFetch(uColorTex, ivec2(itemIndex % uRevealSize, itemIndex / uRevealSize), 0).rgb;
+  vec2 block = floor(clamp(poster, 0.0, 0.999) * vec2(${PLACEHOLDER_BLOCKS[0]}.0, ${PLACEHOLDER_BLOCKS[1]}.0));
+  float h = hash13(vec3(block, float(itemIndex)));
+  float shade = 0.62 + 0.5 * h;
+  vec3 rgb = max(base, vec3(0.07)) * shade;
+  return vec4(min(rgb, vec3(1.0)), 1.0);
 }
 
 // Where the whole 2:3 poster sits on the quad: the rounded rectangle shows it
@@ -697,9 +795,14 @@ void main() {
   int itemIndex = vInstanceId % max(1, uItemCount);
   ivec2 cell = ivec2(itemIndex % uAtlasColumns, itemIndex / uAtlasColumns);
   vec2 tileOrigin = vec2(cell) * uAtlasCell + uAtlasGutter;
+  // Base samples stay half a texel inside the poster's own cell, so no
+  // neighbouring poster or gutter can bleed in.
+  vec2 cellInset = vec2(0.5) / (uAtlasSpan * vec2(textureSize(uTex, 0)));
 
   vec4 color;
   vec2 poster = posterUv(vUvs);
+  // The placeholder is only worked out where it shows: a poster that has
+  // arrived costs nothing extra.
   if (dot(vSmear, vSmear) > 0.0) {
     // Six taps along the smear, clamped to this poster's own tile so
     // neighbouring posters never bleed in.
@@ -707,14 +810,14 @@ void main() {
     for (int i = 0; i < 6; i++) {
       float t = (float(i) + 0.5) / 6.0 - 0.5;
       vec2 tapUv = clamp(vUvs + vSmear * t, 0.0, 1.0);
-      color += texture(uTex, clamp(posterUv(tapUv), 0.0, 1.0) * uAtlasSpan + tileOrigin);
+      color += texture(uTex, clamp(posterUv(tapUv), cellInset, 1.0 - cellInset) * uAtlasSpan + tileOrigin);
     }
     color /= 6.0;
-    color = mix(vec4(0.0196, 0.0196, 0.0196, 1.0), color, color.a);
+    if (color.a < 0.999) color = mix(placeholder(poster, itemIndex), color, color.a);
   } else {
-    color = texture(uTex, poster * uAtlasSpan + tileOrigin);
-    // A cell that has not arrived is empty (alpha 0): it shows as the dark slot.
-    color = mix(vec4(0.0196, 0.0196, 0.0196, 1.0), color, color.a);
+    color = texture(uTex, clamp(poster, cellInset, 1.0 - cellInset) * uAtlasSpan + tileOrigin);
+    // A cell that has not arrived is empty (alpha 0): it shows its placeholder.
+    if (color.a < 0.999) color = mix(placeholder(poster, itemIndex), color, color.a);
     // The sharper tiers fade in over the one below them.
     if (vLod.x >= 0.0) {
       float fade = clamp((uNow - vLod.z) / uLodFade, 0.0, 1.0);
@@ -725,17 +828,17 @@ void main() {
       color = mix(color, texture(uDetailTex, vec3(poster, vLod.y)), fade);
     }
     if (uRevealActive > 0.5) {
-      // One plain fade from the empty slot to the poster. A start time still
-      // in the future (the arrival stagger) keeps the slot empty until then.
+      // One plain fade from the placeholder to the poster. A start time still
+      // in the future (the arrival stagger) keeps the placeholder until then.
       float arrived = texelFetch(uRevealTex, ivec2(itemIndex % uRevealSize, itemIndex / uRevealSize), 0).r;
       if (arrived > 0.0) {
         float progress = clamp((uNow - arrived) / uRevealSeconds, 0.0, 1.0);
         float eased = 1.0 - pow(1.0 - progress, 3.0);
-        color = mix(vec4(0.0196, 0.0196, 0.0196, 1.0), color, eased);
+        if (eased < 0.999) color = mix(placeholder(poster, itemIndex), color, eased);
       }
     }
   }
-  float mask = roundedRectMask(vUvs);
+  float mask = posterMask(poster);
   outColor = color;
   outColor.rgb *= mix(0.58, 1.12, vAlpha);
   // Shuffle Pro grade: a soft exposure lift and the path's colour washing in.
@@ -1452,6 +1555,9 @@ class InfiniteMovieEngine<T> {
   private texture: WebGLTexture | null = null
   // One float per poster cell: when its full poster arrived (see the shader).
   private revealTexture: WebGLTexture | null = null
+  private colorTexture: WebGLTexture | null = null
+  // Base cells that show their picture (or a failed poster's placeholder).
+  private readonly baseCells = new Set<number>()
   private readonly revealEpoch = performance.now()
   private revealUntil = 0
   private revealPending = false
@@ -1487,6 +1593,9 @@ class InfiniteMovieEngine<T> {
   private lastRenderedCameraZ = Number.NaN
   private contextLost = false
   private movementActive = false
+  // True once the posters on screen have settled: from then on the rest of
+  // the globe loads in the background (see LOADER_CONCURRENCY_BACKGROUND).
+  private backgroundPhase = false
   private smoothRotationVelocity = 0
   private nearestVertexIndex = 0
   private detailProgress = 0
@@ -1531,15 +1640,18 @@ class InfiniteMovieEngine<T> {
   private lodBuffer: WebGLBuffer | null = null
   private lodDirty = false
   private lodStale = true
-  private lodEnabled = false
+  // On from the first frame: the posters in view get their sharper tier in
+  // the first pass instead of after the whole globe has loaded.
+  private lodEnabled = true
+  // Posters whose first request also fills their mid layer (one download
+  // for both), so the LOD plan does not ask for it again.
+  private readonly combinedInflight = new Set<number>()
   private lastLodAt = 0
   private openedItem: number | null = null
   private readonly lodInflight = new Set<string>()
   private readonly lodFailedAt = new Map<string, number>()
   private mipTimer: number | null = null
   private baseMipsDirty = false
-  private midMipsDirty = false
-  private detailMipsDirty = false
   private lastReportedProgress = -1
   private readonly sphereRadius: number
   private cameraRestZ: number
@@ -1564,6 +1676,8 @@ class InfiniteMovieEngine<T> {
   private frameTimeCount = 0
   private statsEnabled = false
   onSpinActive: ((active: boolean) => void) | null = null
+  // The posters on screen have settled (or the safety net ended the wait).
+  onGlobeReady: (() => void) | null = null
   // Told when the globe is turning very fast because it was flicked.
   onFlick: ((speed: number, direction: number) => void) | null = null
   private lastFlickAt = 0
@@ -1669,6 +1783,7 @@ class InfiniteMovieEngine<T> {
       uRevealSize: gl.getUniformLocation(program, 'uRevealSize'),
       uLodFade: gl.getUniformLocation(program, 'uLodFade'),
       uRevealTex: gl.getUniformLocation(program, 'uRevealTex'),
+      uColorTex: gl.getUniformLocation(program, 'uColorTex'),
       uRevealActive: gl.getUniformLocation(program, 'uRevealActive'),
       uRevealSeconds: gl.getUniformLocation(program, 'uRevealSeconds'),
       uNow: gl.getUniformLocation(program, 'uNow'),
@@ -1890,6 +2005,30 @@ class InfiniteMovieEngine<T> {
 
   // Pulls the camera in or out (zoom > 1 is closer). Applied in 3D so posters
   // stay crisp and the hold-primed CSS scale keeps working on top of it.
+  // How many downloads may run: few while a card is open or the rest of the
+  // globe is still filling in, all of them otherwise.
+  private applyLoaderConcurrency() {
+    const cardOpen = this.detailTargetProgress > 0
+    this.loader?.setConcurrency(
+      cardOpen
+        ? LOADER_CONCURRENCY_CARD_OPEN
+        : this.backgroundPhase
+          ? this.isBusy()
+            ? LOADER_CONCURRENCY_BUSY
+            : LOADER_CONCURRENCY_BACKGROUND
+          : LOADER_CONCURRENCY,
+    )
+  }
+
+  // The visitor is pressing, spinning or reading a card: background work waits.
+  private isBusy() {
+    return (
+      this.control.isPointerDown ||
+      this.movementActive ||
+      this.detailTargetProgress > 0
+    )
+  }
+
   setZoom(zoom: number) {
     if (zoom === this.zoom) return
     this.zoom = zoom
@@ -1931,18 +2070,21 @@ class InfiniteMovieEngine<T> {
       if (this.midTexture) this.gl.deleteTexture(this.midTexture)
       if (this.detailTexture) this.gl.deleteTexture(this.detailTexture)
       if (this.revealTexture) this.gl.deleteTexture(this.revealTexture)
+      if (this.colorTexture) this.gl.deleteTexture(this.colorTexture)
       this.geometryBuffers.forEach((buffer) => this.gl.deleteBuffer(buffer))
       if (this.vao) this.gl.deleteVertexArray(this.vao)
       // The program stays cached with the context for the next engine.
     }
     if (this.texture) {
-      debugStats.textures -= 4
+      debugStats.textures -= 5
       debugStats.engines -= 1
     }
+    this.colorTexture = null
     this.texture = null
     this.midTexture = null
     this.detailTexture = null
     this.revealTexture = null
+    this.colorTexture = null
     this.vao = null
     this.canvas.dataset.webglState = 'disposed'
   }
@@ -2043,6 +2185,7 @@ class InfiniteMovieEngine<T> {
 
     this.detailTargetProgress = open ? 1 : 0
     if (!open) this.detailVertexIndex = null
+    this.applyLoaderConcurrency()
     this.renderDirty = true
   }
 
@@ -2507,8 +2650,10 @@ class InfiniteMovieEngine<T> {
     this.loader = createPosterLoader({ concurrency: LOADER_CONCURRENCY })
 
     this.initRevealTexture()
-    // Four live textures per engine: base, mid, detail and the reveal clock.
-    debugStats.textures += 4
+    this.initColorTexture()
+    // Five live textures per engine: base, mid, detail, the reveal clock and
+    // the placeholder colours.
+    debugStats.textures += 5
     debugStats.engines += 1
     const bytes = estimateTextureBytes(this.tiers, itemCount)
     this.canvas.dataset.atlasColumns = String(this.atlas.columns)
@@ -2529,8 +2674,6 @@ class InfiniteMovieEngine<T> {
     if (window.__scrollflixDebug)
       window.__scrollflixDebug.lod = () => this.lodStats()
 
-    this.reportProgress(3)
-    this.reportProgress(8)
     void this.loadTextureImages().catch((error) => {
       if (this.disposed || this.contextLost) return
       this.onFatalError(
@@ -2560,6 +2703,52 @@ class InfiniteMovieEngine<T> {
       new Float32Array(this.revealSize * this.revealSize),
     )
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
+  }
+
+  // One texel per film: its average colour from the catalogue, or a muted
+  // random one, for the placeholder blocks. Uploaded before any picture is
+  // requested, so every cell can draw something from the first frame, which is
+  // what data-globe-complete reports.
+  private initColorTexture() {
+    const gl = this.gl
+    const size = this.revealSize
+    const data = new Uint8Array(size * size * 4)
+    this.items.forEach((item, index) => {
+      const [r, g, b] = placeholderRgb(item.placeholderColor, index)
+      data.set([r, g, b, 255], index * 4)
+    })
+    this.colorTexture = gl.createTexture()
+    gl.activeTexture(gl.TEXTURE4)
+    gl.bindTexture(gl.TEXTURE_2D, this.colorTexture)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA8,
+      size,
+      size,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      data,
+    )
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, this.texture)
+    this.canvas.dataset.globeComplete = 'true'
+    this.canvas.dataset.baseLoaded = '0'
+    this.canvas.dispatchEvent(new CustomEvent('globecomplete'))
+  }
+
+  // A base cell now shows its picture (or the colour of a poster that failed).
+  private noteBaseCell(index: number) {
+    if (this.baseCells.has(index)) return
+    this.baseCells.add(index)
+    this.canvas.dataset.baseLoaded = String(this.baseCells.size)
+    // The last base cell in: plan once more so the warm-up starts at rest.
+    if (this.baseCells.size >= this.items.length) this.lodStale = true
   }
 
   // Seconds on the reveal clock; always above zero, which means "no reveal".
@@ -2671,64 +2860,73 @@ class InfiniteMovieEngine<T> {
     const indices = this.items
       .map((_, index) => index)
       .sort((a, b) => facing[b] - facing[a])
-    const loaded = new Set<number>()
     this.watchWallVisible()
+    // Two frames, so the first LOD pass has measured which posters are on
+    // screen and how large: those load at their display tier straight away.
+    for (let frame = 0; frame < 2; frame += 1)
+      await new Promise<void>((resolve) =>
+        window.requestAnimationFrame(() => resolve()),
+      )
+    if (this.disposed || this.contextLost) return
+    this.sortByFacing(indices, 0)
 
-    // A poster that could not be fetched keeps its slot as its average colour.
-    const paintFallback = (index: number) => {
-      if (this.disposed || this.contextLost || !this.texture) return
-      if (loaded.has(index)) return
-      this.paintPlaceholderCell(index)
-    }
-
-    // Show the wall once every poster has settled; progress is settled / total.
-    const total = Math.max(1, indices.length)
+    // The posters on screen now (measured by the first LOD pass) are the
+    // ones the loader waits for; progress is how many of them have settled.
+    const onScreen = new Set(
+      this.lastLodAt > 0
+        ? indices.filter((index) => this.lodWidth[index] > 0)
+        : indices.slice(
+            0,
+            Math.max(1, Math.ceil(indices.length * FALLBACK_VISIBLE_SHARE)),
+          ),
+    )
+    const total = Math.max(1, onScreen.size)
     let settled = 0
     let ready = false
-    const markReady = () => {
+    const settledSet = new Set<number>()
+    const loadStartedAt = performance.now()
+    if (window.__scrollflixDebug)
+      window.__scrollflixDebug.load = () => ({
+        onScreen: onScreen.size,
+        settled,
+        ready,
+        ms: Math.round(performance.now() - loadStartedAt),
+        left: [...onScreen].filter((index) => !settledSet.has(index)),
+        pending: this.loader?.pending ?? 0,
+      })
+    const markReady = (complete: boolean) => {
       if (ready || this.disposed || this.contextLost) return
       ready = true
-      this.lodEnabled = true
+      this.backgroundPhase = true
+      this.applyLoaderConcurrency()
       this.lodStale = true
       window.clearTimeout(safetyNet)
       this.canvas.dataset.webglState = 'ready'
-      this.reportProgress(100)
+      if (complete) this.reportProgress(100)
+      this.onGlobeReady?.()
       // Backstop for the wall-visible watcher: never leave posters held.
       window.setTimeout(() => {
         if (!this.revealGateOpen && !this.disposed) this.openRevealGate()
       }, 900)
     }
-    const safetyNet = window.setTimeout(markReady, GLOBE_READY_SAFETY_NET_MS)
-    // Slow posters shouldn't hold everyone back: once most have settled the
-    // globe opens, and the rest fill in as they arrive.
-    const startedAt = performance.now()
-    const mostlyThere = window.setTimeout(() => {
-      if (settled / total >= GLOBE_READY_LATE_FRACTION) markReady()
-    }, GLOBE_READY_LATE_MS)
-    this.cleanupCallbacks.push(() => {
-      window.clearTimeout(safetyNet)
-      window.clearTimeout(mostlyThere)
-    })
-    const countSettled = () => {
+    const safetyNet = window.setTimeout(
+      () => markReady(false),
+      GLOBE_READY_SAFETY_NET_MS,
+    )
+    this.cleanupCallbacks.push(() => window.clearTimeout(safetyNet))
+    const countSettled = (index: number) => {
+      if (ready || !onScreen.has(index)) return
+      settledSet.add(index)
       settled += 1
-      if (ready) return
       if (settled >= total) {
-        window.requestAnimationFrame(markReady)
+        window.requestAnimationFrame(() => markReady(true))
         return
       }
-      if (
-        settled / total >= GLOBE_READY_EARLY_FRACTION &&
-        performance.now() - startedAt >= GLOBE_READY_EARLY_MIN_MS
-      ) {
-        window.requestAnimationFrame(markReady)
-        return
-      }
-      this.reportProgress(8 + (settled / total) * 91)
+      this.reportProgress((settled / total) * 100)
     }
-    const onLoaded = (index: number, image: PosterImage) => {
-      loaded.add(index)
+    this.reportProgress(0)
+    const onLoaded = (index: number, image: PosterImage) =>
       this.uploadPosterCell(index, image)
-    }
 
     // A poster that fails is retried quickly (800ms, then 2.4s) before it
     // settles on its placeholder, so one bad request can never stall or kill
@@ -2738,11 +2936,13 @@ class InfiniteMovieEngine<T> {
       INITIAL_TEXTURE_LOAD_CONCURRENCY,
       (index, image) => {
         onLoaded(index, image)
-        countSettled()
+        countSettled(index)
       },
+      // A poster that could not be fetched keeps its placeholder; it still
+      // counts as settled for data-base-loaded.
       (index) => {
-        paintFallback(index)
-        countSettled()
+        this.noteBaseCell(index)
+        countSettled(index)
       },
       POSTER_SETTLE_RETRY_DELAYS_MS,
     )
@@ -2751,7 +2951,10 @@ class InfiniteMovieEngine<T> {
     await new Promise<void>((resolve) =>
       window.requestAnimationFrame(() => resolve()),
     )
-    markReady()
+    markReady(true)
+    // Every poster has settled now, even if the safety net opened the globe
+    // before the ones on screen were all in.
+    this.reportProgress(100)
     this.retryFailedPosters(failed, onLoaded)
   }
 
@@ -2822,6 +3025,21 @@ class InfiniteMovieEngine<T> {
           lastSort = performance.now()
           this.sortByFacing(queue, cursor)
         }
+        // Background work (posters not on screen) waits for a still moment;
+        // whatever is on screen is always asked for.
+        while (
+          this.backgroundPhase &&
+          this.isBusy() &&
+          queue[cursor] !== undefined &&
+          this.lodWidth[queue[cursor]] <= 0 &&
+          !this.disposed &&
+          !this.contextLost
+        ) {
+          await new Promise<void>((resolve) =>
+            window.setTimeout(resolve, BACKGROUND_PAUSE_MS),
+          )
+          this.sortByFacing(queue, cursor)
+        }
         const index = queue[cursor]
         cursor += 1
         if (index === undefined) return
@@ -2865,8 +3083,9 @@ class InfiniteMovieEngine<T> {
     return failed
   }
 
-  // Reorders queue[from..] so the posters nearest the front of the globe come
-  // first (the same facing the first load uses).
+  // Reorders queue[from..]: the posters on screen now first (the rim ones
+  // too, which face the viewer least but are still seen), then the rest,
+  // each group nearest the front of the globe first.
   private sortByFacing(queue: number[], from: number) {
     if (queue.length - from < 2) return
     const target = transformQuat3(
@@ -2879,16 +3098,52 @@ class InfiniteMovieEngine<T> {
       const item = instance % itemCount
       facing[item] = Math.max(facing[item], dot3(target, position))
     })
+    const measured = this.lastLodAt > 0
+    const shown = (index: number) =>
+      measured && this.lodWidth[index] > 0 ? 0 : 1
     const rest = queue.splice(from)
-    rest.sort((a, b) => facing[b] - facing[a])
+    rest.sort((a, b) => shown(a) - shown(b) || facing[b] - facing[a])
     queue.push(...rest)
   }
 
   // The globe's base tier for one poster: its small 2:3 cell, with the
   // best size first and smaller ones as fallbacks for a 404.
-  private requestBase(index: number, priority: number): Promise<PosterImage> {
+  private requestBase(index: number, rank: number): Promise<PosterImage> {
     const item = this.items[index]
     const path = posterPathOf(item)
+    const loader = this.loader as PosterLoader
+    const cell: CellSpec = {
+      width: this.tiers.baseWidth,
+      height: this.tiers.baseHeight,
+      gutter: this.tiers.gutter,
+    }
+    const onScreen = this.lastLodAt === 0 || this.lodWidth[index] > 0
+    const priority = onScreen ? rank : PRIORITY_OFFSCREEN_BASE + rank
+    const midUrls = this.wantsMidWithBase(index)
+      ? this.tierUrls('m', index)
+      : null
+    if (midUrls) {
+      // One download fills both the atlas cell and the poster's mid layer.
+      this.combinedInflight.add(index)
+      return loader
+        .requestCells(`b:${index}`, midUrls, priority, [
+          cell,
+          ...this.tierCells('m'),
+        ])
+        .then(
+          ([base, ...mid]) => {
+            this.combinedInflight.delete(index)
+            // The card and the flight start from what the globe has fetched.
+            notePosterUrlLoaded(midUrls[0])
+            this.placeMidImage(index, mid)
+            return base
+          },
+          (error) => {
+            this.combinedInflight.delete(index)
+            throw error
+          },
+        )
+    }
     const urls = path
       ? [
           posterUrl(path, 'w92'),
@@ -2897,52 +3152,64 @@ class InfiniteMovieEngine<T> {
         ]
       : [item.image]
     if (item.fallbackImage) urls.push(item.fallbackImage)
-    const cell: CellSpec = {
-      width: this.tiers.baseWidth,
-      height: this.tiers.baseHeight,
-      gutter: this.tiers.gutter,
-    }
-    return (this.loader as PosterLoader).request(
-      `b:${index}`,
-      urls,
-      priority,
-      cell,
+    return loader.request(`b:${index}`, urls, priority, cell).then((image) => {
+      notePosterUrlLoaded(urls[0])
+      return image
+    })
+  }
+
+  // True when the poster is drawn large enough on screen to need its mid
+  // tier, and the mid pool has room for it.
+  private wantsMidWithBase(index: number) {
+    return (
+      this.lodEnabled &&
+      this.tiers.midLayers > 0 &&
+      this.lodWidth[index] > this.tiers.baseWidth * SHARPNESS_SLACK &&
+      this.midLayerOf[index] < 0 &&
+      !this.lodInflight.has(`m:${index}`) &&
+      this.midPool.size < this.tiers.midLayers
     )
   }
 
-  // A poster that could not be fetched keeps its slot as its average colour.
-  private paintPlaceholderCell(index: number) {
-    const item = this.items[index]
-    const colour = item?.placeholderColor
-    if (!colour || !this.texture) return
-    const match = /^#?([0-9a-f]{6})$/i.exec(colour)
-    if (!match) return
-    const rgb = Number.parseInt(match[1], 16)
-    const { cellWidth, cellHeight, columns } = this.atlas
-    const data = new Uint8Array(cellWidth * cellHeight * 4)
-    for (let at = 0; at < data.length; at += 4) {
-      data[at] = (rgb >> 16) & 255
-      data[at + 1] = (rgb >> 8) & 255
-      data[at + 2] = rgb & 255
-      data[at + 3] = 255
+  // A mid image that came with the poster's first download takes the layer
+  // the LOD plan gave the poster, or a free one.
+  private placeMidImage(index: number, images: PosterImage[]) {
+    const close = () => closeImages(images)
+    if (this.disposed || this.contextLost || this.midLayerOf[index] >= 0) {
+      close()
+      return
     }
-    const gl = this.gl
-    gl.bindTexture(gl.TEXTURE_2D, this.texture)
-    gl.texSubImage2D(
-      gl.TEXTURE_2D,
-      0,
-      (index % columns) * cellWidth,
-      Math.floor(index / columns) * cellHeight,
-      cellWidth,
-      cellHeight,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      data,
-    )
-    this.baseMipsDirty = true
-    this.scheduleMips()
-    this.markPosterArrived(index)
-    this.renderDirty = true
+    const key = this.itemKeys[index]
+    let layer = this.midPool.layerOf(key)
+    if (layer === null) {
+      const acquired = this.midPool.acquire(key, performance.now())
+      if (acquired.evicted !== null)
+        this.dropTierLayer('m', Number(acquired.evicted))
+      layer = acquired.layer
+    }
+    if (layer < 0) {
+      close()
+      return
+    }
+    const runId = `m:${index}`
+    if (this.lodInflight.delete(runId)) this.loader?.cancel(runId)
+    this.onTierImage('m', index, layer, images)
+  }
+
+  // A tier layer and its mip levels, each drawn by the worker from the one
+  // download. Uploading every level per layer means the array is never
+  // re-mipped as a whole: generateMipmap on a 320-layer array, every time a
+  // poster landed, stalled the GPU (and with software GL, the page).
+  private tierCells(tier: 'm' | 'd'): CellSpec[] {
+    const width = tier === 'm' ? this.tiers.midWidth : this.tiers.detailWidth
+    const height = tier === 'm' ? this.tiers.midHeight : this.tiers.detailHeight
+    const levels =
+      tier === 'm' ? this.tiers.midMipLevels : this.tiers.detailMipLevels
+    return Array.from({ length: levels }, (_, level) => ({
+      width: Math.max(1, width >> level),
+      height: Math.max(1, height >> level),
+      gutter: 0,
+    }))
   }
 
   private uploadPosterCell(index: number, image: PosterImage) {
@@ -2968,6 +3235,7 @@ class InfiniteMovieEngine<T> {
     closeImage()
     this.baseMipsDirty = true
     this.scheduleMips()
+    this.noteBaseCell(index)
     this.markPosterArrived(index)
     this.renderDirty = true
   }
@@ -2980,14 +3248,22 @@ class InfiniteMovieEngine<T> {
     this.onLoadProgress(nextPercent)
   }
 
-  // Mip chains are rebuilt in batches: one generateMipmap per tier covers
-  // every upload that landed meanwhile.
+  // The base atlas's mip chain is rebuilt in batches: one generateMipmap
+  // covers every cell that landed meanwhile. (Mid and detail layers arrive
+  // with their own mip levels.)
   private scheduleMips() {
     if (this.mipTimer !== null) return
-    this.mipTimer = window.setTimeout(() => {
-      this.mipTimer = null
-      this.flushMips()
-    }, MIP_BATCH_MS)
+    this.mipTimer = window.setTimeout(
+      () => {
+        this.mipTimer = null
+        this.flushMips()
+      },
+      this.backgroundPhase
+        ? this.isBusy()
+          ? MIP_BATCH_BUSY_MS
+          : MIP_BATCH_BACKGROUND_MS
+        : MIP_BATCH_MS,
+    )
   }
 
   private flushMips() {
@@ -2997,17 +3273,7 @@ class InfiniteMovieEngine<T> {
       gl.bindTexture(gl.TEXTURE_2D, this.texture)
       gl.generateMipmap(gl.TEXTURE_2D)
     }
-    if (this.midMipsDirty && this.midTexture) {
-      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.midTexture)
-      gl.generateMipmap(gl.TEXTURE_2D_ARRAY)
-    }
-    if (this.detailMipsDirty && this.detailTexture) {
-      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.detailTexture)
-      gl.generateMipmap(gl.TEXTURE_2D_ARRAY)
-    }
     this.baseMipsDirty = false
-    this.midMipsDirty = false
-    this.detailMipsDirty = false
     this.renderDirty = true
   }
 
@@ -3088,33 +3354,39 @@ class InfiniteMovieEngine<T> {
       detailCapacity: this.tiers.detailLayers,
       baseWidth: this.tiers.baseWidth,
       midWidth: this.tiers.midWidth,
+      // Tier 3 warm-up: once every base cell is in and the globe is at rest.
+      warm:
+        this.baseCells.size >= count &&
+        !document.hidden &&
+        this.angularSpeed() < WARMUP_SPEED_MAX,
     })
     this.applyTier('m', plan.mid, now)
     this.applyTier('d', plan.detail, now)
+    this.canvas.dataset.lodPending = String(this.lodInflight.size)
   }
 
   private tierUrls(tier: 'm' | 'd', item: number) {
     const path = posterPathOf(this.items[item])
     if (!path) return null
     if (tier === 'm')
-      return [
-        posterUrl(path, 'w185'),
-        posterUrl(path, 'w154'),
-        posterUrl(path, 'w92'),
-      ]
-    // The opened poster is fetched sharper still on a dense screen, and
-    // scaled into its layer.
-    return item === this.openedItem && this.pxScale >= 1.5
-      ? [
-          posterUrl(path, 'w500'),
-          posterUrl(path, 'w342'),
-          posterUrl(path, 'w185'),
-        ]
-      : [
-          posterUrl(path, 'w342'),
-          posterUrl(path, 'w185'),
-          posterUrl(path, 'w154'),
-        ]
+      return this.tiers.desktop
+        ? [
+            posterUrl(path, 'w185'),
+            posterUrl(path, 'w154'),
+            posterUrl(path, 'w92'),
+          ]
+        : [
+            posterUrl(path, 'w154'),
+            posterUrl(path, 'w185'),
+            posterUrl(path, 'w92'),
+          ]
+    // w342 fills the 342 px layer exactly. The opened poster asks for the
+    // same file as the card's first image, so the two share one download.
+    return [
+      posterUrl(path, 'w342'),
+      posterUrl(path, 'w185'),
+      posterUrl(path, 'w154'),
+    ]
   }
 
   private applyTier(tier: 'm' | 'd', keys: string[], now: number) {
@@ -3122,8 +3394,6 @@ class InfiniteMovieEngine<T> {
     if (!loader) return
     const pool = tier === 'm' ? this.midPool : this.detailPool
     const layerOf = tier === 'm' ? this.midLayerOf : this.detailLayerOf
-    const width = tier === 'm' ? this.tiers.midWidth : this.tiers.detailWidth
-    const height = tier === 'm' ? this.tiers.midHeight : this.tiers.detailHeight
     const base = tier === 'm' ? PRIORITY_MID : PRIORITY_DETAIL
     const wanted = new Set(keys)
     // What the plan still wants keeps its layer through this pass.
@@ -3135,6 +3405,7 @@ class InfiniteMovieEngine<T> {
       if (layer < 0) return
       if (evicted !== null) this.dropTierLayer(tier, Number(evicted))
       if (layerOf[item] === layer) return
+      if (tier === 'm' && this.combinedInflight.has(item)) return
       const runId = `${tier}:${key}`
       const priority = item === this.openedItem ? PRIORITY_OPENED : base + rank
       if (this.lodInflight.has(runId)) {
@@ -3152,8 +3423,11 @@ class InfiniteMovieEngine<T> {
         return
       }
       this.lodInflight.add(runId)
-      loader.request(runId, urls, priority, { width, height, gutter: 0 }).then(
-        (image) => this.onTierImage(tier, item, layer, image),
+      loader.requestCells(runId, urls, priority, this.tierCells(tier)).then(
+        (images) => {
+          notePosterUrlLoaded(urls[0])
+          this.onTierImage(tier, item, layer, images)
+        },
         (error) => {
           this.lodInflight.delete(runId)
           if (error instanceof DOMException && error.name === 'AbortError')
@@ -3177,18 +3451,17 @@ class InfiniteMovieEngine<T> {
     }
   }
 
+  // `images` is the layer's mip chain, largest first (see tierCells).
   private onTierImage(
     tier: 'm' | 'd',
     item: number,
     layer: number,
-    image: PosterImage,
+    images: PosterImage[],
   ) {
     this.lodInflight.delete(`${tier}:${item}`)
     const pool = tier === 'm' ? this.midPool : this.detailPool
     const texture = tier === 'm' ? this.midTexture : this.detailTexture
-    const close = () => {
-      if ('close' in image) image.close()
-    }
+    const close = () => closeImages(images)
     if (
       this.disposed ||
       this.contextLost ||
@@ -3199,31 +3472,28 @@ class InfiniteMovieEngine<T> {
       return
     }
     const gl = this.gl
-    const width = tier === 'm' ? this.tiers.midWidth : this.tiers.detailWidth
-    const height = tier === 'm' ? this.tiers.midHeight : this.tiers.detailHeight
+    const cells = this.tierCells(tier)
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture)
-    gl.texSubImage3D(
-      gl.TEXTURE_2D_ARRAY,
-      0,
-      0,
-      0,
-      layer,
-      width,
-      height,
-      1,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      image,
-    )
+    cells.forEach((cell, level) => {
+      const image = images[level]
+      if (!image) return
+      gl.texSubImage3D(
+        gl.TEXTURE_2D_ARRAY,
+        level,
+        0,
+        0,
+        layer,
+        cell.width,
+        cell.height,
+        1,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        image,
+      )
+    })
     close()
-    if (tier === 'm') {
-      this.midLayerOf[item] = layer
-      this.midMipsDirty = true
-    } else {
-      this.detailLayerOf[item] = layer
-      this.detailMipsDirty = true
-    }
-    this.scheduleMips()
+    if (tier === 'm') this.midLayerOf[item] = layer
+    else this.detailLayerOf[item] = layer
     // The new tier fades in over the one below; the clock is the reveal's.
     const start = this.reducedMotion()
       ? this.revealNow() - 10
@@ -3469,6 +3739,7 @@ class InfiniteMovieEngine<T> {
     gl.uniform1f(this.locations.uLodFade, LOD_FADE_MS / 1000)
     gl.uniform1i(this.locations.uTex, 0)
     gl.uniform1i(this.locations.uRevealTex, 1)
+    gl.uniform1i(this.locations.uColorTex, 4)
     gl.uniform1i(this.locations.uMidTex, 2)
     gl.uniform1i(this.locations.uDetailTex, 3)
     gl.uniform1f(
@@ -3487,6 +3758,8 @@ class InfiniteMovieEngine<T> {
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.midTexture)
     gl.activeTexture(gl.TEXTURE3)
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.detailTexture)
+    gl.activeTexture(gl.TEXTURE4)
+    gl.bindTexture(gl.TEXTURE_2D, this.colorTexture)
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
     if (this.lodDirty) {
@@ -3581,6 +3854,7 @@ class InfiniteMovieEngine<T> {
 
     if (isMoving !== this.movementActive) {
       this.movementActive = isMoving
+      this.applyLoaderConcurrency()
       this.onMovementChange(isMoving)
     }
 
@@ -3755,7 +4029,12 @@ const FallbackMovieMenu = <T,>({
               }
               onClick={() => onActiveItemChange(item)}
             >
-              <img src={item.image} alt='' loading='lazy' />
+              <img
+                src={item.image}
+                alt=''
+                loading='lazy'
+                crossOrigin='anonymous'
+              />
             </button>
           )
         })}
@@ -3910,6 +4189,7 @@ export const InfiniteMovieMenu = <T,>({
         zoomRef.current,
       )
       engineRef.current = engine
+      engine.onGlobeReady = () => onReady?.()
       engine.onSpinActive = (active) => onSpinActiveChangeRef.current?.(active)
       engine.onFlick = (speed, direction) =>
         flickListenerRef.current?.(speed, direction)
@@ -3993,8 +4273,16 @@ export const InfiniteMovieMenu = <T,>({
       portRef.current = shuffleProPort
       shuffleProRef.current?.attachPort(shuffleProPort)
       onEngineAttachedRef.current?.(engineItems)
+      // Every build faces the film on show (the landing pick on the first
+      // one). A rebuild that skipped this opened at the globe's default
+      // front, so the active film jumped to whatever poster sat there.
+      const faceId = faceTargetFor(
+        initialFaceRef.current,
+        activeItemRef.current?.id ?? null,
+        engineItems,
+      )
+      if (faceId) engine.faceItem(faceId)
       if (initialFaceRef.current) {
-        engine.faceItem(initialFaceRef.current)
         initialFaceRef.current = null
         initialFaceUsedRef.current = true
       }
@@ -4181,17 +4469,13 @@ export const InfiniteMovieMenu = <T,>({
     const engine = engineRef.current
     if (!engine) {
       // Fallback (no WebGL): nothing to spin, open straight away.
-      onOpenItem?.(item, spinRequest.quiet ? 'land' : 'shuffle')
+      onOpenItem?.(item, 'shuffle')
       return
     }
     const arrive = (index: number) => {
       activeItemRef.current = item
       setActiveItem(item)
       onActiveItemChange(item)
-      if (spinRequest.quiet) {
-        onOpenItem?.(item, 'land')
-        return
-      }
       engine.setDetailFocus(item.id, true, 'fast', index)
       onOpenItem?.(item, 'shuffle')
     }

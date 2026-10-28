@@ -12,13 +12,13 @@ export default defineConfig({
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env.CI ? 1 : 0,
   /* Run serially: parallel WebGL-heavy workers starve the dev server and make tests flaky, with no speed gain. */
   workers: 1,
   /* The globe renders in software on CI and starves the page, so views like the index can take longer than 5 s to appear. */
   expect: { timeout: 15_000 },
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: 'html',
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'html',
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
@@ -26,6 +26,10 @@ export default defineConfig({
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
+
+    /* CI serves a production build, which registers a service worker that
+       would answer poster requests behind the tests' backs. */
+    serviceWorkers: process.env.CI ? 'block' : 'allow',
   },
 
   /* Configure projects for major browsers */
@@ -77,10 +81,18 @@ export default defineConfig({
     },
   ],
 
-  /* Run your local dev server before starting the tests */
+  /* Locally: the dev server (reused if it is already running). On CI: the
+     production build in dist/ (made by `npm run build` in the same job),
+     served by `vite preview`, which is far lighter than unbundled Vite. A few
+     specs need dev-only features and are tagged @dev; their CI job sets
+     E2E_SERVER=dev. */
   webServer: {
-    command: 'npm run dev',
+    command:
+      process.env.CI && process.env.E2E_SERVER !== 'dev'
+        ? 'npm run preview -- --strictPort'
+        : 'npm run dev',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
   },
 })

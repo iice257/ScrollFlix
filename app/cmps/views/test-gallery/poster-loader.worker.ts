@@ -5,7 +5,7 @@ import {
   type CellSpec,
   type WorkerIn,
   type WorkerOut,
-  decodeFirst,
+  decodeFirstCells,
   realDeps,
 } from './poster-decode'
 
@@ -16,18 +16,17 @@ const scope = self as unknown as {
   onmessage: ((event: MessageEvent<WorkerIn>) => void) | null
 }
 
-const load = async (key: string, urls: string[], cell: CellSpec | null) => {
+const load = async (key: string, urls: string[], cells: CellSpec[] | null) => {
   const abort = new AbortController()
   running.set(key, abort)
   try {
-    const image = await decodeFirst(urls, cell, deps, abort.signal)
+    const images = await decodeFirstCells(urls, cells, deps, abort.signal)
+    const bitmaps = images as ImageBitmap[]
     if (abort.signal.aborted) {
-      if ('close' in image) image.close()
+      for (const bitmap of bitmaps) bitmap.close()
       return
     }
-    scope.postMessage({ t: 'ok', key, bitmap: image as ImageBitmap }, [
-      image as ImageBitmap,
-    ])
+    scope.postMessage({ t: 'ok', key, bitmaps }, bitmaps)
   } catch {
     if (!abort.signal.aborted) scope.postMessage({ t: 'fail', key })
   } finally {
@@ -37,6 +36,6 @@ const load = async (key: string, urls: string[], cell: CellSpec | null) => {
 
 scope.onmessage = (event) => {
   const message = event.data
-  if (message.t === 'load') void load(message.key, message.urls, message.cell)
+  if (message.t === 'load') void load(message.key, message.urls, message.cells)
   else running.get(message.key)?.abort()
 }

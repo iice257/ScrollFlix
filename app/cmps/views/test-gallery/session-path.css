@@ -1,13 +1,4 @@
-/* Session path: the button above the Saved heart, and its timeline drawer. */
-
-.warp-path-button {
-  bottom: calc(28px + var(--warp-control-height) * 2 + 20px);
-}
-
-.warp-path-drawer {
-  bottom: calc(28px + var(--warp-control-height) * 3 + 32px);
-  max-height: calc(100dvh - 140px);
-}
+/* History and Favourites: one drawer with two tabs, and the history timeline. */
 
 .warp-path-list {
   position: relative;
@@ -155,21 +146,6 @@
   transform: scale(0.97);
 }
 
-.warp-shell[data-details-open="true"] .warp-path-button {
-  opacity: 0;
-  pointer-events: none;
-}
-
-@media (max-width: 900px) {
-  .warp-path-button {
-    bottom: calc(18px + var(--warp-control-height) * 2 + 20px);
-  }
-
-  .warp-path-drawer {
-    bottom: calc(18px + var(--warp-control-height) * 3 + 30px);
-  }
-}
-
 /* Light theme */
 .warp-shell[data-theme="light"] .warp-path-list li:hover {
   background: rgb(0 0 0 / 0.05);
@@ -287,4 +263,106 @@
 
 .warp-shell[data-theme="light"] .warp-path-toggle[aria-checked="true"] .warp-path-switch {
   background: #0b0b0b;
+}
+
+/* The two tabs sit where the drawer's title was. */
+.warp-library-tabs {
+  display: flex;
+  gap: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.07);
+  padding: 3px;
+}
+
+.warp-library-tab {
+  display: inline-flex;
+  height: 34px;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  padding: 0 14px;
+  color: rgb(255 255 255 / 0.62);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.warp-library-tab svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.4;
+}
+
+.warp-library-tab b {
+  min-width: 18px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.14);
+  padding: 2px 5px;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.warp-library-tab:hover,
+.warp-library-tab:focus-visible {
+  outline: none;
+  color: #fff;
+}
+
+.warp-library-tab.is-active {
+  background: #fff;
+  color: #0b0b0b;
+}
+
+.warp-library-tab.is-active b {
+  background: rgb(0 0 0 / 0.12);
+}
+
+.warp-library-panel {
+  display: grid;
+  gap: 0;
+}
+
+.warp-library-note {
+  margin: 12px 2px 0;
+  color: rgb(255 255 255 / 0.4);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.warp-shell[data-theme="light"] .warp-library-tabs {
+  background: rgb(0 0 0 / 0.06);
+}
+
+.warp-shell[data-theme="light"] .warp-library-tab {
+  color: rgb(0 0 0 / 0.58);
+}
+
+.warp-shell[data-theme="light"] .warp-library-tab:hover,
+.warp-shell[data-theme="light"] .warp-library-tab:focus-visible {
+  color: #000;
+}
+
+.warp-shell[data-theme="light"] .warp-library-tab b {
+  background: rgb(0 0 0 / 0.1);
+}
+
+.warp-shell[data-theme="light"] .warp-library-tab.is-active {
+  background: #0b0b0b;
+  color: #fff;
+}
+
+.warp-shell[data-theme="light"] .warp-library-tab.is-active b {
+  background: rgb(255 255 255 / 0.22);
+}
+
+.warp-shell[data-theme="light"] .warp-library-note {
+  color: rgb(0 0 0 / 0.45);
 }

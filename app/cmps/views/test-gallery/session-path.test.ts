@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { MAX_PATH, addToPath, parsePath } from './session-path'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  MAX_PATH,
+  PATH_STORAGE_KEY,
+  addToPath,
+  parsePath,
+  sessionPathStore,
+} from './session-path'
 
 describe('addToPath', () => {
   it('adds landings in order', () => {
@@ -57,5 +63,45 @@ describe('parsePath', () => {
       { id: 'c27205', tier: 'gold', at: 0 },
       { id: 'c11', tier: null, at: 0 },
     ])
+  })
+})
+
+describe('sessionPathStore persistence', () => {
+  afterEach(() => {
+    window.localStorage.clear()
+    window.sessionStorage.clear()
+    sessionPathStore.reset()
+  })
+
+  it('keeps the path in local storage, so it outlives the tab', () => {
+    sessionPathStore.reset()
+    sessionPathStore.add('c1')
+    sessionPathStore.add('c2', 'jade')
+    expect(
+      JSON.parse(window.localStorage.getItem(PATH_STORAGE_KEY) ?? '[]'),
+    ).toEqual([
+      { id: 'c1', tier: null },
+      { id: 'c2', tier: 'jade' },
+    ])
+    // A new visit reads it back.
+    sessionPathStore.reset()
+    expect(sessionPathStore.get().map((point) => point.id)).toEqual([
+      'c1',
+      'c2',
+    ])
+  })
+
+  it('adopts a path an older visit left in session storage', () => {
+    window.sessionStorage.setItem(
+      PATH_STORAGE_KEY,
+      JSON.stringify([{ id: 'c9', tier: null }]),
+    )
+    sessionPathStore.reset()
+    expect(sessionPathStore.get().map((point) => point.id)).toEqual(['c9'])
+    sessionPathStore.add('c10')
+    expect(window.sessionStorage.getItem(PATH_STORAGE_KEY)).toBeNull()
+    expect(
+      JSON.parse(window.localStorage.getItem(PATH_STORAGE_KEY) ?? '[]'),
+    ).toHaveLength(2)
   })
 })

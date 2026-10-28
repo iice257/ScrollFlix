@@ -24,7 +24,7 @@ test('reveals the full poster gallery from the TMDB CDN', async ({ page }) => {
   test.skip(!hasWebgl2, 'WebGL2 is unavailable in this browser')
 
   const canvas = page.getByLabel('Infinite movie poster menu')
-  await expect(canvas).toHaveAttribute('data-item-count', /^(2160|1260)$/, {
+  await expect(canvas).toHaveAttribute('data-item-count', /^(2000|1260)$/, {
     timeout: 30_000,
   })
   await expect(canvas).toHaveAttribute('data-texture-progress', '100', {

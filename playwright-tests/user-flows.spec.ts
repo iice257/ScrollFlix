@@ -45,7 +45,7 @@ const compareShots = (page: Page, before: string, after: string) =>
     [before, after],
   )
 
-// Opens the gallery with saved films and a session path, so links and stars
+// Opens the gallery with saved films and a history, so links and stars
 // are drawn somewhere on the globe whichever way it faces, and turns the globe
 // a little so they are not where they started.
 const openWithConstellations = async (page: Page) => {
@@ -60,10 +60,7 @@ const openWithConstellations = async (page: Page) => {
     ({ saved, path }) => {
       try {
         window.localStorage.setItem('wtw:saved:v1', JSON.stringify(saved))
-        window.sessionStorage.setItem(
-          'wtw:session-path:v1',
-          JSON.stringify(path),
-        )
+        window.localStorage.setItem('wtw:session-path:v1', JSON.stringify(path))
         window.localStorage.setItem('wtw:spin-hint-seen', '1')
         window.localStorage.setItem('wtw:theme', 'dark')
       } catch {}
@@ -112,7 +109,7 @@ const marksDiffer = (page: Page) => {
     // Press it with the keyboard: on a slow runner the drawer's entrance and
     // the line tips keep the button "unstable" for a click.
     // Both settings, so links and path marks give the globe the most to show.
-    for (const group of ['Session path', 'Favorite links']) {
+    for (const group of ['History on globe', 'Favourites on globe']) {
       const toggle = page
         .getByRole('group', { name: group })
         .getByRole('button', { name: on ? 'On' : 'Off', exact: true })
@@ -202,14 +199,58 @@ test.describe('Gallery user flows', () => {
     const card = page.locator('.warp-details-card')
     await expect(card).toBeVisible()
 
-    // The card asks for the sharp size (srcset picks w500 to w780).
+    // The card asks for its sharp size: w342 first (w500 follows only on a
+    // dense desktop screen, once w342 is showing).
     await expect
-      .poll(() => requested.some((url) => /\/(w500|w780)\//.test(url)))
+      .poll(() => requested.some((url) => /\/w342\//.test(url)))
       .toBe(true)
     const backdrop = await card
       .locator('.warp-details-ambient')
       .evaluate((el) => getComputedStyle(el).backgroundImage)
     expect(backdrop).toMatch(/\/(w780|w1280)\//)
+  })
+
+  test('the mood line starts plain and changes its words after a skip', async ({
+    page,
+  }) => {
+    const line = page.locator('.mood-line')
+    await expect(line.locator('.mood-line-text')).toHaveText(
+      'How are you feeling?',
+    )
+    await expect(line.locator('.mood-line-button')).toContainText(
+      'Pick your mood',
+    )
+
+    await page
+      .getByRole('button', { name: /Shuffle/ })
+      .first()
+      .click()
+    await expect(line.locator('.mood-line-text')).not.toHaveText(
+      'How are you feeling?',
+    )
+  })
+
+  test('the Watch listing is fetched before any card is opened', async ({
+    page,
+  }) => {
+    const asked: string[] = []
+    await page.route('**/api/watch*', async (route) => {
+      asked.push(route.request().url())
+      await route.fulfill({
+        json: { region: 'US', link: null, providers: [] },
+      })
+    })
+    await page.reload()
+    await page
+      .getByRole('button', { name: 'Skip first time load' })
+      .click({ timeout: 3_000 })
+      .catch(() => {})
+    await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
+
+    // The film the globe settles on (and the next shuffle's candidates) get
+    // their listing ahead of time; no card has been opened.
+    await expect.poll(() => asked.length).toBeGreaterThan(0)
+    await expect(page.locator('.warp-details-card')).toHaveCount(0)
   })
 
   test('searches the movie index by title and offers filters', async ({
@@ -225,6 +266,29 @@ test.describe('Gallery user flows', () => {
     await expect(
       page.getByRole('region', { name: 'Movie list view' }),
     ).toBeVisible()
+  })
+
+  test('index search forgives typos and ranks the best match first', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    const list = page.getByRole('region', { name: 'Movie list view' })
+    const search = page.getByRole('searchbox', {
+      name: 'Search titles, genres, moods',
+    })
+    await search.fill('godfater')
+
+    await expect(
+      list.getByRole('heading', { name: 'Best matches' }),
+    ).toBeVisible()
+    await expect(list.locator('.warp-list-row').first()).toContainText(
+      'The Godfather',
+    )
+
+    await search.fill('')
+    await expect(
+      list.getByRole('heading', { name: 'Best matches' }),
+    ).toHaveCount(0)
   })
 
   test('a genre tag in the movie index filters the list and clears again', async ({
@@ -272,6 +336,69 @@ test.describe('Gallery user flows', () => {
     // whole list it was.
     const picked = list.locator('.warp-list-row.is-active')
     await expect(picked).toBeInViewport({ timeout: 5_000 })
+  })
+
+  test('the index title pill waits for the first shuffle, then shows the film and opens its card', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    const list = page.getByRole('region', { name: 'Movie list view' })
+    await expect(list).toBeVisible()
+    const pill = page.locator('.warp-index-pill')
+    await expect(pill).toHaveCount(0)
+
+    await page
+      .getByRole('button', { name: 'Jump to a random movie in the index' })
+      .click()
+    const active = list.locator('.warp-list-row.is-active')
+    await expect(active).toBeInViewport({ timeout: 5_000 })
+    const title = (
+      await active.locator('.warp-list-row-title').first().textContent()
+    )?.trim()
+    await expect(pill).toBeVisible()
+    await expect(pill).toContainText(title ?? '')
+
+    await pill.click()
+    await expect(page.locator('.warp-details-card')).toBeVisible()
+  })
+
+  test('the index can be grouped by country, biggest origins first', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    const list = page.getByRole('region', { name: 'Movie list view' })
+    await expect(list).toBeVisible()
+
+    // Country first: tick it, then untick the default Year and Popularity.
+    await page.getByRole('button', { name: /^Sort:/ }).click()
+    const sortName = (label: string) =>
+      page
+        .locator('.warp-sort-row', { hasText: label })
+        .locator('.warp-sort-name')
+    await sortName('Country').click()
+    await sortName('Year').click()
+    await sortName('Popularity').click()
+    await page.keyboard.press('Escape')
+
+    const headings = list.locator('.warp-list-group-heading h2')
+    await expect(headings.first()).toHaveText('United States of America')
+    // Every group is a country (or the Unknown group, which is last).
+    const titles = await headings.allTextContents()
+    expect(titles.length).toBeGreaterThan(5)
+    expect(titles.filter((title) => /^\d{4}\+?$/.test(title))).toEqual([])
+  })
+
+  test('an origin chip on the Filters page narrows the films and shows in the badge', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Filters' }).click()
+    const origins = page.locator('[data-section="origins"]').first()
+    const chip = origins.getByRole('button', { name: /^Nollywood/ })
+    await expect(chip).toHaveAttribute('aria-pressed', 'false')
+    await chip.click()
+    await expect(chip).toHaveAttribute('aria-pressed', 'true')
+    await chip.click()
+    await expect(chip).toHaveAttribute('aria-pressed', 'false')
   })
 
   test('hovering an index row does not take the highlight from the active film', async ({
@@ -505,47 +632,55 @@ test.describe('Gallery user flows', () => {
     await expect(tip).toHaveCount(0)
   })
 
-  test('constellations follow the globe and theme', async ({ page }) => {
-    // Each pass turns the globe and shoots it four times; allow a few passes.
-    test.setTimeout(180_000)
-    test.skip(
-      (page.viewportSize()?.width ?? 0) <= 900,
-      'the drawer fills a phone',
-    )
-    await openWithConstellations(page)
-    const lines = marksDiffer(page)
+  test(
+    'constellations follow the globe and theme',
+    { tag: '@heavy' },
+    async ({ page }) => {
+      // Each pass turns the globe and shoots it four times; allow a few passes.
+      test.setTimeout(180_000)
+      test.skip(
+        (page.viewportSize()?.width ?? 0) <= 900,
+        'the drawer fills a phone',
+      )
+      await openWithConstellations(page)
+      const lines = marksDiffer(page)
 
-    // Light marks on the dark globe...
-    const dark = await lines(1)
-    expect(dark.changed).toBeGreaterThan(30)
-    expect(dark.meanDelta).toBeGreaterThan(0)
+      // Light marks on the dark globe...
+      const dark = await lines(1)
+      expect(dark.changed).toBeGreaterThan(30)
+      expect(dark.meanDelta).toBeGreaterThan(0)
 
-    // ...and ink on the light one.
-    await page.locator('button.warp-info-button').click()
-    await page.getByRole('button', { name: 'Light', exact: true }).click()
-    await closeDrawer(page)
-    await expect(page.locator('main')).toHaveAttribute('data-theme', 'light')
-    const light = await lines(-1)
-    expect(light.changed).toBeGreaterThan(30)
-    expect(light.meanDelta).toBeLessThan(0)
-  })
+      // ...and ink on the light one.
+      await page.locator('button.warp-info-button').click()
+      await page.getByRole('button', { name: 'Light', exact: true }).click()
+      await closeDrawer(page)
+      await expect(page.locator('main')).toHaveAttribute('data-theme', 'light')
+      const light = await lines(-1)
+      expect(light.changed).toBeGreaterThan(30)
+      expect(light.meanDelta).toBeLessThan(0)
+    },
+  )
 
-  test('links stay on posters after resize', async ({ page }) => {
-    // Each pass turns the globe and shoots it four times; allow a few passes.
-    test.setTimeout(180_000)
-    test.skip(
-      (page.viewportSize()?.width ?? 0) <= 900,
-      'the drawer fills a phone',
-    )
-    await openWithConstellations(page)
+  test(
+    'links stay on posters after resize',
+    { tag: '@heavy' },
+    async ({ page }) => {
+      // Each pass turns the globe and shoots it four times; allow a few passes.
+      test.setTimeout(180_000)
+      test.skip(
+        (page.viewportSize()?.width ?? 0) <= 900,
+        'the drawer fills a phone',
+      )
+      await openWithConstellations(page)
 
-    // The globe has gone to sleep by now; a resize must wake it and the marks
-    // must be redrawn with the posters at the new size.
-    await page.setViewportSize({ width: 1180, height: 760 })
-    await page.waitForTimeout(1_200)
+      // The globe has gone to sleep by now; a resize must wake it and the marks
+      // must be redrawn with the posters at the new size.
+      await page.setViewportSize({ width: 1180, height: 760 })
+      await page.waitForTimeout(1_200)
 
-    const diff = await marksDiffer(page)(1)
-    expect(diff.changed).toBeGreaterThan(30)
-    expect(diff.meanDelta).toBeGreaterThan(0)
-  })
+      const diff = await marksDiffer(page)(1)
+      expect(diff.changed).toBeGreaterThan(30)
+      expect(diff.meanDelta).toBeGreaterThan(0)
+    },
+  )
 })

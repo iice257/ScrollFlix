@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { mapCatalogRow } from './catalog-loader'
+import { searchMovies } from './film-search'
+import { notePosterLoaded, resetLoadedPosters } from './poster-loaded'
 import {
   DEFAULT_SORT_RULES,
   type GalleryKeyState,
@@ -8,8 +10,8 @@ import {
   compareListGroups,
   filterMoviesByDecisionFilters,
   filterMoviesByGenres,
-  filterMoviesByTitleSearch,
   filterMoviesByYearAndRating,
+  firstByRules,
   formatFilmCount,
   formatMovieMeta,
   getActiveSortRules,
@@ -18,12 +20,14 @@ import {
   getRuntimeBucket,
   getSimilarMovies,
   groupMoviesAlphabetically,
+  groupMoviesByCountry,
   groupMoviesByPopularity,
   groupMoviesByRating,
   groupMoviesByRuntime,
   groupMoviesByVotes,
   groupMoviesByYear,
   isDefaultSortRules,
+  posterBaseLayers,
   shouldHandleGalleryKey,
   sortMoviesByRules,
   sortMoviesForList,
@@ -71,12 +75,12 @@ describe('test gallery filtering helpers', () => {
     expect(filterMoviesByGenres(movies, ['Horror', 'Romance'])).toHaveLength(5)
   })
 
-  it('filters movie titles case-insensitively for index search', () => {
-    expect(
-      filterMoviesByTitleSearch(movies, 'quiet').map((item) => item.title),
-    ).toEqual(['A Quiet Place'])
-    expect(filterMoviesByTitleSearch(movies, 'LOVE')).toHaveLength(1)
-    expect(filterMoviesByTitleSearch(movies, '   ')).toHaveLength(movies.length)
+  it('searches movie titles case-insensitively for the index', () => {
+    expect(searchMovies(movies, 'quiet')?.map((item) => item.title)).toEqual([
+      'A Quiet Place',
+    ])
+    expect(searchMovies(movies, 'LOVE')).toHaveLength(1)
+    expect(searchMovies(movies, '   ')).toBeNull()
   })
 
   it('filters movies by deterministic mood and runtime groups', () => {
@@ -176,6 +180,33 @@ describe('test gallery filtering helpers', () => {
     expect(order('asc')).toEqual(['6+', '8+', 'Unrated'])
   })
 
+  it("lists the index's first films without sorting everything", () => {
+    const years = ['2019', '2021', '----', '2021', '1999', '2005', '2021']
+    const titles = ['Zed', 'Alpha', 'Unknown', 'Beta', 'Old', 'Mid', '9 Lives']
+    const pool = Array.from({ length: 60 }, (_, at) =>
+      movie(
+        String(at),
+        `${titles[at % titles.length]} ${at}`,
+        years[at % years.length],
+        ['Drama'],
+        at,
+      ),
+    )
+    for (const rules of [
+      DEFAULT_SORT_RULES,
+      [{ key: 'alpha' as const, direction: 'asc' as const }],
+      [{ key: 'rating' as const, direction: 'desc' as const }],
+    ]) {
+      for (const count of [1, 5, 30]) {
+        expect(firstByRules(pool, rules, count).map((film) => film.id)).toEqual(
+          sortMoviesByRules(pool, rules)
+            .slice(0, count)
+            .map((film) => film.id),
+        )
+      }
+    }
+  })
+
   it('sorts by stacked rules and ignores rules without a direction', () => {
     const pool = [
       { ...movies[0], year: '2007', weightedRating: 7.5 },
@@ -251,22 +282,22 @@ describe('test gallery filtering helpers', () => {
     ).toBe('Year: - | Rating: N/A | Hour: -')
   })
 
-  it('defaults to year newest first, then A-Z', () => {
+  it('defaults to year newest first, then most popular', () => {
     expect(DEFAULT_SORT_RULES).toEqual([
       { key: 'year', direction: 'desc' },
-      { key: 'alpha', direction: 'asc' },
+      { key: 'popularity', direction: 'desc' },
     ])
     expect(isDefaultSortRules(DEFAULT_SORT_RULES)).toBe(true)
 
     const pool = [
-      { ...movies[1], title: 'Zodiac', year: '2007' },
-      { ...movies[0], title: 'Amelie', year: '2007' },
-      { ...movies[2], title: 'Memento', year: '2000' },
-      { ...movies[3], title: 'Alien', year: '1979' },
+      { ...movies[1], title: 'Amelie', year: '2007', popularity: 10 },
+      { ...movies[0], title: 'Zodiac', year: '2007', popularity: 50 },
+      { ...movies[2], title: 'Memento', year: '2000', popularity: 5 },
+      { ...movies[3], title: 'Alien', year: '1979', popularity: 80 },
     ]
     expect(
       sortMoviesByRules(pool, DEFAULT_SORT_RULES).map((item) => item.title),
-    ).toEqual(['Amelie', 'Zodiac', 'Memento', 'Alien'])
+    ).toEqual(['Zodiac', 'Amelie', 'Memento', 'Alien'])
   })
 
   it('Reset target matches the default and edits never mutate it', () => {
@@ -278,7 +309,7 @@ describe('test gallery filtering helpers', () => {
     expect(isDefaultSortRules([{ key: 'alpha', direction: 'asc' }])).toBe(false)
     expect(DEFAULT_SORT_RULES).toEqual([
       { key: 'year', direction: 'desc' },
-      { key: 'alpha', direction: 'asc' },
+      { key: 'popularity', direction: 'desc' },
     ])
   })
 
@@ -560,5 +591,114 @@ describe('similar movies', () => {
   it('caps the result and skips the film itself', () => {
     const result = getSimilarMovies(source, pool, 1)
     expect(result.map((item) => item.id)).toEqual(['a'])
+  })
+})
+
+describe('posterBaseLayers', () => {
+  const film = {
+    posterPath: 'abc',
+    posterUrl: 'https://image.tmdb.org/t/p/w154/abc.jpg',
+    posterDetailUrl: 'https://image.tmdb.org/t/p/w342/abc.jpg',
+  }
+  afterEach(resetLoadedPosters)
+
+  it('starts from a tiny w92 and w154 when the globe has loaded nothing', () => {
+    expect(posterBaseLayers(film)).toEqual([
+      'https://image.tmdb.org/t/p/w92/abc.jpg',
+      'https://image.tmdb.org/t/p/w154/abc.jpg',
+    ])
+  })
+
+  it("uses the size the globe already loaded for the film's middle layer", () => {
+    notePosterLoaded('abc', 'w185')
+    expect(posterBaseLayers(film)).toEqual([
+      'https://image.tmdb.org/t/p/w92/abc.jpg',
+      'https://image.tmdb.org/t/p/w185/abc.jpg',
+    ])
+  })
+
+  it('never repeats the size the card shows next', () => {
+    notePosterLoaded('abc', 'w342')
+    notePosterLoaded('abc', 'w500')
+    expect(posterBaseLayers(film).some((url) => /w342|w500/.test(url))).toBe(
+      false,
+    )
+  })
+
+  it('falls back to the thumbnail for a film with no poster path', () => {
+    expect(posterBaseLayers({ ...film, posterPath: undefined })).toEqual([
+      film.posterUrl,
+    ])
+    expect(
+      posterBaseLayers({
+        posterPath: undefined,
+        posterUrl: film.posterUrl,
+        posterDetailUrl: undefined,
+      }),
+    ).toEqual([])
+  })
+})
+
+describe('grouping the index by country', () => {
+  const at = (id: string, countries: string) => ({
+    ...movie(id, `Film ${id}`, '2000', [], Number(id)),
+    countries,
+  })
+  const pool = [
+    at('1', 'France'),
+    at('2', 'Japan'),
+    at('3', 'France'),
+    at('4', ''),
+    at('5', 'France'),
+    at('6', 'Japan'),
+    at('7', 'Nigeria'),
+  ]
+
+  it('groups by country and files films with none under Unknown', () => {
+    const groups = groupMoviesByCountry(pool)
+    expect(Object.keys(groups).sort()).toEqual([
+      'France',
+      'Japan',
+      'Nigeria',
+      'Unknown',
+    ])
+    expect(groups.France).toHaveLength(3)
+    expect(groups.Unknown).toHaveLength(1)
+  })
+
+  it('lists the biggest origins first, Unknown last, in either direction', () => {
+    const groups = groupMoviesByCountry(pool)
+    const order = (direction: 'asc' | 'desc') =>
+      Object.entries(groups)
+        .sort(([a, filmsA], [b, filmsB]) =>
+          compareListGroups(a, b, 'country', direction, {
+            a: filmsA.length,
+            b: filmsB.length,
+          }),
+        )
+        .map(([group]) => group)
+    expect(order('desc')).toEqual(['France', 'Japan', 'Nigeria', 'Unknown'])
+    expect(order('asc')).toEqual(['Nigeria', 'Japan', 'France', 'Unknown'])
+  })
+
+  it('sorts films by country name, films with none last, then by the next rule', () => {
+    const sorted = sortMoviesByRules(pool, [
+      { key: 'country', direction: 'asc' },
+      { key: 'alpha', direction: 'desc' },
+    ])
+    expect(sorted.map((film) => film.countries)).toEqual([
+      'France',
+      'France',
+      'France',
+      'Japan',
+      'Japan',
+      'Nigeria',
+      '',
+    ])
+    expect(sorted.slice(0, 3).map((film) => film.title)).toEqual([
+      'Film 5',
+      'Film 3',
+      'Film 1',
+    ])
   })
 })

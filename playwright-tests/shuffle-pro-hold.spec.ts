@@ -1,14 +1,16 @@
 import { type Page, expect, test } from '@playwright/test'
+import { waitForGlobeQuiet } from './globe-quiet'
 
 const STORE_KEY = 'wtw:shuffle-pro:v1'
-// Dev mode exists only on the dev server, which is what these specs run on.
+// Dev mode exists only on the dev server: CI runs the @dev specs against it
+// (E2E_SERVER=dev) and everything else against the production build.
 const DEV_MODE_KEY = 'wtw:shuffle-pro:dev-mode'
 const entry = { count: 3, firstAt: 1, lastAt: 2 }
 const ALL_FOUND = { frost: entry, amethyst: entry, jade: entry, gold: entry }
 
 const openGallery = async (
   page: Page,
-  data: { found?: object; devMode?: boolean } = {},
+  data: { found?: object; devMode?: boolean; timed?: boolean } = {},
 ) => {
   await page.addInitScript(
     ([key, payload, devKey, devMode]) => {
@@ -40,6 +42,9 @@ const openGallery = async (
   await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached()
   // The loader fades out over the globe; a press must not land on it.
   await expect(page.locator('.warp-gallery-preloader')).toBeHidden()
+  // These specs time a hold to the second: wait for the globe to finish
+  // loading first (see globe-quiet.ts).
+  if (data.timed !== false) await waitForGlobeQuiet(page)
 }
 
 const pressGlobe = async (page: Page) => {
@@ -50,7 +55,10 @@ const pressGlobe = async (page: Page) => {
   await page.mouse.down()
 }
 
-test.describe('Shuffle Pro holds', () => {
+test.describe('Shuffle Pro holds', { tag: '@heavy' }, () => {
+  // Waiting for the globe to be quiet comes before the hold itself.
+  test.setTimeout(120_000)
+
   test('a 3s hold starts a run even with every path found and repeats off', async ({
     page,
   }) => {
@@ -104,12 +112,14 @@ test.describe('Shuffle Pro holds', () => {
 
 test.describe('Dev mode', () => {
   test('is off by default: no counter', async ({ page }) => {
-    await openGallery(page)
+    await openGallery(page, { timed: false })
     await expect(page.locator('.warp-demo-chip')).toHaveCount(0)
   })
 
-  test('shows a streak counter that follows shuffles', async ({ page }) => {
-    await openGallery(page, { devMode: true })
+  test('shows a streak counter that follows shuffles @dev', async ({
+    page,
+  }) => {
+    await openGallery(page, { devMode: true, timed: false })
     const chip = page.locator('.warp-demo-chip')
     await expect(chip).toBeVisible()
     await expect(chip).toContainText('0 / 5')

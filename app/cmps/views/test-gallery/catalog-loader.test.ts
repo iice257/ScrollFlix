@@ -145,7 +145,7 @@ describe('catalog loader', () => {
     )
   })
 
-  it('gives the no-CORS card backdrop a size nothing else requests', async () => {
+  it('gives the no-CORS card backdrop a URL nothing else requests', async () => {
     const { mapCatalogRow, posterBackdropUrl } = await freshLoader()
     const mapped = mapCatalogRow(rowOf(1), 0, 1, tables)
     const backdrop = posterBackdropUrl(mapped)
@@ -155,10 +155,12 @@ describe('catalog loader', () => {
       mapped.posterUrl,
       mapped.posterListUrl,
       mapped.posterDetailUrl,
+      // The globe's mid tier.
+      mapped.posterUrl.replace('/w154/', '/w185/'),
     ]) {
       expect(backdrop).not.toBe(used)
     }
-    expect(backdrop).toBe('https://image.tmdb.org/t/p/w185/poster1.jpg')
+    expect(backdrop).toBe('https://image.tmdb.org/t/p/w185/poster1.jpg?no-cors')
   })
 
   it('treats a zero rating, no backdrop and no runtime as missing', async () => {
