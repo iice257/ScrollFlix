@@ -4,6 +4,7 @@ import {
   decodeText,
   encodeChunks,
   normaliseFilm,
+  primaryCountry,
   rankTrailers,
 } from './rows.mjs'
 
@@ -156,6 +157,27 @@ const video = (key, extra = {}) => ({
   published_at: '2020-01-01T00:00:00.000Z',
   key,
   ...extra,
+})
+
+describe('primaryCountry', () => {
+  const countries = [
+    { iso_3166_1: 'DE', name: 'Germany' },
+    { iso_3166_1: 'US', name: 'United States of America' },
+  ]
+
+  it("prefers TMDB's origin country over the alphabetical first", () => {
+    expect(
+      primaryCountry({ production_countries: countries, origin_country: ['US'] }),
+    ).toBe('United States of America')
+  })
+
+  it('falls back to the first production country', () => {
+    expect(primaryCountry({ production_countries: countries })).toBe('Germany')
+    expect(
+      primaryCountry({ production_countries: countries, origin_country: ['JP'] }),
+    ).toBe('Germany')
+    expect(primaryCountry({})).toBe('')
+  })
 })
 
 describe('rankTrailers', () => {
