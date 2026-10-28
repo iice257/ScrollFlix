@@ -110,6 +110,7 @@ import {
   getCountrySummaries,
 } from './collections'
 import { constellationSetting } from './constellation'
+import { searchMovies, warmSearch } from './film-search'
 import { countGenresAndFilters } from './filter-count'
 import { formatGenreCount } from './genre-count'
 import { sessionPathSetting } from './globe-lines'
@@ -951,16 +952,6 @@ export const filterMoviesByGenres = (
 ) => {
   if (!selectedGenres.length) return movies
   return movies.filter((movie) => getGenreOverlap(movie, selectedGenres) > 0)
-}
-
-export const filterMoviesByTitleSearch = (
-  movies: TestMovie[],
-  searchQuery: string,
-) => {
-  const query = toTitleKey(searchQuery.trim())
-  if (!query) return movies
-
-  return movies.filter((movie) => getTitleKey(movie).includes(query))
 }
 
 const movieHasAnyGenre = (movie: TestMovie, genres: string[]) => {
@@ -2125,10 +2116,19 @@ export const TestGalleryApp = () => {
     [filteredMovies, sortRules],
   )
   const deferredSearchQuery = useDeferredValue(listSearchQuery)
-  const listMovies = useMemo(
-    () => filterMoviesByTitleSearch(sortedFilteredMovies, deferredSearchQuery),
+  // With a query the list is ranked by how well each film matches (typos,
+  // years, genres, countries and plot words included) instead of grouped.
+  const searchResults = useMemo(
+    () => searchMovies(sortedFilteredMovies, deferredSearchQuery),
     [sortedFilteredMovies, deferredSearchQuery],
   )
+  const listMovies = searchResults ?? sortedFilteredMovies
+  const listRanked = searchResults !== null
+  // Getting the films ready for search a slice at a time while the index is
+  // open means the first keystroke is not the one that pays for it.
+  useEffect(() => {
+    if (mode === 'list') return warmSearch(sortedFilteredMovies)
+  }, [mode, sortedFilteredMovies])
   useEffect(() => {
     if (mode !== 'list' || !listMovies.length) return
     if (!listMovies.some((movie) => movie.id === activeMovieId)) {
@@ -3331,6 +3331,7 @@ export const TestGalleryApp = () => {
           groupDirection={getActiveSortRules(sortRules)[0].direction}
           loadState={loadState}
           movies={listMovies}
+          ranked={listRanked}
           randomRequest={listRandomNonce}
           searchQuery={listSearchQuery}
           searchResultCount={listMovies.length}
@@ -3993,6 +3994,8 @@ const WarpWall = ({
   )
 }
 
+const RANKED_GROUP = 'Best matches'
+
 type WarpListProps = {
   activeMovieId: string | null
   errorMessage: string
@@ -4000,6 +4003,9 @@ type WarpListProps = {
   groupDirection: SortDirection
   loadState: LoadState
   movies: TestMovie[]
+  // The films are in match order (a search is active): one "Best matches"
+  // group instead of the sort's groups.
+  ranked: boolean
   // Bumped by the dock's Shuffle to pick and scroll to a random movie.
   randomRequest: number
   searchQuery: string
@@ -4349,6 +4355,7 @@ const WarpList = ({
   groupDirection,
   loadState,
   movies,
+  ranked,
   randomRequest,
   searchQuery,
   searchResultCount,
@@ -4388,14 +4395,16 @@ const WarpList = ({
 
   const groupedMovies = useMemo(
     () =>
-      Object.entries(groupMoviesForList(movies, grouping)).sort(
-        ([groupA, filmsA], [groupB, filmsB]) =>
-          compareListGroups(groupA, groupB, grouping, groupDirection, {
-            a: filmsA.length,
-            b: filmsB.length,
-          }),
-      ),
-    [groupDirection, grouping, movies],
+      ranked
+        ? [[RANKED_GROUP, movies] as [string, TestMovie[]]]
+        : Object.entries(groupMoviesForList(movies, grouping)).sort(
+            ([groupA, filmsA], [groupB, filmsB]) =>
+              compareListGroups(groupA, groupB, grouping, groupDirection, {
+                a: filmsA.length,
+                b: filmsB.length,
+              }),
+          ),
+    [groupDirection, grouping, movies, ranked],
   )
   const popularityGroups = useMemo(
     () => (grouping === 'popularity' ? getPopularityGroups(movies) : undefined),
@@ -4554,7 +4563,9 @@ const WarpList = ({
     const movie = pickRandomRow(movies, activeMovieId, Math.random)
     if (!movie) return
 
-    const movieGroup = getMovieListGroupKey(movie, grouping, popularityGroups)
+    const movieGroup = ranked
+      ? RANKED_GROUP
+      : getMovieListGroupKey(movie, grouping, popularityGroups)
     setCollapsedGroups((currentGroups) => {
       if (!currentGroups.has(movieGroup)) return currentGroups
       const nextGroups = new Set(currentGroups)

@@ -248,6 +248,29 @@ test.describe('Gallery user flows', () => {
     ).toBeVisible()
   })
 
+  test('index search forgives typos and ranks the best match first', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    const list = page.getByRole('region', { name: 'Movie list view' })
+    const search = page.getByRole('searchbox', {
+      name: 'Search titles, genres, moods',
+    })
+    await search.fill('godfater')
+
+    await expect(
+      list.getByRole('heading', { name: 'Best matches' }),
+    ).toBeVisible()
+    await expect(list.locator('.warp-list-row').first()).toContainText(
+      'The Godfather',
+    )
+
+    await search.fill('')
+    await expect(
+      list.getByRole('heading', { name: 'Best matches' }),
+    ).toHaveCount(0)
+  })
+
   test('a genre tag in the movie index filters the list and clears again', async ({
     page,
   }) => {
