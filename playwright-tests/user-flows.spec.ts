@@ -210,6 +210,26 @@ test.describe('Gallery user flows', () => {
     expect(backdrop).toMatch(/\/(w780|w1280)\//)
   })
 
+  test('the mood line starts plain and changes its words after a skip', async ({
+    page,
+  }) => {
+    const line = page.locator('.mood-line')
+    await expect(line.locator('.mood-line-text')).toHaveText(
+      'How are you feeling?',
+    )
+    await expect(line.locator('.mood-line-button')).toContainText(
+      'Pick your mood',
+    )
+
+    await page
+      .getByRole('button', { name: /Shuffle/ })
+      .first()
+      .click()
+    await expect(line.locator('.mood-line-text')).not.toHaveText(
+      'How are you feeling?',
+    )
+  })
+
   test('the Watch listing is fetched before any card is opened', async ({
     page,
   }) => {
@@ -246,6 +266,29 @@ test.describe('Gallery user flows', () => {
     await expect(
       page.getByRole('region', { name: 'Movie list view' }),
     ).toBeVisible()
+  })
+
+  test('index search forgives typos and ranks the best match first', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    const list = page.getByRole('region', { name: 'Movie list view' })
+    const search = page.getByRole('searchbox', {
+      name: 'Search titles, genres, moods',
+    })
+    await search.fill('godfater')
+
+    await expect(
+      list.getByRole('heading', { name: 'Best matches' }),
+    ).toBeVisible()
+    await expect(list.locator('.warp-list-row').first()).toContainText(
+      'The Godfather',
+    )
+
+    await search.fill('')
+    await expect(
+      list.getByRole('heading', { name: 'Best matches' }),
+    ).toHaveCount(0)
   })
 
   test('a genre tag in the movie index filters the list and clears again', async ({
@@ -293,6 +336,30 @@ test.describe('Gallery user flows', () => {
     // whole list it was.
     const picked = list.locator('.warp-list-row.is-active')
     await expect(picked).toBeInViewport({ timeout: 5_000 })
+  })
+
+  test('the index title pill waits for the first shuffle, then shows the film and opens its card', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    const list = page.getByRole('region', { name: 'Movie list view' })
+    await expect(list).toBeVisible()
+    const pill = page.locator('.warp-index-pill')
+    await expect(pill).toHaveCount(0)
+
+    await page
+      .getByRole('button', { name: 'Jump to a random movie in the index' })
+      .click()
+    const active = list.locator('.warp-list-row.is-active')
+    await expect(active).toBeInViewport({ timeout: 5_000 })
+    const title = (
+      await active.locator('.warp-list-row-title').first().textContent()
+    )?.trim()
+    await expect(pill).toBeVisible()
+    await expect(pill).toContainText(title ?? '')
+
+    await pill.click()
+    await expect(page.locator('.warp-details-card')).toBeVisible()
   })
 
   test('the index can be grouped by country, biggest origins first', async ({

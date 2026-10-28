@@ -92,14 +92,12 @@ type InfiniteMovieMenuProps<T> = {
   isActive?: boolean
   onMovingChange?: (moving: boolean) => void
   // `source` tells a user's tap apart from a shuffle landing on the poster.
-  // 'land' is a quiet shuffle landing: the globe does not focus the poster.
   onOpenItem?: (
     item: InfiniteMovieMenuItem<T>,
-    source: 'tap' | 'shuffle' | 'land',
+    source: 'tap' | 'shuffle',
   ) => void
   // Spin to this item, then open it (Shuffle). The nonce re-triggers repeats.
-  // `quiet` lands without focusing the poster, for when no card follows.
-  spinRequest?: { itemId: string; nonce: number; quiet?: boolean } | null
+  spinRequest?: { itemId: string; nonce: number } | null
   onReady?: () => void
   // Called once a globe built for this exact set of items is running (the
   // globe is rebuilt, a little late, when the films change).
@@ -107,8 +105,6 @@ type InfiniteMovieMenuProps<T> = {
   onUserSpin?: () => void
   // Camera zoom (>1 pulls the globe closer); applied in 3D, never via CSS.
   zoom?: number
-  // Poster size relative to their spacing (1 = desktop's).
-  posterScale?: number
   // The movie to face before the first frame (consumed once, on first build).
   initialFaceId?: string | null
   // Shuffle Pro: the controller that owns holds, runs and the sky.
@@ -169,9 +165,6 @@ const MIN_INSTANCE_COUNT = Math.round(
   REFERENCE_INSTANCE_COUNT * MIN_RADIUS_RATIO ** 2,
 )
 const ICON_REST_SCALE = 0.18
-// A poster's size at rest, before posterScale (phones draw them a little
-// larger relative to their spacing, so the grid reads tighter).
-export const ICON_FLOOR_SCALE = 0.21
 const ICON_DETAIL_SCALE = 0.34
 const DETAIL_FAST_EASE_MS = 210
 const DETAIL_SLOW_EASE_MS = 900
@@ -1120,8 +1113,8 @@ const transformQuat3 = ([x, y, z]: Vec3, q: Quat): Vec3 => {
   ]
 }
 
-export const POSTER_HALF_WIDTH = 0.34
-export const POSTER_HALF_HEIGHT = 0.5
+const POSTER_HALF_WIDTH = 0.34
+const POSTER_HALF_HEIGHT = 0.5
 
 const createDiscGeometry = () => {
   const halfWidth = POSTER_HALF_WIDTH
@@ -1663,7 +1656,6 @@ class InfiniteMovieEngine<T> {
   private readonly sphereRadius: number
   private cameraRestZ: number
   private zoom: number
-  private posterScale = 1
   private readonly cameraRatio: number
   private readonly cleanupCallbacks: Array<() => void> = []
   private nudgePos: Vec2 | null = null
@@ -2035,13 +2027,6 @@ class InfiniteMovieEngine<T> {
       this.movementActive ||
       this.detailTargetProgress > 0
     )
-  }
-
-  // Poster size relative to the spacing between posters (1 = desktop).
-  setPosterScale(posterScale: number) {
-    if (posterScale === this.posterScale) return
-    this.posterScale = posterScale
-    this.renderDirty = true
   }
 
   setZoom(zoom: number) {
@@ -3626,11 +3611,7 @@ class InfiniteMovieEngine<T> {
         ? this.detailProgress * (ICON_DETAIL_SCALE - ICON_REST_SCALE)
         : -this.detailProgress * 0.035
       const finalScale =
-        depthScale *
-        Math.max(
-          ICON_FLOOR_SCALE * this.posterScale,
-          ICON_REST_SCALE + detailLift,
-        )
+        depthScale * Math.max(0.21, ICON_REST_SCALE + detailLift)
       // translate-to-sphere * face-centre * scale * back-translate, built in
       // reused matrices so a spinning frame allocates nothing per poster.
       const translateToSphere = this.scratchTranslate
@@ -4077,7 +4058,6 @@ export const InfiniteMovieMenu = <T,>({
   onEngineAttached,
   onUserSpin,
   zoom = 1,
-  posterScale = 1,
   initialFaceId = null,
   shufflePro = null,
   onSpinActiveChange,
@@ -4119,8 +4099,6 @@ export const InfiniteMovieMenu = <T,>({
   onActiveItemChangeRef.current = onActiveItemChange
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
-  const posterScaleRef = useRef(posterScale)
-  posterScaleRef.current = posterScale
   // Consumed once, by the first engine build that has items to face.
   const initialFaceRef = useRef<string | null>(null)
   const initialFaceUsedRef = useRef(false)
@@ -4212,7 +4190,6 @@ export const InfiniteMovieMenu = <T,>({
       )
       engineRef.current = engine
       engine.onGlobeReady = () => onReady?.()
-      engine.setPosterScale(posterScaleRef.current)
       engine.onSpinActive = (active) => onSpinActiveChangeRef.current?.(active)
       engine.onFlick = (speed, direction) =>
         flickListenerRef.current?.(speed, direction)
@@ -4334,10 +4311,6 @@ export const InfiniteMovieMenu = <T,>({
   useEffect(() => {
     engineRef.current?.setZoom(zoom)
   }, [zoom])
-
-  useEffect(() => {
-    engineRef.current?.setPosterScale(posterScale)
-  }, [posterScale])
 
   useEffect(() => {
     engineRef.current?.setDetailFocus(
@@ -4496,17 +4469,13 @@ export const InfiniteMovieMenu = <T,>({
     const engine = engineRef.current
     if (!engine) {
       // Fallback (no WebGL): nothing to spin, open straight away.
-      onOpenItem?.(item, spinRequest.quiet ? 'land' : 'shuffle')
+      onOpenItem?.(item, 'shuffle')
       return
     }
     const arrive = (index: number) => {
       activeItemRef.current = item
       setActiveItem(item)
       onActiveItemChange(item)
-      if (spinRequest.quiet) {
-        onOpenItem?.(item, 'land')
-        return
-      }
       engine.setDetailFocus(item.id, true, 'fast', index)
       onOpenItem?.(item, 'shuffle')
     }
