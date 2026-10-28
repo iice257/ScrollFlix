@@ -698,6 +698,18 @@
   color: rgb(33 26 16);
 }
 
+.warp-shell[data-theme="light"] .warp-watch-more-links summary {
+  border: 1px solid rgb(33 26 16 / 0.1);
+  background: rgb(33 26 16 / 0.04);
+  color: rgb(33 26 16 / 0.82);
+}
+
+.warp-shell[data-theme="light"] .warp-watch-more-links summary:hover,
+.warp-shell[data-theme="light"] .warp-watch-more-links summary:focus-visible {
+  border-color: rgb(33 26 16 / 0.28);
+  color: rgb(33 26 16);
+}
+
 .warp-shell[data-theme="light"] .warp-watch-group h3 {
   color: rgb(33 26 16 / 0.42);
 }
@@ -709,7 +721,6 @@
 }
 
 .warp-shell[data-theme="light"] .warp-watch-youtube-mark {
-  background: rgb(33 26 16);
   box-shadow: 0 0 0 1px rgb(33 26 16 / 0.16);
 }
 
