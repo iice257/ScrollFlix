@@ -303,6 +303,7 @@ test.describe('Gallery user flows', () => {
     await expect(card.getByRole('button', { name: 'Save movie' })).toHaveCount(
       0,
     )
+  })
 
   test('the Watch sheet keeps the trailer and About links in view and never links to TMDB', async ({
     page,
