@@ -10,8 +10,6 @@ const open = async (page: Page) => {
     try {
       window.localStorage.setItem('wtw:spin-hint-seen', '1')
       window.localStorage.setItem('wtw:theme', 'dark')
-      for (const kind of ['path', 'links'])
-        window.localStorage.setItem(`wtw:globe-lines-nudge:${kind}:v1`, '1')
     } catch {}
   })
   await page.goto('/')
@@ -44,7 +42,9 @@ const gutter = (locator: ReturnType<Page['locator']>) =>
   })
 
 test.describe('Scrollbar baseline', () => {
-  test('a plain scroller is thin and reserves no gutter', async ({ page }) => {
+  test('a plain scroller is thin, has no arrow buttons and reserves no gutter', async ({
+    page,
+  }) => {
     await open(page)
     const style = await page.evaluate(() => {
       const box = document.createElement('div')
@@ -52,12 +52,19 @@ test.describe('Scrollbar baseline', () => {
       box.innerHTML = '<div style="height:400px"></div>'
       document.body.append(box)
       const { scrollbarWidth, scrollbarGutter } = getComputedStyle(box)
+      const bar = getComputedStyle(box, '::-webkit-scrollbar').width
+      const button = getComputedStyle(box, '::-webkit-scrollbar-button').display
       box.remove()
-      return { scrollbarWidth, scrollbarGutter }
+      return { scrollbarWidth, scrollbarGutter, bar, button }
     })
-    // Never the platform default. Chromium reports thin; headless Firefox on
-    // Linux folds its overlay bar into none.
-    expect(['thin', 'none']).toContain(style.scrollbarWidth)
+    // Never the platform default. Firefox reads the standard properties
+    // (thin; headless Linux folds its overlay bar into none). Chromium and
+    // Safari read the ::-webkit-scrollbar rules: 8px, and no arrow buttons at
+    // the ends, which would sit outside a rounded corner.
+    expect(
+      ['thin', 'none'].includes(style.scrollbarWidth) ||
+        (style.bar === '8px' && style.button === 'none'),
+    ).toBe(true)
     expect(style.scrollbarGutter).toBe('auto')
   })
 })

@@ -474,6 +474,31 @@ test.describe('Gallery user flows', () => {
     await expect(chip).toHaveAttribute('aria-pressed', 'false')
   })
 
+  test('filters stack, and a double-click keeps only that one', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Filters' }).click()
+    const origins = page.locator('[data-section="origins"]').first()
+    const nollywood = origins.getByRole('button', { name: /^Nollywood/ })
+    const korean = origins.getByRole('button', { name: /^Korean/ })
+    await nollywood.click()
+    await expect(page.locator('[data-solo-hint]').first()).toBeVisible()
+    await korean.click()
+    await expect(nollywood).toHaveAttribute('aria-pressed', 'true')
+    await expect(korean).toHaveAttribute('aria-pressed', 'true')
+
+    await korean.dblclick()
+    await expect(korean).toHaveAttribute('aria-pressed', 'true')
+    await expect(nollywood).toHaveAttribute('aria-pressed', 'false')
+
+    await page
+      .locator('[data-solo-hint]')
+      .first()
+      .getByRole('button', { name: 'Got it' })
+      .click()
+    await expect(page.locator('[data-solo-hint]')).toHaveCount(0)
+  })
+
   test('hovering an index row does not take the highlight from the active film', async ({
     page,
   }) => {
