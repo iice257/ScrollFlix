@@ -55,7 +55,9 @@ const attach = () => {
   if (attached || typeof window === 'undefined') return
   attached = true
   window.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape' || event.defaultPrevented) return
+    // Not defaultPrevented: Radix prevents Escape on every key it sees, even
+    // while a plain layer is the one open. Handlers that claim Escape stop it.
+    if (event.key !== 'Escape') return
     if (dismissStack.dismissTop()) event.preventDefault()
   })
   window.addEventListener(

@@ -27,6 +27,7 @@ import {
   getRuntimeBucket,
   getSimilarMovies,
   groupMoviesAlphabetically,
+  groupMoviesByCountry,
   groupMoviesByPopularity,
   groupMoviesByRating,
   groupMoviesByRuntime,
@@ -675,5 +676,69 @@ describe('posterBaseLayers', () => {
         posterDetailUrl: undefined,
       }),
     ).toEqual([])
+  })
+})
+
+describe('grouping the index by country', () => {
+  const at = (id: string, countries: string) => ({
+    ...movie(id, `Film ${id}`, '2000', [], Number(id)),
+    countries,
+  })
+  const pool = [
+    at('1', 'France'),
+    at('2', 'Japan'),
+    at('3', 'France'),
+    at('4', ''),
+    at('5', 'France'),
+    at('6', 'Japan'),
+    at('7', 'Nigeria'),
+  ]
+
+  it('groups by country and files films with none under Unknown', () => {
+    const groups = groupMoviesByCountry(pool)
+    expect(Object.keys(groups).sort()).toEqual([
+      'France',
+      'Japan',
+      'Nigeria',
+      'Unknown',
+    ])
+    expect(groups.France).toHaveLength(3)
+    expect(groups.Unknown).toHaveLength(1)
+  })
+
+  it('lists the biggest origins first, Unknown last, in either direction', () => {
+    const groups = groupMoviesByCountry(pool)
+    const order = (direction: 'asc' | 'desc') =>
+      Object.entries(groups)
+        .sort(([a, filmsA], [b, filmsB]) =>
+          compareListGroups(a, b, 'country', direction, {
+            a: filmsA.length,
+            b: filmsB.length,
+          }),
+        )
+        .map(([group]) => group)
+    expect(order('desc')).toEqual(['France', 'Japan', 'Nigeria', 'Unknown'])
+    expect(order('asc')).toEqual(['Nigeria', 'Japan', 'France', 'Unknown'])
+  })
+
+  it('sorts films by country name, films with none last, then by the next rule', () => {
+    const sorted = sortMoviesByRules(pool, [
+      { key: 'country', direction: 'asc' },
+      { key: 'alpha', direction: 'desc' },
+    ])
+    expect(sorted.map((film) => film.countries)).toEqual([
+      'France',
+      'France',
+      'France',
+      'Japan',
+      'Japan',
+      'Nigeria',
+      '',
+    ])
+    expect(sorted.slice(0, 3).map((film) => film.title)).toEqual([
+      'Film 5',
+      'Film 3',
+      'Film 1',
+    ])
   })
 })

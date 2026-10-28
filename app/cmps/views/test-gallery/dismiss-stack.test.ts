@@ -50,7 +50,7 @@ describe('window listeners', () => {
     expect(lower).not.toHaveBeenCalled()
   })
 
-  it('leaves Escape alone when an earlier handler already took it', () => {
+  it('still closes on Escape that a library (Radix) already default-prevented', () => {
     const close = vi.fn()
     cleanups.push(registerDismissLayer({ close }))
     const event = new KeyboardEvent('keydown', {
@@ -59,7 +59,7 @@ describe('window listeners', () => {
     })
     event.preventDefault()
     window.dispatchEvent(event)
-    expect(close).not.toHaveBeenCalled()
+    expect(close).toHaveBeenCalledOnce()
   })
 
   it('a press outside closes a popup, a press on its opener does not', () => {
