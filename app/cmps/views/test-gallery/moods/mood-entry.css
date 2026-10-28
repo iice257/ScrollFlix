@@ -38,6 +38,18 @@
   }
 }
 
+/* A new lead-in or label fades up into place. */
+.mood-swap {
+  animation: mood-swap 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes mood-swap {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
 .mood-line-text {
   color: rgb(255 255 255 / 0.86);
   font-size: 13px;
@@ -367,6 +379,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .mood-line,
+  .mood-swap,
   .mood-nudge,
   .mood-nudge-timer {
     animation: none;

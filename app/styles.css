@@ -2297,6 +2297,83 @@
     white-space: nowrap;
   }
 
+  /* The Index's title pill: the globe's pill with the poster beside the title.
+     The pill's radius is the poster's plus the gap around it, so the two
+     curves stay concentric. */
+  .warp-title-card.warp-index-pill {
+    --pill-gap: 7px;
+    --pill-poster-radius: 13px;
+    display: block;
+    width: min(420px, calc(100vw - 32px));
+    max-width: none;
+    min-width: 0;
+    border-radius: calc(var(--pill-poster-radius) + var(--pill-gap));
+    padding: var(--pill-gap);
+    text-align: left;
+    animation: warp-index-pill-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .warp-index-pill-face {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 40px minmax(0, 1fr);
+    align-items: center;
+    column-gap: 14px;
+    animation: warp-index-pill-swap 200ms ease-out both;
+  }
+
+  .warp-index-pill-poster {
+    display: block;
+    width: 40px;
+    height: 60px;
+    overflow: hidden;
+    border-radius: var(--pill-poster-radius);
+    background: rgb(0 0 0 / 0.08);
+    box-shadow: 0 6px 16px rgb(0 0 0 / 0.28);
+  }
+
+  .warp-index-pill-poster img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .warp-index-pill-copy {
+    display: grid;
+    min-width: 0;
+    gap: 7px;
+    padding-right: 12px;
+    justify-items: start;
+  }
+
+  @keyframes warp-index-pill-in {
+    from {
+      opacity: 0;
+      transform: translateY(14px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes warp-index-pill-swap {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .warp-index-pill,
+    .warp-index-pill-face {
+      animation: none;
+    }
+  }
+
   .warp-shuffle-button {
     display: flex;
     height: var(--warp-control-height);
@@ -2334,215 +2411,6 @@
     width: 17px;
     height: 17px;
     stroke-width: 2.2;
-  }
-
-  /* Now playing: on phones a shuffle's film waits in this bar above the title
-     pill instead of opening its card, so the globe stays free to spin. */
-  .warp-np-bar {
-    --np-height: 72px;
-    position: relative;
-    display: grid;
-    width: min(calc(100vw - 32px), 560px);
-    height: var(--np-height);
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    align-items: center;
-    column-gap: 4px;
-    padding: 6px 6px 6px 6px;
-    border: 1px solid rgb(255 255 255 / 0.14);
-    border-radius: 24px;
-    background: rgb(10 10 10 / 0.84);
-    color: #fff;
-    box-shadow: 0 18px 54px rgb(0 0 0 / 0.5);
-    backdrop-filter: blur(18px) saturate(1.2);
-    -webkit-backdrop-filter: blur(18px) saturate(1.2);
-    pointer-events: auto;
-    animation: np-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
-  .warp-np-bar[data-state="exit"] {
-    animation: np-out 200ms cubic-bezier(0.4, 0, 1, 1) both;
-    pointer-events: none;
-  }
-
-  @keyframes np-in {
-    from {
-      opacity: 0;
-      transform: translateY(14px);
-    }
-  }
-
-  @keyframes np-out {
-    to {
-      opacity: 0;
-      transform: translateY(14px);
-    }
-  }
-
-  .warp-np-body {
-    display: block;
-    min-width: 0;
-    height: 100%;
-    border: 0;
-    border-radius: 18px;
-    background: transparent;
-    padding: 0;
-    color: inherit;
-    cursor: pointer;
-    font: inherit;
-    text-align: left;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    transition: background 160ms ease;
-  }
-
-  .warp-np-body:focus-visible {
-    outline: 2px solid rgb(255 255 255 / 0.7);
-    outline-offset: 2px;
-  }
-
-  .warp-np-body:active {
-    background: rgb(255 255 255 / 0.06);
-  }
-
-  /* Both faces sit in one cell, so a swap crossfades without moving anything. */
-  .warp-np-faces {
-    display: grid;
-    height: 100%;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr);
-  }
-
-  .warp-np-face {
-    display: flex;
-    min-width: 0;
-    grid-area: 1 / 1;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .warp-np-face[data-swap="true"] {
-    animation: np-fade-in 200ms ease-out both;
-  }
-
-  .warp-np-face.is-leaving {
-    animation: np-fade-out 200ms ease-out both;
-    pointer-events: none;
-  }
-
-  @keyframes np-fade-in {
-    from {
-      opacity: 0;
-    }
-  }
-
-  @keyframes np-fade-out {
-    to {
-      opacity: 0;
-    }
-  }
-
-  .warp-np-poster {
-    display: block;
-    flex: none;
-    width: 40px;
-    height: 60px;
-    overflow: hidden;
-    border-radius: 9px;
-    background: rgb(255 255 255 / 0.1);
-    box-shadow: 0 6px 16px rgb(0 0 0 / 0.4);
-  }
-
-  .warp-np-poster img {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .warp-np-copy {
-    display: grid;
-    min-width: 0;
-    gap: 5px;
-  }
-
-  .warp-np-title,
-  .warp-np-meta {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .warp-np-title {
-    font-size: 16px;
-    font-weight: 800;
-    letter-spacing: -0.04em;
-    line-height: 1.1;
-  }
-
-  .warp-np-meta {
-    color: rgb(255 255 255 / 0.62);
-    font-size: 12px;
-    font-weight: 650;
-    letter-spacing: -0.005em;
-    line-height: 1.1;
-  }
-
-  .warp-np-action {
-    display: grid;
-    width: 44px;
-    height: 44px;
-    place-items: center;
-    border: 0;
-    border-radius: 999px;
-    background: rgb(255 255 255 / 0.1);
-    color: #fff;
-    cursor: pointer;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    transition:
-      background 160ms ease,
-      transform 160ms ease;
-  }
-
-  .warp-np-action svg {
-    width: 20px;
-    height: 20px;
-    stroke-width: 2.3;
-  }
-
-  .warp-np-action.is-primary {
-    background: #fff;
-    color: #0b0b0b;
-  }
-
-  .warp-np-action:focus-visible {
-    outline: 2px solid rgb(255 255 255 / 0.7);
-    outline-offset: 2px;
-  }
-
-  .warp-np-action:active {
-    transform: scale(0.94);
-  }
-
-  @media (hover: hover) {
-    .warp-np-action:not(.is-primary):hover {
-      background: rgb(255 255 255 / 0.18);
-    }
-
-    .warp-np-body:hover {
-      background: rgb(255 255 255 / 0.04);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .warp-np-bar,
-    .warp-np-bar[data-state="exit"] {
-      animation-name: np-fade-in;
-    }
-
-    .warp-np-bar[data-state="exit"] {
-      animation-name: np-fade-out;
-    }
   }
 
   .warp-gesture-debug {
@@ -4204,7 +4072,9 @@
        list from re-recording everything around it. */
     contain: layout paint style;
     transition:
+      background 200ms ease,
       border-color 180ms ease,
+      box-shadow 200ms ease,
       color 180ms ease,
       opacity 180ms ease,
       transform 180ms ease;
@@ -4398,19 +4268,27 @@
 
   .warp-list-row.is-active {
     outline: none;
-    border-color: rgb(255 255 255 / 0.55);
+    border-color: transparent;
+    /* A capsule that hugs the round poster: its curve is the poster's plus the
+       gap, so the highlight reads as one shape with it. */
+    border-radius: 999px;
+    padding-inline: 11px 18px;
     background:
-      linear-gradient(90deg, rgb(255 255 255 / 0.2), transparent 55%),
-      rgb(255 255 255 / 0.03);
-    color: rgb(255 255 255 / 0.78);
-    box-shadow: inset 4px 0 0 #fff;
-    transform: translateX(6px);
+      radial-gradient(
+        120% 160% at 0% 50%,
+        rgb(255 255 255 / 0.22),
+        rgb(255 255 255 / 0.08) 55%,
+        rgb(255 255 255 / 0.05)
+      );
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.4);
   }
 
   .warp-list-row.is-random-pulse {
-    border-color: rgb(255 255 255 / 0.7);
-    background: linear-gradient(90deg, rgb(255 255 255 / 0.12), transparent);
-    transform: translateX(10px) scale(1.01);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.16);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.7);
+    transform: scale(1.012);
   }
 
   .warp-list-row:hover .warp-list-row-poster,
@@ -6042,6 +5920,15 @@
       gap: 5px;
       border-radius: 999px;
       padding: 9px 22px 10px;
+    }
+
+    .warp-title-card.warp-index-pill {
+      /* Clear of the buttons in the bottom-right corner, like the dock row. */
+      width: min(400px, calc(100vw - 36px - var(--warp-control-height)));
+      max-width: none;
+      margin-right: calc(var(--warp-control-height) + 12px);
+      border-radius: calc(var(--pill-poster-radius) + var(--pill-gap));
+      padding: var(--pill-gap);
     }
 
     .warp-title-card-name {

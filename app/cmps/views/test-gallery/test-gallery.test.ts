@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mapCatalogRow } from './catalog-loader'
+import { searchMovies } from './film-search'
 import { notePosterLoaded, resetLoadedPosters } from './poster-loaded'
 import {
   DEFAULT_SORT_RULES,
@@ -9,7 +10,6 @@ import {
   compareListGroups,
   filterMoviesByDecisionFilters,
   filterMoviesByGenres,
-  filterMoviesByTitleSearch,
   filterMoviesByYearAndRating,
   firstByRules,
   formatFilmCount,
@@ -75,12 +75,12 @@ describe('test gallery filtering helpers', () => {
     expect(filterMoviesByGenres(movies, ['Horror', 'Romance'])).toHaveLength(5)
   })
 
-  it('filters movie titles case-insensitively for index search', () => {
-    expect(
-      filterMoviesByTitleSearch(movies, 'quiet').map((item) => item.title),
-    ).toEqual(['A Quiet Place'])
-    expect(filterMoviesByTitleSearch(movies, 'LOVE')).toHaveLength(1)
-    expect(filterMoviesByTitleSearch(movies, '   ')).toHaveLength(movies.length)
+  it('searches movie titles case-insensitively for the index', () => {
+    expect(searchMovies(movies, 'quiet')?.map((item) => item.title)).toEqual([
+      'A Quiet Place',
+    ])
+    expect(searchMovies(movies, 'LOVE')).toHaveLength(1)
+    expect(searchMovies(movies, '   ')).toBeNull()
   })
 
   it('filters movies by deterministic mood and runtime groups', () => {
