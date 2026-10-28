@@ -34,6 +34,9 @@ type Payload = {
   r: number
   s: 0 | 1
   p: string[]
+  // The film each player chose as their picture: its TMDB id, 0 for none.
+  // Absent in links made before pictures existed.
+  a?: number[]
   // One row per turn, in play order: TMDB id, round, guess, votes, score.
   t: [number, number, number | null, number | null, number][]
   x: number[]
@@ -85,6 +88,13 @@ export const encodeParty = (state: PartyState): string => {
     r: state.rounds,
     s: state.settle ? 1 : 0,
     p: state.players.map((player) => player.name),
+    ...(state.players.some((player) => player.avatar)
+      ? {
+          a: state.players.map((player) =>
+            player.avatar ? tmdbOf(player.avatar) : 0,
+          ),
+        }
+      : {}),
     t: rows,
     x: state.vetoed.map(tmdbOf),
     w: state.tonight === null ? null : tmdbOf(state.tonight),
@@ -111,7 +121,7 @@ export const decodeParty = (
     if (isInt(data.v) && data.v > VERSION) return { error: 'newer' }
     if (data.v !== VERSION) return broken
 
-    const { m, r, s, p, t, x, w, k } = data
+    const { m, r, s, p, t, x, w, k, a } = data
     if (typeof m !== 'string' || !PARTY_MODES.includes(m as PartyMode))
       return broken
     if (!isInt(r) || r < 1 || r > MAX_ROUNDS) return broken
@@ -132,12 +142,23 @@ export const decodeParty = (
       return broken
     if (w !== null && !(isInt(w) && w > 0)) return broken
     if (!isInt(k) || k < 0) return broken
+    if (
+      a !== undefined &&
+      !(
+        Array.isArray(a) &&
+        a.length === p.length &&
+        a.every((id) => isInt(id) && id >= 0)
+      )
+    )
+      return broken
 
     const mode = m as PartyMode
     const everyone = (1 << p.length) - 1
-    const players = (p as string[]).map((name) => ({
+    const avatars = (a as number[] | undefined) ?? []
+    const players = (p as string[]).map((name, at) => ({
       name,
       picks: [] as PartyPick[],
+      ...(avatars[at] ? { avatar: `c${avatars[at]}` } : {}),
     }))
 
     for (let order = 0; order < t.length; order += 1) {

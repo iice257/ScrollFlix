@@ -159,6 +159,7 @@ import {
 } from './origin-groups'
 import { PartyLayer } from './party/party-layer'
 import type { PartyMovieInfo } from './party/party-parts'
+import type { AvatarFilm } from './party/party-setup'
 import { toPartyFilm, usePartyGame } from './party/use-party'
 import {
   STARTER_INDEX_COUNT,
@@ -1802,10 +1803,42 @@ export const TestGalleryApp = () => {
     loadState === 'ready' && catalogComplete,
   )
   const { party, dispatch: partyDispatch } = game
+  // A shared game, or a room whose game has started, needs the whole
+  // catalogue to name its films. The lobby and the join screen do not.
+  const partyNeedsCatalog =
+    game.pendingLink || game.room?.view?.status === 'live'
   useEffect(() => {
-    if (game.pendingLink) setLinkedNeedsCatalog(true)
-  }, [game.pendingLink])
+    if (partyNeedsCatalog) setLinkedNeedsCatalog(true)
+  }, [partyNeedsCatalog])
   const partyOff = party.phase === 'off'
+  const startParty = useCallback(() => {
+    setAboutOpen(false)
+    setLibraryOpen(false)
+    setFilterOpen(false)
+    setDetailsMovieId(null)
+    setMode('wall')
+    partyDispatch({ type: 'open' })
+  }, [partyDispatch])
+  // The pictures on offer when a player chooses a face: posters of well-known
+  // films, drawn at random, never one another player already has.
+  const drawPartyFilms = useCallback(
+    (count: number, exclude: string[]): AvatarFilm[] => {
+      const skip = new Set(exclude)
+      const pool = movies
+        .slice(0, 800)
+        .filter((movie) => movie.posterUrl && !skip.has(movie.id))
+      for (let at = pool.length - 1; at > 0; at -= 1) {
+        const other = Math.floor(Math.random() * (at + 1))
+        ;[pool[at], pool[other]] = [pool[other], pool[at]]
+      }
+      return pool.slice(0, count).map((movie) => ({
+        id: movie.id,
+        title: movie.title,
+        posterUrl: movie.posterUrl,
+      }))
+    },
+    [movies],
+  )
   const partyMovieIndex = useMemo(
     () => (partyOff ? null : new Map(movies.map((movie) => [movie.id, movie]))),
     [movies, partyOff],
@@ -3295,6 +3328,7 @@ export const TestGalleryApp = () => {
         movieCount={movies.length}
         selectedFilterCount={selectedFilterCount}
         timeLabel={timeLabel}
+        onPlay={partyOff ? startParty : undefined}
         onClearFilters={clearAllFilters}
         onOpenActiveMovie={() => {
           if (activeMovie) handleOpenWatchLinks(activeMovie)
@@ -3577,6 +3611,7 @@ export const TestGalleryApp = () => {
         game={game}
         movieOf={partyMovieOf}
         detailsOpen={Boolean(detailsMovieId)}
+        drawFilms={drawPartyFilms}
         onCloseDetails={() => setDetailsMovieId(null)}
         onOpenFilm={(movieId) => {
           const movie = partyMovieIndex?.get(movieId)
@@ -3749,12 +3784,7 @@ export const TestGalleryApp = () => {
           motionPhase={aboutPresence.motionPhase}
           onClose={() => setAboutOpen(false)}
           onShareRecap={() => setRecapOpen(true)}
-          onStartParty={() => {
-            setAboutOpen(false)
-            setDetailsMovieId(null)
-            setMode('wall')
-            partyDispatch({ type: 'open' })
-          }}
+          onStartParty={startParty}
           onToggleMaximized={() =>
             setAboutMaximized((isMaximized) => !isMaximized)
           }
@@ -4783,6 +4813,8 @@ type WarpChromeProps = {
   movieCount: number
   selectedFilterCount: number
   timeLabel: string
+  // Opens Pass the globe; left out while a game is running.
+  onPlay?: () => void
   onOpenActiveMovie: () => void
   onClearFilters: () => void
   onOpenFilters: () => void
@@ -4801,6 +4833,7 @@ const WarpChrome = ({
   movieCount,
   selectedFilterCount,
   timeLabel,
+  onPlay,
   onOpenActiveMovie,
   onClearFilters,
   onOpenFilters,
@@ -4827,6 +4860,17 @@ const WarpChrome = ({
         <span>Lagos, NG</span>
       </div>
       <div className='warp-topbar-actions'>
+        {onPlay ? (
+          <button
+            type='button'
+            className='warp-play-button'
+            aria-label='Pass the globe, a game for friends'
+            onClick={onPlay}
+          >
+            <Users aria-hidden='true' />
+            <span>Pass the globe</span>
+          </button>
+        ) : null}
         {topActions}
         <button
           type='button'

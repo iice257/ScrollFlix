@@ -1,7 +1,7 @@
 // Small pieces the Pass the globe screens share: the player dot, the poster,
 // the two-tap "end the game" button, and the count-up number.
 
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { cn } from '../../../../utils/tw'
 import type { PartyMode, RoundMode } from './party-logic'
 
@@ -47,23 +47,55 @@ export const ROUND_PROMPTS: Record<RoundMode, string> = {
   crowd: 'Would you watch it?',
 }
 
+// The picture each player chose (a poster), by player index. The screens of a
+// running game provide it so every dot can wear it without being told.
+export const AvatarContext = createContext<
+  (index: number) => string | undefined
+>(() => undefined)
+
+// A player's mark: their chosen poster in a ring of their colour, or their
+// initial on that colour until they choose one.
 export const Dot = ({
   index,
   name,
   size = 'md',
+  src,
 }: {
   index: number
   name: string
   size?: 'sm' | 'md'
-}) => (
-  <span
-    className={cn('party-dot', size === 'sm' && 'is-small')}
-    style={{ background: colorOf(index) }}
-    aria-hidden='true'
-  >
-    {name.trim().charAt(0).toUpperCase() || index + 1}
-  </span>
-)
+  // Overrides the picture the game gives this player (the setup screen).
+  src?: string | null
+}) => {
+  const fromGame = useContext(AvatarContext)(index)
+  const picture = src === undefined ? fromGame : (src ?? undefined)
+  const [broken, setBroken] = useState(false)
+  const shown = picture && !broken ? picture : null
+  return (
+    <span
+      className={cn(
+        'party-dot',
+        size === 'sm' && 'is-small',
+        shown && 'has-picture',
+      )}
+      style={{ background: colorOf(index) }}
+      aria-hidden='true'
+    >
+      {shown ? (
+        <img
+          src={shown}
+          crossOrigin='anonymous'
+          alt=''
+          decoding='async'
+          draggable={false}
+          onError={() => setBroken(true)}
+        />
+      ) : (
+        name.trim().charAt(0).toUpperCase() || index + 1
+      )}
+    </span>
+  )
+}
 
 export const Poster = ({
   src,
@@ -106,7 +138,15 @@ export const useEscape = (onEscape: (() => void) | null) => {
 }
 
 // Ending a game takes two taps, so a stray tap on a phone can't lose it.
-export const EndButton = ({ onEnd }: { onEnd: () => void }) => {
+export const EndButton = ({
+  onEnd,
+  label = 'End game',
+  armedLabel = 'Tap again to end the game',
+}: {
+  onEnd: () => void
+  label?: string
+  armedLabel?: string
+}) => {
   const [armed, setArmed] = useState(false)
   useEffect(() => {
     if (!armed) return
@@ -119,7 +159,7 @@ export const EndButton = ({ onEnd }: { onEnd: () => void }) => {
       className={cn('party-quit', armed && 'is-armed')}
       onClick={() => (armed ? onEnd() : setArmed(true))}
     >
-      {armed ? 'Tap again to end the game' : 'End game'}
+      {armed ? armedLabel : label}
     </button>
   )
 }
