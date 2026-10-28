@@ -276,6 +276,7 @@ test.describe('Gallery user flows', () => {
 
     await context.setOffline(false)
     await expect(notice).toHaveCount(0)
+  })
 
   test('the Watch sheet keeps the trailer and About links in view and never links to TMDB', async ({
     page,
