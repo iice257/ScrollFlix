@@ -272,6 +272,45 @@ test.describe('Gallery user flows', () => {
     await expect(picked).toBeInViewport({ timeout: 5_000 })
   })
 
+  test('the index can be grouped by country, biggest origins first', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    const list = page.getByRole('region', { name: 'Movie list view' })
+    await expect(list).toBeVisible()
+
+    // Country first: tick it, then untick the default Year and Popularity.
+    await page.getByRole('button', { name: /^Sort:/ }).click()
+    const sortName = (label: string) =>
+      page
+        .locator('.warp-sort-row', { hasText: label })
+        .locator('.warp-sort-name')
+    await sortName('Country').click()
+    await sortName('Year').click()
+    await sortName('Popularity').click()
+    await page.keyboard.press('Escape')
+
+    const headings = list.locator('.warp-list-group-heading h2')
+    await expect(headings.first()).toHaveText('United States of America')
+    // Every group is a country (or the Unknown group, which is last).
+    const titles = await headings.allTextContents()
+    expect(titles.length).toBeGreaterThan(5)
+    expect(titles.filter((title) => /^\d{4}\+?$/.test(title))).toEqual([])
+  })
+
+  test('an origin chip on the Filters page narrows the films and shows in the badge', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Filters' }).click()
+    const origins = page.locator('[data-section="origins"]').first()
+    const chip = origins.getByRole('button', { name: /^Nollywood/ })
+    await expect(chip).toHaveAttribute('aria-pressed', 'false')
+    await chip.click()
+    await expect(chip).toHaveAttribute('aria-pressed', 'true')
+    await chip.click()
+    await expect(chip).toHaveAttribute('aria-pressed', 'false')
+  })
+
   test('hovering an index row does not take the highlight from the active film', async ({
     page,
   }) => {
