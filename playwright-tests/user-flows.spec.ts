@@ -253,6 +253,31 @@ test.describe('Gallery user flows', () => {
     await expect(page.locator('.warp-details-card')).toHaveCount(0)
   })
 
+  test('after 10 s offline the globe says so, and the index offers the way back', async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(60_000)
+    const notice = page.locator('.warp-offline')
+    await expect(notice).toHaveCount(0)
+    await context.setOffline(true)
+    // Not for a brief drop: nothing yet.
+    await page.waitForTimeout(3_000)
+    await expect(notice).toHaveCount(0)
+
+    await expect(notice).toContainText('Offline mode', { timeout: 15_000 })
+    await expect(notice).toContainText(/Globe (fully loaded|\d+% loaded|ready)/)
+
+    // The index needs the network: same place, a different message.
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    await expect(notice).toContainText("Index doesn't work offline")
+    await notice.getByRole('button', { name: 'return to gallery' }).click()
+    await expect(notice).toContainText('Offline mode')
+
+    await context.setOffline(false)
+    await expect(notice).toHaveCount(0)
+  })
+
   test('the Watch sheet keeps the trailer and About links in view and never links to TMDB', async ({
     page,
   }) => {
