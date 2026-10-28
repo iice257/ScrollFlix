@@ -10,8 +10,10 @@ export type Provider = {
   name: string
   logoPath: string | null
   kind: ProviderKind
-  // Straight to the service's own search for the film when we know how,
-  // otherwise null and the client falls back to `link`.
+  // Always somewhere that helps and never a third party's listing: the
+  // service's own search for the film, else a Google search limited to the
+  // service's site, else a Google search for the film and the service.
+  // Null only when the film has no title to search for.
   url: string | null
 }
 
@@ -117,6 +119,87 @@ export const providerUrl = (
   return make && title ? make(title, region) : null
 }
 
+const googleSearch = (query: string) =>
+  `https://www.google.com/search?q=${encodeURIComponent(query)}`
+
+// The same services by name, for the many listings TMDB gives that are one
+// service under another id ("HBO Max Amazon Channel", "Paramount Plus
+// Essential"). The first pattern that matches the lower-case name wins.
+const BRAND_SEARCH: [RegExp, SearchUrl][] = [
+  [/netflix/, (t) => `https://www.netflix.com/search?q=${q(t)}`],
+  [/prime video|amazon video/, primeVideoSearch],
+  [/disney/, (t) => `https://www.disneyplus.com/search?q=${q(t)}`],
+  [/hbo max|^max\b/, (t) => `https://play.max.com/search?q=${q(t)}`],
+  [/hulu/, (t) => `https://www.hulu.com/search?q=${q(t)}`],
+  [/apple tv/, (t) => `https://tv.apple.com/search?term=${q(t)}`],
+  [/peacock/, (t) => `https://www.peacocktv.com/search?q=${q(t)}`],
+  [/paramount/, (t) => `https://www.paramountplus.com/search/?q=${q(t)}`],
+  [/tubi/, (t) => `https://tubitv.com/search/${q(t)}`],
+  [/pluto/, (t) => `https://pluto.tv/search/details?query=${q(t)}`],
+  [/plex/, (t) => `https://watch.plex.tv/search?q=${q(t)}`],
+  [
+    /youtube/,
+    (t) =>
+      `https://www.youtube.com/results?search_query=${q(`${t} full movie`)}`,
+  ],
+  [
+    /google play/,
+    (t) => `https://play.google.com/store/search?q=${q(t)}&c=movies`,
+  ],
+  [/crunchyroll/, (t) => `https://www.crunchyroll.com/search?q=${q(t)}`],
+  [/shudder/, (t) => `https://www.shudder.com/search?q=${q(t)}`],
+  [/mubi/, (t) => `https://mubi.com/en/search?query=${q(t)}`],
+  [/criterion/, (t) => `https://www.criterionchannel.com/search?q=${q(t)}`],
+  [/bbc iplayer/, (t) => `https://www.bbc.co.uk/iplayer/search?q=${q(t)}`],
+]
+
+// Services whose own search address is not one to guess: a Google search
+// limited to the service's site lands on the film's page there.
+const SERVICE_SITES: [RegExp, string][] = [
+  [/kanopy/, 'kanopy.com'],
+  [/hoopla/, 'hoopladigital.com'],
+  [/starz/, 'starz.com'],
+  [/amc\+|amc plus/, 'amcplus.com'],
+  [/britbox/, 'britbox.com'],
+  [/itvx|itv hub/, 'itv.com'],
+  [/channel 4/, 'channel4.com'],
+  [/^stan\b/, 'stan.com.au'],
+  [/binge/, 'binge.com.au'],
+  [/crave/, 'crave.ca'],
+  [/sky go|sky store/, 'sky.com'],
+  [/now tv|^now$/, 'nowtv.com'],
+  [/canal\+|canal plus/, 'canalplus.com'],
+  [/viaplay/, 'viaplay.com'],
+  [/rakuten/, 'rakuten.tv'],
+  [/zee5/, 'zee5.com'],
+  [/hotstar/, 'hotstar.com'],
+  [/sony ?liv/, 'sonyliv.com'],
+  [/jio ?cinema/, 'jiocinema.com'],
+  [/mx player/, 'mxplayer.in'],
+  [/fandango at home|vudu/, 'fandangoathome.com'],
+  [/microsoft store/, 'microsoft.com'],
+  [/curiosity/, 'curiositystream.com'],
+  [/hbo/, 'max.com'],
+]
+
+// Where a provider's row goes. Never TMDB: the service's own search, else a
+// Google search on the service's site, else a Google search for the two.
+export const serviceLink = (
+  provider: { id: number; name: string },
+  title: string,
+  region: string,
+): string | null => {
+  if (!title) return null
+  const byId = providerUrl(provider.id, title, region)
+  if (byId) return byId
+  const name = provider.name.toLowerCase()
+  for (const [pattern, make] of BRAND_SEARCH)
+    if (pattern.test(name)) return make(title, region)
+  for (const [pattern, site] of SERVICE_SITES)
+    if (pattern.test(name)) return googleSearch(`${title} site:${site}`)
+  return googleSearch(`${title} ${provider.name}`)
+}
+
 const isHttps = (value: unknown): value is string =>
   typeof value === 'string' && value.startsWith('https://')
 
@@ -147,7 +230,11 @@ export const parseWatch = (
         name: raw.provider_name,
         logoPath: raw.logo_path ?? null,
         kind,
-        url: providerUrl(raw.provider_id, title, region),
+        url: serviceLink(
+          { id: raw.provider_id, name: raw.provider_name },
+          title,
+          region,
+        ),
       })
     }
   }

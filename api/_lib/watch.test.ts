@@ -5,6 +5,7 @@ import {
   normalizeRegion,
   parseWatch,
   providerUrl,
+  serviceLink,
 } from './watch'
 
 const body = {
@@ -36,13 +37,35 @@ describe('parseWatch', () => {
     ])
   })
 
-  it('builds a search link for known services only', () => {
+  it('builds a search link for known services', () => {
     const reply = parseWatch(body, 'US', 'Spirited Away')
     expect(reply.providers[0].url).toBe(
       'https://www.netflix.com/search?q=Spirited%20Away',
     )
     expect(providerUrl(999999, 'x')).toBeNull()
     expect(providerUrl(8, '')).toBeNull()
+  })
+
+  it('never sends a row to TMDB: service search, then Google', () => {
+    const named = (id: number, name: string) =>
+      serviceLink({ id, name }, 'Heat', 'US')
+    // By id, by name, by site, and by name alone.
+    expect(named(8, 'Netflix')).toBe('https://www.netflix.com/search?q=Heat')
+    expect(named(1825, 'HBO Max Amazon Channel')).toBe(
+      'https://play.max.com/search?q=Heat',
+    )
+    expect(named(283, 'Crunchyroll')).toBe(
+      'https://www.crunchyroll.com/search?q=Heat',
+    )
+    expect(named(191, 'Kanopy')).toBe(
+      'https://www.google.com/search?q=Heat%20site%3Akanopy.com',
+    )
+    expect(named(1, 'Some New Service')).toBe(
+      'https://www.google.com/search?q=Heat%20Some%20New%20Service',
+    )
+    expect(serviceLink({ id: 8, name: 'Netflix' }, '', 'US')).toBeNull()
+    for (const name of ['Mometu', 'Amazon MX Player', 'YouTube Free'])
+      expect(named(7, name)).not.toMatch(/themoviedb/)
   })
 
   it("sends Amazon's store links to the visitor's country", () => {
