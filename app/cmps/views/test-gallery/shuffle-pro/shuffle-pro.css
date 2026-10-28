@@ -1160,6 +1160,17 @@
   font-weight: 800;
 }
 
+.sp-shelf-more {
+  color: rgb(255 255 255 / 0.9);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.warp-shell[data-theme="light"] .sp-shelf-more {
+  color: rgb(33 26 16 / 0.85);
+}
+
 .sp-shelf-lock {
   position: absolute;
   width: 15px;

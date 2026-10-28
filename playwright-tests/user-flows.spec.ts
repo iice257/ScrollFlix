@@ -309,6 +309,31 @@ test.describe('Gallery user flows', () => {
     )
   })
 
+  test('after 10 s offline the globe says so, and the index offers the way back', async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(60_000)
+    const notice = page.locator('.warp-offline')
+    await expect(notice).toHaveCount(0)
+    await context.setOffline(true)
+    // Not for a brief drop: nothing yet.
+    await page.waitForTimeout(3_000)
+    await expect(notice).toHaveCount(0)
+
+    await expect(notice).toContainText('Offline mode', { timeout: 15_000 })
+    await expect(notice).toContainText(/Globe (fully loaded|\d+% loaded|ready)/)
+
+    // The index needs the network: same place, a different message.
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    await expect(notice).toContainText("Index doesn't work offline")
+    await notice.getByRole('button', { name: 'return to gallery' }).click()
+    await expect(notice).toContainText('Offline mode')
+
+    await context.setOffline(false)
+    await expect(notice).toHaveCount(0)
+  })
+
   test('the Watch sheet keeps the trailer and About links in view and never links to TMDB', async ({
     page,
   }) => {
@@ -503,6 +528,31 @@ test.describe('Gallery user flows', () => {
     await expect(chip).toHaveAttribute('aria-pressed', 'true')
     await chip.click()
     await expect(chip).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  test('filters stack, and a double-click keeps only that one', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Filters' }).click()
+    const origins = page.locator('[data-section="origins"]').first()
+    const nollywood = origins.getByRole('button', { name: /^Nollywood/ })
+    const korean = origins.getByRole('button', { name: /^Korean/ })
+    await nollywood.click()
+    await expect(page.locator('[data-solo-hint]').first()).toBeVisible()
+    await korean.click()
+    await expect(nollywood).toHaveAttribute('aria-pressed', 'true')
+    await expect(korean).toHaveAttribute('aria-pressed', 'true')
+
+    await korean.dblclick()
+    await expect(korean).toHaveAttribute('aria-pressed', 'true')
+    await expect(nollywood).toHaveAttribute('aria-pressed', 'false')
+
+    await page
+      .locator('[data-solo-hint]')
+      .first()
+      .getByRole('button', { name: 'Got it' })
+      .click()
+    await expect(page.locator('[data-solo-hint]')).toHaveCount(0)
   })
 
   test('hovering an index row does not take the highlight from the active film', async ({
