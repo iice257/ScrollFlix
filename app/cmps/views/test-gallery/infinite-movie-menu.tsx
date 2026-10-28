@@ -310,15 +310,13 @@ const isTypingTarget = (target: EventTarget | null) =>
     ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
 const FALLBACK_ITEM_COUNT = 128
 const INITIAL_TEXTURE_LOAD_CONCURRENCY = 24
-// The globe is ready once every poster on screen has settled (loaded, or
-// failed after its quick retries and kept its placeholder); the rest of the
-// globe fills in behind the loader's back. The safety net ends the wait for a
-// stalled request without claiming the posters arrived.
+// The globe is ready once every poster on it has settled (loaded, or failed
+// after its quick retries and kept its placeholder): whoever waits for the
+// loader gets a complete globe, not one that fills in behind their back. The
+// posters facing the viewer load first. The safety net ends the wait when
+// nothing has arrived for this long, without claiming the posters did.
 const POSTER_SETTLE_RETRY_DELAYS_MS = [800, 2400]
-const GLOBE_READY_SAFETY_NET_MS = 25000
-// Without a measured frame (a paused engine), this share of the posters
-// nearest the front stands in for the ones on screen.
-const FALLBACK_VISIBLE_SHARE = 0.15
+const GLOBE_READY_STALL_MS = 20000
 // Longest stretch of texture uploads before handing the thread back.
 const UPLOAD_SLICE_MS = 8
 // A poster fades in from its empty slot, once, in this long (shorter with
@@ -1558,6 +1556,9 @@ class InfiniteMovieEngine<T> {
   private colorTexture: WebGLTexture | null = null
   // Base cells that show their picture (or a failed poster's placeholder).
   private readonly baseCells = new Set<number>()
+  // Cells showing a real poster (not a failed one's colour): what the
+  // offline notice reports as the globe's share loaded.
+  private readonly pictureCells = new Set<number>()
   private readonly revealEpoch = performance.now()
   private revealUntil = 0
   private revealPending = false
@@ -2870,18 +2871,14 @@ class InfiniteMovieEngine<T> {
     if (this.disposed || this.contextLost) return
     this.sortByFacing(indices, 0)
 
-    // The posters on screen now (measured by the first LOD pass) are the
-    // ones the loader waits for; progress is how many of them have settled.
-    const onScreen = new Set(
-      this.lastLodAt > 0
-        ? indices.filter((index) => this.lodWidth[index] > 0)
-        : indices.slice(
-            0,
-            Math.max(1, Math.ceil(indices.length * FALLBACK_VISIBLE_SHARE)),
-          ),
-    )
+    // The loader waits for every poster on the globe; the bar shows how many
+    // have actually arrived (a poster that failed counts as settled for
+    // readiness but not as progress, so a dead connection looks stuck, and
+    // the first-load screen offers Skip).
+    const onScreen = new Set(indices)
     const total = Math.max(1, onScreen.size)
     let settled = 0
+    let arrived = 0
     let ready = false
     const settledSet = new Set<number>()
     const loadStartedAt = performance.now()
@@ -2889,6 +2886,7 @@ class InfiniteMovieEngine<T> {
       window.__scrollflixDebug.load = () => ({
         onScreen: onScreen.size,
         settled,
+        arrived,
         ready,
         ms: Math.round(performance.now() - loadStartedAt),
         left: [...onScreen].filter((index) => !settledSet.has(index)),
@@ -2909,20 +2907,31 @@ class InfiniteMovieEngine<T> {
         if (!this.revealGateOpen && !this.disposed) this.openRevealGate()
       }, 900)
     }
-    const safetyNet = window.setTimeout(
-      () => markReady(false),
-      GLOBE_READY_SAFETY_NET_MS,
-    )
+    // Re-armed by every poster that arrives: only a long silence ends the
+    // wait early.
+    let safetyNet = 0
+    const armSafetyNet = () => {
+      window.clearTimeout(safetyNet)
+      safetyNet = window.setTimeout(
+        () => markReady(false),
+        GLOBE_READY_STALL_MS,
+      )
+    }
+    armSafetyNet()
     this.cleanupCallbacks.push(() => window.clearTimeout(safetyNet))
-    const countSettled = (index: number) => {
+    const countSettled = (index: number, loaded: boolean) => {
       if (ready || !onScreen.has(index)) return
       settledSet.add(index)
       settled += 1
+      if (loaded) {
+        arrived += 1
+        armSafetyNet()
+      }
       if (settled >= total) {
         window.requestAnimationFrame(() => markReady(true))
         return
       }
-      this.reportProgress((settled / total) * 100)
+      if (loaded) this.reportProgress((arrived / total) * 100)
     }
     this.reportProgress(0)
     const onLoaded = (index: number, image: PosterImage) =>
@@ -2936,13 +2945,13 @@ class InfiniteMovieEngine<T> {
       INITIAL_TEXTURE_LOAD_CONCURRENCY,
       (index, image) => {
         onLoaded(index, image)
-        countSettled(index)
+        countSettled(index, true)
       },
       // A poster that could not be fetched keeps its placeholder; it still
       // counts as settled for data-base-loaded.
       (index) => {
         this.noteBaseCell(index)
-        countSettled(index)
+        countSettled(index, false)
       },
       POSTER_SETTLE_RETRY_DELAYS_MS,
     )
@@ -3235,6 +3244,9 @@ class InfiniteMovieEngine<T> {
     closeImage()
     this.baseMipsDirty = true
     this.scheduleMips()
+    this.pictureCells.add(index)
+    this.canvas.dataset.picturesLoaded = String(this.pictureCells.size)
+    this.canvas.dataset.picturesTotal = String(this.items.length)
     this.noteBaseCell(index)
     this.markPosterArrived(index)
     this.renderDirty = true

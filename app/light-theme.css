@@ -511,6 +511,25 @@
   color: rgb(33 26 16);
 }
 
+.warp-shell[data-theme="light"] .warp-offline {
+  border: 1px solid rgb(33 26 16 / 0.16);
+  background: rgb(232 225 210 / 0.9);
+  color: rgb(33 26 16);
+  box-shadow: 0 14px 40px rgb(110 78 34 / 0.21);
+}
+
+.warp-shell[data-theme="light"] .warp-offline > svg {
+  color: rgb(245 185 66);
+}
+
+.warp-shell[data-theme="light"] .warp-offline small {
+  color: rgb(33 26 16 / 0.64);
+}
+
+.warp-shell[data-theme="light"] .warp-offline small button {
+  color: rgb(33 26 16);
+}
+
 .warp-shell[data-theme="light"] .warp-title-card {
   border: 1px solid rgb(255 252 245 / 0.2);
   background: rgb(255 252 245);
