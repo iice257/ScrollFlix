@@ -290,7 +290,11 @@ test.describe('Gallery user flows', () => {
     // Nothing is asked until the button is pressed.
     expect(asked).toBe(0)
 
-    await list.getByRole('button', { name: /Search all of TMDB/ }).click()
+    await list
+      .getByRole('button', {
+        name: /Search over a million movie titles on TMDB/,
+      })
+      .click()
     await expect(list.getByRole('heading', { name: 'From TMDB' })).toBeVisible()
     expect(asked).toBe(1)
 

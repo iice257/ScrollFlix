@@ -4860,6 +4860,18 @@ type TmdbMoreProps = {
   onToggleGenre: (movie: TestMovie, genre: string) => void
 }
 
+const TmdbSiteLink = ({ query }: { query: string }) => (
+  <a
+    className='warp-list-tmdb-more'
+    href={`https://www.themoviedb.org/search?query=${encodeURIComponent(query)}`}
+    target='_blank'
+    rel='noopener noreferrer'
+  >
+    Keep looking on TMDB
+    <ExternalLink aria-hidden='true' size={13} strokeWidth={2.4} />
+  </a>
+)
+
 // Under the index's matches: a way to ask TMDB itself, for films the
 // catalogue does not hold. It runs on a tap, never per keystroke, and its
 // films open like any other (but cannot be saved).
@@ -4912,12 +4924,16 @@ const TmdbMore = ({
             onToggleGenre={onToggleGenre}
           />
         </div>
+        <TmdbSiteLink query={trimmed} />
       </section>
     )
   return (
     <div className='warp-list-tmdb'>
       {state.status === 'ready' ? (
-        <p>TMDB has nothing else for “{trimmed}”.</p>
+        <>
+          <p>TMDB has nothing else for “{trimmed}”.</p>
+          <TmdbSiteLink query={trimmed} />
+        </>
       ) : null}
       {state.status === 'failed' ? <p>Couldn't reach TMDB right now.</p> : null}
       {state.status === 'idle' || state.status === 'failed' ? (
@@ -4928,10 +4944,14 @@ const TmdbMore = ({
         >
           <Globe aria-hidden='true' size={16} strokeWidth={2.4} />
           <span>
-            {state.status === 'failed' ? 'Try again' : 'Not in the catalogue? '}
-            <strong>
-              {state.status === 'failed' ? '' : 'Search all of TMDB'}
-            </strong>
+            {state.status === 'failed' ? (
+              'Try again'
+            ) : (
+              <>
+                Can’t find it?{' '}
+                <strong>Search over a million movie titles on TMDB</strong>
+              </>
+            )}
           </span>
         </button>
       ) : null}

@@ -1130,6 +1130,15 @@
   color: rgb(33 26 16);
 }
 
+.warp-shell[data-theme="light"] .warp-list-tmdb-more {
+  color: rgb(33 26 16 / 0.62);
+}
+
+.warp-shell[data-theme="light"] .warp-list-tmdb-more:hover,
+.warp-shell[data-theme="light"] .warp-list-tmdb-more:focus-visible {
+  color: rgb(33 26 16);
+}
+
 .warp-shell[data-theme="light"] .warp-list-tmdb-skeleton {
   background: rgb(33 26 16 / 0.06);
 }
