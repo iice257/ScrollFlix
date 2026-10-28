@@ -210,6 +210,26 @@ test.describe('Gallery user flows', () => {
     expect(backdrop).toMatch(/\/(w780|w1280)\//)
   })
 
+  test('the mood line starts plain and changes its words after a skip', async ({
+    page,
+  }) => {
+    const line = page.locator('.mood-line')
+    await expect(line.locator('.mood-line-text')).toHaveText(
+      'How are you feeling?',
+    )
+    await expect(line.locator('.mood-line-button')).toContainText(
+      'Pick your mood',
+    )
+
+    await page
+      .getByRole('button', { name: /Shuffle/ })
+      .first()
+      .click()
+    await expect(line.locator('.mood-line-text')).not.toHaveText(
+      'How are you feeling?',
+    )
+  })
+
   test('the Watch listing is fetched before any card is opened', async ({
     page,
   }) => {
