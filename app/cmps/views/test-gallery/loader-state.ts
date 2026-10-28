@@ -30,15 +30,15 @@ export const useLoaderState = (
 // The Smart Loader's progress. The bar follows real milestones, each owning a
 // band of the bar: the app starting, the catalogue's first chunk arriving
 // (by bytes), the globe built with a placeholder in every slot, and the
-// posters on screen settling (loaded, or failed to their placeholder). Only
-// the posters in view count: the back of the globe fills in after the
-// loader, so it never holds the bar near the end.
+// posters of the whole globe arriving. Whoever waits for the loader gets a
+// complete globe: a poster that failed does not move the bar, so a dead
+// connection looks stuck and the screen offers Skip.
 export type LoadMilestones = {
   // 0..1 of the first catalogue chunk downloaded.
   catalog: number
   catalogDone: boolean
   globeBuilt: boolean
-  // 0..1 of the posters on screen settled.
+  // 0..1 of the globe's posters arrived.
   posters: number
 }
 

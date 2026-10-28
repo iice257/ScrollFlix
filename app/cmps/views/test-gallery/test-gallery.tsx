@@ -231,6 +231,7 @@ import { prefetchWatch } from './watch-providers'
 import './session-path.css'
 import { AmbientWeather } from './ambient-weather'
 import { AppearanceSetting, useDynamicHint } from './dynamic-theme-setting'
+import { OfflineNotice, useOfflineFor } from './offline-notice'
 import { perfFlag } from './perf-probe'
 import { stopsFromPath } from './share/path-art'
 import {
@@ -1539,6 +1540,9 @@ export const TestGalleryApp = () => {
     getCachedAllMovies() ?? getCachedFirstChunk() ?? [],
   )
   const [mode, setMode] = useState<ViewMode>('wall')
+  // No connection for 10 s: the globe carries on with what it has, and the
+  // index (which needs the network) says so.
+  const offline = useOfflineFor()
   const [sortRules, setSortRules] = useState<SortRule[]>(DEFAULT_SORT_RULES)
   const [sortOpen, setSortOpen] = useState(false)
   const [listRandomNonce, setListRandomNonce] = useState(0)
@@ -3244,6 +3248,13 @@ export const TestGalleryApp = () => {
         onGlobePress={promptFullscreenHint}
       />
 
+      {offline && (mode === 'wall' || mode === 'list') ? (
+        <OfflineNotice
+          view={mode === 'list' ? 'index' : 'globe'}
+          onReturnToGallery={() => setMode('wall')}
+        />
+      ) : null}
+
       {mode === 'list' ? (
         <WarpList
           activeMovieId={activeMovie?.id ?? null}
@@ -3693,7 +3704,7 @@ export const TestGalleryApp = () => {
               <em className='warp-preloader-hint'>
                 {loaderState === 'slow'
                   ? '(images may be pixelated)'
-                  : 'Images will load in the background'}
+                  : 'Every poster loads first, so nothing arrives pixelated'}
               </em>
             </span>
             <LoaderSoundToggle />
