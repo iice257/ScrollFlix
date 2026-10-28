@@ -2934,12 +2934,96 @@
     transform: translateY(1px) scale(0.98);
   }
 
-  /* The whole card scrolls when the list is long, so every service and the
-     footer stay reachable on a short phone screen. */
+  /* The services scroll between the heading and a pinned foot, so the trailer
+     link (the card's main way out) and the About link are always on screen,
+     however long the list is. */
   .warp-watch-card {
+    display: flex;
     max-height: calc(100dvh - 48px);
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .warp-watch-scroll {
+    min-height: 0;
+    flex: 1 1 auto;
+    margin: 0 -10px;
     overflow-y: auto;
     overscroll-behavior: contain;
+    padding: 0 10px;
+  }
+
+  .warp-watch-pinned {
+    flex: none;
+    display: grid;
+    margin-top: 12px;
+  }
+
+  .warp-watch-pinned .warp-watch-youtube {
+    margin-top: 0;
+  }
+
+  .warp-watch-pinned .warp-watch-credit {
+    margin: 12px 2px 0;
+  }
+
+  .warp-watch-pinned .warp-watch-about {
+    margin-top: 10px;
+    padding-top: 12px;
+  }
+
+  /* Collapsed by default so the services stay the focus. */
+  .warp-watch-more-links {
+    margin-top: 16px;
+  }
+
+  .warp-watch-more-links summary {
+    display: flex;
+    min-height: 46px;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid rgb(255 255 255 / 0.1);
+    border-radius: 14px;
+    background: rgb(255 255 255 / 0.04);
+    cursor: pointer;
+    list-style: none;
+    padding: 0 14px;
+    color: rgb(255 255 255 / 0.82);
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .warp-watch-more-links summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .warp-watch-more-links summary:hover,
+  .warp-watch-more-links summary:focus-visible {
+    outline: none;
+    border-color: rgb(255 255 255 / 0.28);
+    color: #fff;
+  }
+
+  .warp-watch-more-links summary svg {
+    transition: rotate 180ms ease;
+  }
+
+  .warp-watch-more-links[open] summary svg {
+    rotate: 90deg;
+  }
+
+  .warp-watch-more-links ul {
+    display: grid;
+    gap: 6px;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .warp-watch-row.is-compact {
+    min-height: 46px;
+    padding: 8px 14px;
+    font-size: 13px;
   }
 
   .warp-watch-body {
@@ -2999,13 +3083,14 @@
     height: 40px;
     place-items: center;
     border-radius: 11px;
-    background: #fff;
     box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16);
   }
 
+  /* The tile is white in the artwork itself, so it stays white in the light
+     theme too (the generated light colours would turn a CSS white to ink). */
   .warp-watch-youtube-mark svg {
-    width: 26px;
-    height: auto;
+    width: 40px;
+    height: 40px;
     color: initial;
   }
 

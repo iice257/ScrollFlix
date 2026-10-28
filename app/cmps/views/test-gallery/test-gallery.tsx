@@ -148,6 +148,7 @@ import {
   tasteWeight,
   topGenres,
 } from './moods/taste'
+import { moreLinks, whereToWatchUrl } from './more-links'
 import {
   ORIGIN_GROUPS,
   type OriginId,
@@ -1583,6 +1584,8 @@ export const TestGalleryApp = () => {
   const recentShufflesRef = useRef<number[]>([])
   const moodNudgeSpentRef = useRef(readSessionFlag(MOOD_NUDGE_STORAGE_KEY))
   const [aboutMaximized, setAboutMaximized] = useState(false)
+  // A section of the full About page to scroll to when it opens.
+  const [aboutAnchor, setAboutAnchor] = useState<string | null>(null)
   const [initialGalleryReady, setInitialGalleryReady] = useState(false)
   // The Smart Loader's milestones: the first catalogue chunk's download
   // (0..1), and the share of on-screen posters settled (null until the globe
@@ -2666,6 +2669,10 @@ export const TestGalleryApp = () => {
         Math.random,
       ) ?? pickOtherMovie(visibleMovies, activeMovieId, Math.random, weightOf)
     scheduleShuffleRefill(movieId)
+    // The spin takes a moment to land: that is time enough to have this
+    // film's Watch listing and logos in hand, even if it came from no pool.
+    const landing = visibleMovies.find((movie) => movie.id === movieId)
+    if (landing) prefetchWatch(landing.id, landing.title)
     return movieId
   }, [activeMovieId, scheduleShuffleRefill, visibleMovies, weightOf])
   // The first candidates load once the globe is up, and again when the
@@ -3745,6 +3752,7 @@ export const TestGalleryApp = () => {
           genreCount={genreAndFilterCount}
           globeCount={visibleMovies.length}
           maximized={aboutMaximized}
+          anchor={aboutAnchor}
           motionPhase={aboutPresence.motionPhase}
           onClose={() => setAboutOpen(false)}
           onShareRecap={() => setRecapOpen(true)}
@@ -3766,7 +3774,10 @@ export const TestGalleryApp = () => {
           movie={watchPresence.value}
           onClose={() => setWatchMovieId(null)}
           onOpenAbout={() => {
+            // The full About page, at its Watch links section.
             setWatchMovieId(null)
+            setAboutMaximized(true)
+            setAboutAnchor('watch-links')
             setAboutOpen(true)
           }}
         />
@@ -5496,6 +5507,7 @@ type AboutDrawerProps = {
   genreCount: number
   globeCount: number
   maximized: boolean
+  anchor: string | null
   motionPhase: MotionPhase
   onClose: () => void
   onShareRecap: () => void
@@ -5757,12 +5769,20 @@ const AboutDrawer = ({
   genreCount,
   globeCount,
   maximized,
+  anchor,
   motionPhase,
   onClose,
   onShareRecap,
   onStartParty,
   onToggleMaximized,
 }: AboutDrawerProps) => {
+  // Opened from a link that points at one section: bring it into view.
+  useEffect(() => {
+    if (!maximized || !anchor) return
+    document
+      .querySelector(`.warp-about-page [data-about-section="${anchor}"]`)
+      ?.scrollIntoView({ block: 'start' })
+  }, [maximized, anchor])
   return maximized ? (
     <section
       ref={overlayScrollbarRef}
@@ -5881,15 +5901,19 @@ const AboutDrawer = ({
           </button>
         </section>
 
-        <section className='warp-about-section'>
+        <section
+          className='warp-about-section'
+          data-about-section='watch-links'
+        >
           <h3>Watch links</h3>
           <p>
             Watch lists the legal services that carry a film in your country,
             from JustWatch's listings through TMDB; the logos beside the button
             are the ones it confirms for streaming or free. Each opens that
-            service's own search (or the film's TMDB listing), and the YouTube
-            link opens the trailer. With no listing, ScrollFlix makes no claim.
-            It doesn't host or stream any films.
+            service's own search, or a Google search for it, and the YouTube
+            link opens the trailer. The links are not affiliated with
+            ScrollFlix. With no listing, ScrollFlix makes no claim. It doesn't
+            host or stream any films.
           </p>
         </section>
 
@@ -6252,6 +6276,12 @@ const WatchLinksDialog = ({
     movie.title,
     /^\d{4}$/.test(movie.year) ? movie.year : undefined,
   )
+  const links = moreLinks({
+    id: movie.id,
+    title: movie.title,
+    year: movie.year,
+    imdbId: movieText?.imdbId,
+  })
   return (
     <section
       className='warp-watch-layer'
@@ -6281,30 +6311,74 @@ const WatchLinksDialog = ({
         <p className='warp-watch-kicker'>Watch options</p>
         <h2>{movie.title}</h2>
         <p className='warp-watch-meta'>{formatMovieMeta(movie)}</p>
-        <WatchOptionsList movieId={movie.id} title={movie.title} />
-        <a
-          className='warp-watch-row warp-watch-youtube'
-          href={youtubeHref}
-          target='_blank'
-          rel='noopener noreferrer'
-        >
-          <span className='warp-watch-youtube-mark' aria-hidden='true'>
-            <svg viewBox='0 0 28 20' focusable='false'>
-              <rect width='28' height='20' rx='5.5' fill='#f00' />
-              <path d='M11.2 5.8v8.4L18.6 10z' fill='#fff' />
-            </svg>
-          </span>
-          <span>Trailer on YouTube</span>
-          <ExternalLink aria-hidden='true' size={14} />
-        </a>
-        <button
-          type='button'
-          className='warp-watch-about'
-          onClick={onOpenAbout}
-        >
-          <Info aria-hidden='true' />
-          About ScrollFlix and these links
-        </button>
+        <div className='warp-watch-scroll' ref={overlayScrollbarRef}>
+          <WatchOptionsList movieId={movie.id} title={movie.title} />
+          <details className='warp-watch-more-links'>
+            <summary>
+              <span>More links</span>
+              <ChevronRight aria-hidden='true' size={16} />
+            </summary>
+            <ul>
+              {links.map((link) => (
+                <li key={link.id}>
+                  <a
+                    href={link.href}
+                    target='_blank'
+                    rel='noopener noreferrer'
+                    className='warp-watch-row is-compact'
+                  >
+                    <span>{link.label}</span>
+                    <ExternalLink aria-hidden='true' size={14} />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+        <div className='warp-watch-pinned'>
+          <a
+            className='warp-watch-row warp-watch-youtube'
+            href={youtubeHref}
+            target='_blank'
+            rel='noopener noreferrer'
+          >
+            <span className='warp-watch-youtube-mark' aria-hidden='true'>
+              <svg viewBox='0 0 40 40' focusable='false'>
+                <rect width='40' height='40' rx='11' fill='#fff' />
+                <rect
+                  x='6'
+                  y='10'
+                  width='28'
+                  height='20'
+                  rx='5.5'
+                  fill='#f00'
+                />
+                <path d='M17.2 15.8v8.4L24.6 20z' fill='#fff' />
+              </svg>
+            </span>
+            <span>Trailer on YouTube</span>
+            <ExternalLink aria-hidden='true' size={14} />
+          </a>
+          <p className='warp-watch-credit'>
+            No options?{' '}
+            <a
+              href={whereToWatchUrl(movie.title, movie.year)}
+              target='_blank'
+              rel='noopener noreferrer'
+            >
+              Search on Google
+            </a>
+            . Links are not affiliated.
+          </p>
+          <button
+            type='button'
+            className='warp-watch-about'
+            onClick={onOpenAbout}
+          >
+            <Info aria-hidden='true' />
+            About ScrollFlix and these links
+          </button>
+        </div>
       </dialog>
     </section>
   )
