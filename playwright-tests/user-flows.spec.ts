@@ -338,6 +338,30 @@ test.describe('Gallery user flows', () => {
     await expect(picked).toBeInViewport({ timeout: 5_000 })
   })
 
+  test('the index title pill waits for the first shuffle, then shows the film and opens its card', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    const list = page.getByRole('region', { name: 'Movie list view' })
+    await expect(list).toBeVisible()
+    const pill = page.locator('.warp-index-pill')
+    await expect(pill).toHaveCount(0)
+
+    await page
+      .getByRole('button', { name: 'Jump to a random movie in the index' })
+      .click()
+    const active = list.locator('.warp-list-row.is-active')
+    await expect(active).toBeInViewport({ timeout: 5_000 })
+    const title = (
+      await active.locator('.warp-list-row-title').first().textContent()
+    )?.trim()
+    await expect(pill).toBeVisible()
+    await expect(pill).toContainText(title ?? '')
+
+    await pill.click()
+    await expect(page.locator('.warp-details-card')).toBeVisible()
+  })
+
   test('the index can be grouped by country, biggest origins first', async ({
     page,
   }) => {
