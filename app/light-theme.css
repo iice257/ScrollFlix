@@ -1461,7 +1461,7 @@
   }
 
   .warp-shell[data-theme="light"] .warp-details-card {
-    box-shadow: 0 -32px 140px rgb(110 78 34 / 0.328);
+    box-shadow: 0 -32px 140px rgb(110 78 34 / 0.328), 0 var(--sheet-tail, 0px) 0 0 rgb(110 78 34 / 0.399);
   }
 
   .warp-shell[data-theme="light"] .warp-details-ambient::after {
