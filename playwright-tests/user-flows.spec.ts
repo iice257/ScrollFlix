@@ -253,6 +253,87 @@ test.describe('Gallery user flows', () => {
     await expect(page.locator('.warp-details-card')).toHaveCount(0)
   })
 
+  test('the index can search all of TMDB for films the catalogue lacks', async ({
+    page,
+  }) => {
+    let asked = 0
+    await page.route('**/api/search*', async (route) => {
+      asked += 1
+      await route.fulfill({
+        json: {
+          films: [
+            {
+              id: 987654321,
+              title: 'Qzxv Obscure Feature',
+              originalTitle: 'Qzxv Obscure Feature',
+              originalLanguage: 'en',
+              year: '2019',
+              rating: 6.1,
+              votes: 3,
+              popularity: 1.2,
+              genres: ['Drama'],
+              posterPath: 'abcdefghij',
+              backdropPath: null,
+              overview: 'A film only TMDB knows.',
+            },
+          ],
+        },
+      })
+    })
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    const list = page.getByRole('region', { name: 'Movie list view' })
+    const search = page.getByRole('searchbox', {
+      name: 'Search titles, genres, moods',
+    })
+    await search.fill('qzxv obscure feature')
+    await expect(list.getByText('No title matches')).toBeVisible()
+    // Nothing is asked until the button is pressed.
+    expect(asked).toBe(0)
+
+    await list
+      .getByRole('button', {
+        name: /Search over a million movie titles on TMDB/,
+      })
+      .click()
+    await expect(list.getByRole('heading', { name: 'From TMDB' })).toBeVisible()
+    expect(asked).toBe(1)
+
+    await list.getByText('Qzxv Obscure Feature').first().click()
+    const card = page.locator('.warp-details-card')
+    await expect(card).toBeVisible()
+    await expect(card).toContainText('Qzxv Obscure Feature')
+    await expect(card).toContainText('A film only TMDB knows.')
+    // It is not in the catalogue, so there is nowhere to save it.
+    await expect(card.getByRole('button', { name: 'Save movie' })).toHaveCount(
+      0,
+    )
+  })
+
+  test('after 10 s offline the globe says so, and the index offers the way back', async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(60_000)
+    const notice = page.locator('.warp-offline')
+    await expect(notice).toHaveCount(0)
+    await context.setOffline(true)
+    // Not for a brief drop: nothing yet.
+    await page.waitForTimeout(3_000)
+    await expect(notice).toHaveCount(0)
+
+    await expect(notice).toContainText('Offline mode', { timeout: 15_000 })
+    await expect(notice).toContainText(/Globe (fully loaded|\d+% loaded|ready)/)
+
+    // The index needs the network: same place, a different message.
+    await page.getByRole('button', { name: 'Movie index' }).click()
+    await expect(notice).toContainText("Index doesn't work offline")
+    await notice.getByRole('button', { name: 'return to gallery' }).click()
+    await expect(notice).toContainText('Offline mode')
+
+    await context.setOffline(false)
+    await expect(notice).toHaveCount(0)
+  })
+
   test('the Watch sheet keeps the trailer and About links in view and never links to TMDB', async ({
     page,
   }) => {
@@ -447,6 +528,31 @@ test.describe('Gallery user flows', () => {
     await expect(chip).toHaveAttribute('aria-pressed', 'true')
     await chip.click()
     await expect(chip).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  test('filters stack, and a double-click keeps only that one', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Filters' }).click()
+    const origins = page.locator('[data-section="origins"]').first()
+    const nollywood = origins.getByRole('button', { name: /^Nollywood/ })
+    const korean = origins.getByRole('button', { name: /^Korean/ })
+    await nollywood.click()
+    await expect(page.locator('[data-solo-hint]').first()).toBeVisible()
+    await korean.click()
+    await expect(nollywood).toHaveAttribute('aria-pressed', 'true')
+    await expect(korean).toHaveAttribute('aria-pressed', 'true')
+
+    await korean.dblclick()
+    await expect(korean).toHaveAttribute('aria-pressed', 'true')
+    await expect(nollywood).toHaveAttribute('aria-pressed', 'false')
+
+    await page
+      .locator('[data-solo-hint]')
+      .first()
+      .getByRole('button', { name: 'Got it' })
+      .click()
+    await expect(page.locator('[data-solo-hint]')).toHaveCount(0)
   })
 
   test('hovering an index row does not take the highlight from the active film', async ({

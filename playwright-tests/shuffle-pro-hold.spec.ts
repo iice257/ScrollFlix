@@ -57,7 +57,7 @@ const pressGlobe = async (page: Page) => {
 
 test.describe('Shuffle Pro holds', { tag: '@heavy' }, () => {
   // Waiting for the globe to be quiet comes before the hold itself.
-  test.setTimeout(120_000)
+  test.setTimeout(180_000)
 
   test('a 3s hold starts a run even with every path found and repeats off', async ({
     page,

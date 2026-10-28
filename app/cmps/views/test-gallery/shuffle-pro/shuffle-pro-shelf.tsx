@@ -1,19 +1,17 @@
-import { Lock, Share2 } from 'lucide-react'
+import { Share2 } from 'lucide-react'
 import { useId, useSyncExternalStore } from 'react'
 import { MOOD_PATH_SWATCHES, paletteFromAccents } from './mood-run'
+import { shelfSlots } from './shelf-slots'
 import {
   MOOD_PATHS,
   MOOD_PATH_LABELS,
   type MoodPath,
   TIER_LABELS,
   type Tier,
-  hasUnlockedGold,
 } from './shuffle-pro-logic'
 import { type ShuffleProData, shuffleProStore } from './shuffle-pro-store'
 import { PALETTES, type Palette } from './sky-pass'
 import { GEM_BODY, GEM_FACETS, GEM_SHINE, GEM_TOP } from './tier-art'
-
-const SHELF_ORDER: Tier[] = ['frost', 'amethyst', 'jade', 'gold']
 
 const css = ([r, g, b]: [number, number, number]) =>
   `rgb(${Math.round(r * 255)} ${Math.round(g * 255)} ${Math.round(b * 255)})`
@@ -68,55 +66,67 @@ type ShelfProps = {
   onShare?: () => void
 }
 
-// The collection shelf: one slot per path. Undiscovered slots never spoil a
-// name; Gold stays behind a faint lock until the other three are found.
+// The collection shelf: three seats, taken in the order the eggs were found,
+// with a "+N" tile once there are more. An empty seat never spoils a name.
 export const ShuffleProShelf = ({ title = true, onShare }: ShelfProps) => {
   const data = useSyncExternalStore(
     shuffleProStore.subscribe,
     shuffleProStore.get,
     shuffleProStore.get,
   )
-  const goldUnlocked = hasUnlockedGold(data.found)
+  const { shown, empty, more } = shelfSlots(data.found)
 
   return (
-    <section className='sp-shelf' aria-label='Easter egg collection'>
-      {title ? <h3 className='sp-shelf-title'>Easter egg</h3> : null}
+    <section className='sp-shelf' aria-label='Easter eggs'>
+      {title ? <h3 className='sp-shelf-title'>Easter eggs</h3> : null}
       <ul className='sp-shelf-slots'>
-        {SHELF_ORDER.map((tier) => {
-          const entry = data.found[tier]
-          const locked = tier === 'gold' && !goldUnlocked && !entry
-          return (
-            <li
-              key={tier}
-              className='sp-shelf-slot'
-              data-tier={tier}
-              data-found={entry ? 'true' : 'false'}
-              data-locked={locked ? 'true' : undefined}
-            >
-              <span className='sp-shelf-gem'>
-                <Gem tier={tier} found={Boolean(entry)} />
-                {entry ? null : locked ? (
-                  <Lock className='sp-shelf-lock' aria-hidden='true' />
-                ) : (
-                  <span className='sp-shelf-mark' aria-hidden='true'>
-                    ?
-                  </span>
-                )}
+        {shown.map(({ tier, entry }) => (
+          <li
+            key={tier}
+            className='sp-shelf-slot'
+            data-tier={tier}
+            data-found='true'
+          >
+            <span className='sp-shelf-gem'>
+              <Gem tier={tier} found />
+            </span>
+            <span className='sp-shelf-name'>
+              {TIER_LABELS[tier]}
+              <small>×{entry.count}</small>
+            </span>
+          </li>
+        ))}
+        {Array.from({ length: empty }, (_, index) => (
+          <li
+            // biome-ignore lint/suspicious/noArrayIndexKey: identical placeholders
+            key={`empty-${index}`}
+            className='sp-shelf-slot'
+            data-tier='frost'
+            data-found='false'
+          >
+            <span className='sp-shelf-gem'>
+              <Gem tier='frost' found={false} />
+              <span className='sp-shelf-mark' aria-hidden='true'>
+                ?
               </span>
-              {entry ? (
-                <span className='sp-shelf-name'>
-                  {TIER_LABELS[tier]}
-                  <small>×{entry.count}</small>
-                </span>
-              ) : (
-                <span className='sp-shelf-name is-hidden'>
-                  <span className='sr-only'>Not found yet</span>
-                  <span aria-hidden='true'>?</span>
-                </span>
-              )}
-            </li>
-          )
-        })}
+            </span>
+            <span className='sp-shelf-name is-hidden'>
+              <span className='sr-only'>Not found yet</span>
+              <span aria-hidden='true'>?</span>
+            </span>
+          </li>
+        ))}
+        {more > 0 ? (
+          <li className='sp-shelf-slot' data-found='true' data-more='true'>
+            <span className='sp-shelf-gem'>
+              <span className='sp-shelf-more'>+{more}</span>
+            </span>
+            <span className='sp-shelf-name'>
+              <span className='sr-only'>{more} more found</span>
+              <span aria-hidden='true'>more</span>
+            </span>
+          </li>
+        ) : null}
       </ul>
       {MOOD_PATHS.some((path) => data.moodPaths[path]) ? (
         <MoodPathsRow moodPaths={data.moodPaths} />
