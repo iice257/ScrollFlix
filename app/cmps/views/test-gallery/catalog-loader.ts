@@ -46,6 +46,9 @@ export type TestMovie = {
   originalTitle?: string
   originalLanguage?: string
   trailerKeys?: string[]
+  // Found by the live TMDB search, not in the catalogue: it can be opened
+  // and watched, but not saved (there is nowhere to look it up again).
+  external?: boolean
 }
 
 export type CatalogRow = [
