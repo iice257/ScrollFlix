@@ -50,7 +50,7 @@ const Backdrop = ({ onClick }: { onClick?: () => void }) =>
     <div className='party-backdrop' aria-hidden='true' />
   )
 
-const Scores = ({ state, up }: { state: PartyState; up?: number }) => (
+export const Scores = ({ state, up }: { state: PartyState; up?: number }) => (
   <ol className='party-board is-compact'>
     {standings(state.players).map((entry) => (
       <li

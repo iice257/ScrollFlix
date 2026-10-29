@@ -77,7 +77,8 @@ export type PartyPick = {
   score: number
 }
 
-export type Player = { name: string; picks: PartyPick[] }
+// `avatar` is the film whose poster stands in for the player's initial.
+export type Player = { name: string; picks: PartyPick[]; avatar?: string }
 
 export type PartyPhase =
   | 'off'
@@ -129,6 +130,8 @@ export const PARTY_OFF: PartyState = {
 
 export type StartOptions = {
   names: string[]
+  // One film id (or null) per name: the poster each player chose.
+  avatars?: (string | null)[]
   rounds: number
   mode: PartyMode
   settle: boolean
@@ -364,7 +367,10 @@ export const partyReducer = (
         ...PARTY_OFF,
         phase: 'turn',
         mode: PARTY_MODES.includes(action.mode) ? action.mode : 'year',
-        players: names.map((name) => ({ name, picks: [] })),
+        players: names.map((name, index) => {
+          const avatar = action.avatars?.[index]
+          return { name, picks: [], ...(avatar ? { avatar } : {}) }
+        }),
         rounds: clampRounds(action.rounds),
         settle: action.settle,
         online: action.online,
@@ -504,6 +510,7 @@ export const partyReducer = (
             players: state.players.map((player) => ({
               name: player.name,
               picks: [],
+              ...(player.avatar ? { avatar: player.avatar } : {}),
             })),
             turn: 0,
             current: null,

@@ -143,9 +143,23 @@
      reserves a gutter. Firefox and current Chromium read the first two lines;
      Safari the ::-webkit-scrollbar rules. */
   * {
-    scrollbar-width: thin;
-    scrollbar-color: var(--warp-scroll-thumb, rgb(255 255 255 / 0.28)) transparent;
     scrollbar-gutter: auto;
+  }
+
+  /* Firefox only: Chromium and Safari read the ::-webkit-scrollbar rules
+     below (Chromium ignores them once these two properties are set). */
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--warp-scroll-thumb, rgb(255 255 255 / 0.28)) transparent;
+    }
+  }
+
+  /* No arrow buttons at the ends: they would sit outside a rounded corner. */
+  *::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
   }
 
   *::-webkit-scrollbar {
@@ -2178,6 +2192,81 @@
     color: #fff;
   }
 
+  /* The offline notice: one pill, in the same place on the globe and the
+     index. */
+  .warp-offline {
+    position: fixed;
+    top: max(56px, calc(env(safe-area-inset-top) + 50px));
+    left: 50%;
+    z-index: 96;
+    display: flex;
+    width: max-content;
+    max-width: calc(100vw - 32px);
+    align-items: center;
+    gap: 10px;
+    transform: translateX(-50%);
+    border: 1px solid rgb(255 255 255 / 0.16);
+    border-radius: 999px;
+    background: rgb(18 18 18 / 0.9);
+    padding: 7px 16px 7px 12px;
+    color: #fff;
+    box-shadow: 0 14px 40px rgb(0 0 0 / 0.5);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    animation: warp-offline-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .warp-offline > svg {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    color: #f5b942;
+  }
+
+  .warp-offline > span {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .warp-offline strong {
+    font-size: 12.5px;
+    font-weight: 850;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+
+  .warp-offline small {
+    color: rgb(255 255 255 / 0.64);
+    font-size: 11.5px;
+    font-weight: 650;
+    line-height: 1.3;
+  }
+
+  .warp-offline small button {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: #fff;
+    font: inherit;
+    font-weight: 800;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  @keyframes warp-offline-in {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -8px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .warp-offline {
+      animation: none;
+    }
+  }
+
   .warp-dock {
     position: fixed;
     left: 50%;
@@ -2724,6 +2813,33 @@
     margin: 0;
   }
 
+  /* The one-time note that filters stack and a double-click keeps one. */
+  .warp-fs-hint {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 14px;
+    border-radius: 12px;
+    background: rgb(255 255 255 / 0.06);
+    padding: 10px 12px;
+    color: rgb(255 255 255 / 0.78);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .warp-fs-hint button {
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.14);
+    padding: 6px 12px;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
   .warp-fs-chips {
     display: flex;
     flex-wrap: wrap;
@@ -2893,14 +3009,96 @@
     transform: translateY(1px) scale(0.98);
   }
 
-  /* The whole card scrolls when the list is long, so every service and the
-     footer stay reachable on a short phone screen. */
+  /* The services scroll between the heading and a pinned foot, so the trailer
+     link (the card's main way out) and the About link are always on screen,
+     however long the list is. */
   .warp-watch-card {
+    display: flex;
     max-height: calc(100dvh - 48px);
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .warp-watch-scroll {
+    min-height: 0;
+    flex: 1 1 auto;
+    margin: 0 -10px;
     overflow-y: auto;
     overscroll-behavior: contain;
-    scrollbar-width: thin;
-    scrollbar-color: rgb(255 255 255 / 0.2) transparent;
+    padding: 0 10px;
+  }
+
+  .warp-watch-pinned {
+    flex: none;
+    display: grid;
+    margin-top: 12px;
+  }
+
+  .warp-watch-pinned .warp-watch-youtube {
+    margin-top: 0;
+  }
+
+  .warp-watch-pinned .warp-watch-credit {
+    margin: 12px 2px 0;
+  }
+
+  .warp-watch-pinned .warp-watch-about {
+    margin-top: 10px;
+    padding-top: 12px;
+  }
+
+  /* Collapsed by default so the services stay the focus. */
+  .warp-watch-more-links {
+    margin-top: 16px;
+  }
+
+  .warp-watch-more-links summary {
+    display: flex;
+    min-height: 46px;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid rgb(255 255 255 / 0.1);
+    border-radius: 14px;
+    background: rgb(255 255 255 / 0.04);
+    cursor: pointer;
+    list-style: none;
+    padding: 0 14px;
+    color: rgb(255 255 255 / 0.82);
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .warp-watch-more-links summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .warp-watch-more-links summary:hover,
+  .warp-watch-more-links summary:focus-visible {
+    outline: none;
+    border-color: rgb(255 255 255 / 0.28);
+    color: #fff;
+  }
+
+  .warp-watch-more-links summary svg {
+    transition: rotate 180ms ease;
+  }
+
+  .warp-watch-more-links[open] summary svg {
+    rotate: 90deg;
+  }
+
+  .warp-watch-more-links ul {
+    display: grid;
+    gap: 6px;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .warp-watch-row.is-compact {
+    min-height: 46px;
+    padding: 8px 14px;
+    font-size: 13px;
   }
 
   .warp-watch-body {
@@ -2960,13 +3158,14 @@
     height: 40px;
     place-items: center;
     border-radius: 11px;
-    background: #fff;
     box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16);
   }
 
+  /* The tile is white in the artwork itself, so it stays white in the light
+     theme too (the generated light colours would turn a CSS white to ink). */
   .warp-watch-youtube-mark svg {
-    width: 26px;
-    height: auto;
+    width: 40px;
+    height: 40px;
     color: initial;
   }
 
@@ -3112,10 +3311,8 @@
     isolation: isolate;
     pointer-events: auto;
     animation: warp-details-card-in 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
-    transform: translateY(var(--details-drag-y, 0));
-    transition:
-      height 320ms cubic-bezier(0.16, 1, 0.3, 1),
-      transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    transform: translate3d(0, var(--sheet-y, 0px), 0);
+    transition: height 320ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .warp-details-layer[data-motion="exit"] .warp-details-card {
@@ -3124,6 +3321,7 @@
 
   .warp-details-card.is-dragging {
     transition: none;
+    will-change: transform;
   }
 
   .warp-details-ambient {
@@ -3179,8 +3377,6 @@
     overflow: auto;
     padding: 14px 52px 4px 0;
     text-align: left;
-    scrollbar-color: rgb(255 255 255 / 0.22) transparent;
-    scrollbar-width: thin;
   }
 
   .warp-details-stats {
@@ -4309,6 +4505,89 @@
     text-align: left;
   }
 
+  /* "Search all of TMDB", under the index's matches. */
+  .warp-list-tmdb {
+    display: grid;
+    gap: 10px;
+    margin: 28px 0 8px;
+    justify-items: start;
+  }
+
+  .warp-list-tmdb p {
+    margin: 0;
+    color: rgb(255 255 255 / 0.6);
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .warp-list-tmdb-ask {
+    display: inline-flex;
+    min-height: 48px;
+    align-items: center;
+    gap: 10px;
+    border: 1px dashed rgb(255 255 255 / 0.28);
+    border-radius: 24px;
+    background: rgb(255 255 255 / 0.04);
+    padding: 10px 20px 10px 16px;
+    text-align: left;
+    color: rgb(255 255 255 / 0.78);
+    font-size: 14px;
+    font-weight: 650;
+    transition:
+      background 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease;
+  }
+
+  .warp-list-tmdb-ask strong {
+    color: #fff;
+    font-weight: 850;
+  }
+
+  .warp-list-tmdb-ask:hover,
+  .warp-list-tmdb-ask:focus-visible {
+    outline: none;
+    border-color: rgb(255 255 255 / 0.5);
+    background: rgb(255 255 255 / 0.09);
+    color: #fff;
+  }
+
+  .warp-list-tmdb-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 14px;
+    color: rgb(255 255 255 / 0.62);
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    transition: color 160ms ease;
+  }
+
+  .warp-list-tmdb-more:hover,
+  .warp-list-tmdb-more:focus-visible {
+    outline: none;
+    color: #fff;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .warp-list-tmdb-skeleton {
+    width: 100%;
+    height: 64px;
+    border-radius: 14px;
+    background: rgb(255 255 255 / 0.06);
+    animation: warp-watch-pulse 1.2s ease-in-out infinite;
+  }
+
+  .warp-list-tmdb-results {
+    margin-top: 28px;
+  }
+
+  .warp-list-group-heading.is-static {
+    cursor: default;
+  }
+
   .warp-list-empty {
     display: grid;
     justify-items: start;
@@ -4614,7 +4893,6 @@
     max-height: calc(100dvh - (28px + var(--warp-control-height) + 12px) - 16px);
     overflow-y: auto;
     overscroll-behavior: contain;
-    scrollbar-width: thin;
     animation: warp-about-pop-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
@@ -4869,58 +5147,6 @@
     font-weight: 700;
   }
 
-  /* The one Dynamic tip: first open of the menu, and hover or focus. */
-  .warp-theme-tip {
-    position: relative;
-    display: grid;
-    max-width: 240px;
-    gap: 6px;
-    padding: 9px 34px 9px 12px;
-    font-size: 12px;
-    line-height: 1.45;
-  }
-
-  .warp-theme-tip p {
-    margin: 0;
-  }
-
-  .warp-theme-tip-close {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    display: grid;
-    width: 22px;
-    height: 22px;
-    place-items: center;
-    border: 0;
-    border-radius: 999px;
-    background: rgb(255 255 255 / 0.16);
-    padding: 0;
-    color: inherit;
-    transition: background 160ms ease;
-  }
-
-  /* A 44px tap target around the small button. */
-  .warp-theme-tip-close::before {
-    position: absolute;
-    inset: -11px;
-    content: '';
-  }
-
-  .warp-theme-tip-close svg {
-    width: 12px;
-    height: 12px;
-  }
-
-  .warp-theme-tip-close:hover {
-    background: rgb(255 255 255 / 0.28);
-  }
-
-  .warp-theme-tip-close:focus-visible {
-    outline: 2px solid currentColor;
-    outline-offset: 1px;
-  }
-
   .warp-sound-settings {
     display: grid;
   }
@@ -4940,166 +5166,6 @@
   .warp-about-setting.is-wrap {
     align-items: flex-start;
     flex-wrap: wrap;
-  }
-
-  /* First-open tip beside a globe-line switch: a cut-out of the feature and
-     one line. It sits above or below the switch, never over it. */
-  .warp-about-setting.has-nudge {
-    position: relative;
-  }
-
-  .warp-nudge {
-    position: absolute;
-    right: 0;
-    z-index: 6;
-    width: min(176px, 100%);
-    cursor: pointer;
-    animation: warp-nudge-fade 220ms ease 320ms both;
-  }
-
-  .warp-nudge.is-above {
-    bottom: calc(100% + 12px);
-  }
-
-  .warp-nudge.is-below {
-    top: calc(100% + 12px);
-  }
-
-  .warp-nudge-card {
-    position: relative;
-    border: 1px solid rgb(255 255 255 / 0.18);
-    border-radius: 14px;
-    background: rgb(28 29 36 / 0.98);
-    padding: 6px 6px 10px;
-    box-shadow: 0 16px 40px rgb(0 0 0 / 0.55);
-  }
-
-  /* The pointer toward the switch. */
-  .warp-nudge-card::after {
-    content: "";
-    position: absolute;
-    right: 56px;
-    width: 10px;
-    height: 10px;
-    background: rgb(28 29 36);
-    transform: rotate(45deg);
-  }
-
-  .warp-nudge.is-above .warp-nudge-card::after {
-    bottom: -6px;
-    border-right: 1px solid rgb(255 255 255 / 0.18);
-    border-bottom: 1px solid rgb(255 255 255 / 0.18);
-  }
-
-  .warp-nudge.is-below .warp-nudge-card::after {
-    top: -6px;
-    border-top: 1px solid rgb(255 255 255 / 0.18);
-    border-left: 1px solid rgb(255 255 255 / 0.18);
-  }
-
-  .warp-nudge-art {
-    display: block;
-    width: 100%;
-    height: auto;
-  }
-
-  .warp-nudge-card p {
-    margin: 9px 6px 0;
-    color: rgb(255 255 255 / 0.86);
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.4;
-  }
-
-  .warp-nudge-close {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    display: grid;
-    width: 24px;
-    height: 24px;
-    place-items: center;
-    border: 0;
-    border-radius: 999px;
-    background: rgb(0 0 0 / 0.55);
-    padding: 0;
-    color: rgb(255 255 255 / 0.9);
-    transition: background 160ms ease;
-  }
-
-  .warp-nudge-close svg {
-    width: 12px;
-    height: 12px;
-  }
-
-  .warp-nudge-close:hover {
-    background: rgb(0 0 0 / 0.78);
-  }
-
-  .warp-nudge-close:focus-visible {
-    outline: 2px solid #fff;
-    outline-offset: 1px;
-  }
-
-  @keyframes warp-nudge-fade {
-    from {
-      opacity: 0;
-    }
-  }
-
-  @keyframes warp-nudge-rise {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-  }
-
-  @keyframes warp-nudge-sink {
-    from {
-      opacity: 0;
-      transform: translateY(-6px);
-    }
-  }
-
-  @keyframes warp-nudge-draw {
-    to {
-      stroke-dashoffset: 0;
-    }
-  }
-
-  @keyframes warp-nudge-ping {
-    from {
-      opacity: 0.9;
-      transform: scale(0.7);
-    }
-    to {
-      opacity: 0;
-      transform: scale(1.6);
-    }
-  }
-
-  /* With motion allowed the tip travels a few pixels, the lines draw
-     themselves in and the newest point pulses; otherwise it only fades. */
-  @media (prefers-reduced-motion: no-preference) {
-    .warp-nudge.is-above {
-      animation-name: warp-nudge-rise;
-    }
-
-    .warp-nudge.is-below {
-      animation-name: warp-nudge-sink;
-    }
-
-    .warp-nudge-draw {
-      stroke-dasharray: 1;
-      stroke-dashoffset: 1;
-      animation: warp-nudge-draw 700ms ease-out both;
-    }
-
-    .warp-nudge-pulse {
-      transform-box: fill-box;
-      transform-origin: center;
-      animation: warp-nudge-ping 2.2s ease-out 1.6s infinite;
-    }
   }
 
   .warp-sound-chips {
@@ -6099,7 +6165,14 @@
       height: min(76dvh, 680px);
       padding: 0;
       border-radius: 28px;
-      box-shadow: 0 -32px 140px rgb(0 0 0 / 0.78);
+      /* The second shadow is a strip of sheet colour that fills the gap
+         under a sheet lifted off the bottom (see use-sheet-drag.ts). */
+      box-shadow:
+        0 -32px 140px rgb(0 0 0 / 0.78),
+        0 var(--sheet-tail, 0px) 0 0 rgb(10 10 10 / 0.95);
+      /* The sheet moves by transform only (the hook eases it); its height
+         switches at once. */
+      transition: none;
       /* Backwards only: filling forwards would hold the end keyframe's
          transform over the drag offset. */
       animation: warp-details-sheet-in 520ms cubic-bezier(0.16, 1, 0.3, 1)
@@ -6112,12 +6185,6 @@
 
     .warp-details-card.is-expanded {
       height: calc(100dvh - 64px);
-    }
-
-    /* While a finger is on the sheet its height is the finger's. */
-    .warp-details-card.is-dragging {
-      height: var(--details-drag-h, auto);
-      max-height: none;
     }
 
     .warp-details-ambient {
@@ -6133,7 +6200,7 @@
       height: min(30dvh, 250px);
       margin-top: 50px;
       border-radius: 14px;
-      transition: height 320ms cubic-bezier(0.16, 1, 0.3, 1);
+      transition: height 300ms ease;
     }
 
     .warp-details-card.is-expanded .warp-details-poster {

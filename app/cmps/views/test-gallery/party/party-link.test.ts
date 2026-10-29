@@ -153,3 +153,52 @@ describe('party link codec', () => {
     expect(summary.lastTmdbId).toBe('101')
   })
 })
+
+describe('player pictures', () => {
+  const pictured = (): PartyState =>
+    partyReducer(PARTY_OFF, {
+      type: 'start',
+      names: ['Ada', 'Bo'],
+      avatars: ['c603', null],
+      rounds: 1,
+      mode: 'year',
+      settle: true,
+      online: true,
+    })
+
+  it('start keeps the film each player chose', () => {
+    expect(pictured().players.map((player) => player.avatar)).toEqual([
+      'c603',
+      undefined,
+    ])
+  })
+
+  it('travel in the link and come back', () => {
+    const decoded = decodeParty(encodeParty(pictured()), lookup)
+    if ('error' in decoded) throw new Error('should decode')
+    expect(decoded.players.map((player) => player.avatar)).toEqual([
+      'c603',
+      undefined,
+    ])
+  })
+
+  it('leave a link without any unchanged from before pictures', () => {
+    const plain = start(['Ada', 'Bo'], 1)
+    expect(fromCode(encodeParty(plain))).not.toHaveProperty('a')
+  })
+
+  it('are checked, so a link cannot smuggle in nonsense', () => {
+    const data = fromCode(encodeParty(pictured()))
+    for (const a of [[1], [1, -4], 'x', [1.5, 2]])
+      expect(decodeParty(toCode({ ...data, a }), lookup)).toEqual({
+        error: 'broken',
+      })
+  })
+
+  it('stay with a player when the game is played again', () => {
+    let state = pictured()
+    state = { ...state, phase: 'final', turn: 2 }
+    const again = partyReducer(state, { type: 'again' })
+    expect(again.players[0].avatar).toBe('c603')
+  })
+})

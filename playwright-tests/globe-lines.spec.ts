@@ -1,8 +1,7 @@
 import { type Page, expect, test } from '@playwright/test'
 
-// History and favourites on the globe start off, and the first time the
-// menu opens each gets a small tip explaining it. One button opens a drawer
-// with a tab for each.
+// History and favourites on the globe start off, and each switch has a line
+// under it saying what it does. One button opens a drawer with a tab for each.
 
 // Two landings, so the history has something to show once it is on.
 const seedPath = (page: Page) =>
@@ -49,10 +48,6 @@ const closeMenu = async (page: Page) => {
   ).toHaveCount(0)
 }
 
-// The line tips only: other tooltips (a theme option's hover text, the
-// fullscreen hint) can be on screen too, depending on where a tap landed.
-const nudgeTips = (page: Page) => page.locator('.warp-nudge-card')
-
 const pathButton = (page: Page) =>
   page.getByRole('button', { name: 'History and favourites', exact: true })
 
@@ -79,110 +74,18 @@ test.describe('Globe lines start off', () => {
     }
   })
 
-  test('the first menu open shows a tip for each, clear of the switches', async ({
-    page,
-  }) => {
+  test('each switch has a line saying what it does', async ({ page }) => {
     await openMenu(page)
-    const tips = nudgeTips(page)
-    await expect(tips).toHaveCount(2)
-    await expect(tips.nth(0)).toContainText('trail of films')
-    await expect(tips.nth(1)).toContainText('films you’ve saved')
-    await expect(tips.nth(0)).toHaveCSS('opacity', '1')
-    await expect(tips.nth(1)).toHaveCSS('opacity', '1')
-
-    // Each switch points at its tip for screen readers.
-    for (const [name, index] of [
-      ['History on globe', 0],
-      ['Favourites on globe', 1],
-    ] as const) {
-      const group = page.getByRole('group', { name })
-      const id = await tips.nth(index).getAttribute('id')
-      await expect(group).toHaveAttribute('aria-describedby', id ?? '')
-    }
-
-    // The tips stay on screen and never cover either switch.
-    const viewport = page.viewportSize()
-    const switches = await page
-      .locator('.warp-theme-switch')
-      .evaluateAll((nodes) =>
-        nodes
-          .filter((node) => node.closest('.warp-about-setting.has-nudge'))
-          .map((node) => {
-            const box = node.getBoundingClientRect()
-            return {
-              left: box.left,
-              top: box.top,
-              right: box.right,
-              bottom: box.bottom,
-            }
-          }),
-      )
-    expect(switches).toHaveLength(2)
-    for (let index = 0; index < 2; index += 1) {
-      const box = await tips.nth(index).boundingBox()
-      expect(box).not.toBeNull()
-      if (!box || !viewport) continue
-      expect(box.x).toBeGreaterThanOrEqual(0)
-      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width)
-      expect(box.y).toBeGreaterThanOrEqual(0)
-      for (const target of switches) {
-        const apart =
-          box.x + box.width <= target.left ||
-          box.x >= target.right ||
-          box.y + box.height <= target.top ||
-          box.y >= target.bottom
-        expect(apart).toBe(true)
-      }
-    }
+    const history = page.getByRole('group', { name: 'History on globe' })
+    const favourites = page.getByRole('group', { name: 'Favourites on globe' })
+    await expect(history).toContainText('trail of films')
+    await expect(favourites).toContainText('films you’ve saved')
+    // Always there: no pop-up to wait for or dismiss.
+    await expect(page.locator('.warp-nudge-card')).toHaveCount(0)
+    await expect(history).toHaveAttribute('aria-describedby', /.+/)
   })
 
-  test('Esc dismisses the tips first, and they stay gone', async ({ page }) => {
-    test.setTimeout(120_000)
-    await openMenu(page)
-    await expect(nudgeTips(page)).toHaveCount(2)
-
-    await page.keyboard.press('Escape')
-    await expect(nudgeTips(page)).toHaveCount(0)
-    // The menu itself is still open; a second Esc closes it.
-    await expect(
-      page.getByRole('complementary', { name: 'About ScrollFlix' }),
-    ).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(
-      page.getByRole('complementary', { name: 'About ScrollFlix' }),
-    ).toHaveCount(0)
-
-    await openMenu(page)
-    await expect(nudgeTips(page)).toHaveCount(0)
-
-    // Even after a reload.
-    await page.reload()
-    await page
-      .getByRole('button', { name: 'Skip first time load' })
-      .click({ timeout: 3_000 })
-      .catch(() => {})
-    await expect(page.locator('[data-gallery-ready="true"]')).toBeAttached({
-      timeout: 60_000,
-    })
-    await openMenu(page)
-    await expect(nudgeTips(page)).toHaveCount(0)
-  })
-
-  test('the close button dismisses one tip and leaves the other', async ({
-    page,
-  }) => {
-    await openMenu(page)
-    await page
-      .getByRole('button', { name: 'Dismiss tip: History on globe' })
-      .click()
-    await expect(nudgeTips(page)).toHaveCount(1)
-    await expect(nudgeTips(page)).toContainText('films you’ve saved')
-    await expect(
-      page.getByRole('group', { name: 'History on globe' }),
-    ).not.toHaveAttribute('aria-describedby')
-  })
-
-  test('turning history on is reflected in its drawer tab, and ends its tip', async ({
+  test('turning history on is reflected in its drawer tab', async ({
     page,
   }) => {
     await openMenu(page)
@@ -190,9 +93,6 @@ test.describe('Globe lines start off', () => {
       .getByRole('group', { name: 'History on globe' })
       .getByRole('button', { name: 'On', exact: true })
       .click()
-    // Only the favorite links tip is left.
-    await expect(nudgeTips(page)).toHaveCount(1)
-    await expect(nudgeTips(page)).toContainText('films you’ve saved')
 
     await closeMenu(page)
     await expect(pathButton(page)).toBeVisible()
@@ -217,16 +117,12 @@ test.describe('Globe lines start off', () => {
     ).toBeNull()
   })
 
-  test('turning favorite links on is remembered and ends its tip', async ({
-    page,
-  }) => {
+  test('turning favorite links on is remembered', async ({ page }) => {
     await openMenu(page)
     await page
       .getByRole('group', { name: 'Favourites on globe' })
       .getByRole('button', { name: 'On', exact: true })
       .click()
-    await expect(nudgeTips(page)).toHaveCount(1)
-    await expect(nudgeTips(page)).toContainText('trail of films')
     expect(
       await page.evaluate(() =>
         window.localStorage.getItem('wtw:constellations'),
@@ -237,7 +133,7 @@ test.describe('Globe lines start off', () => {
 })
 
 test.describe('An explicit choice on the old single switch', () => {
-  test('is honoured by both, and gets no tips', async ({ page }) => {
+  test('is honoured by both', async ({ page }) => {
     await seedPath(page)
     await page.addInitScript(() => {
       window.localStorage.setItem('wtw:constellations', '1')
@@ -245,7 +141,6 @@ test.describe('An explicit choice on the old single switch', () => {
     await load(page)
     await expect(pathButton(page)).toBeVisible()
     await openMenu(page)
-    await expect(nudgeTips(page)).toHaveCount(0)
     for (const name of ['History on globe', 'Favourites on globe']) {
       await expect(
         page
