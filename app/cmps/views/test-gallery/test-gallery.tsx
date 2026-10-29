@@ -6691,15 +6691,16 @@ const MovieDetailsCard = ({
 
   // The sheet follows the finger and settles on a resting height (see
   // sheet-drag.ts); a flick or a pull past compact closes it.
-  const { drag, grip } = useSheetDrag({
+  const { grip } = useSheetDrag({
     enabled: !isWide,
     cardRef,
     contentRef: copyScrollRef,
     expanded: isExpanded,
-    limits: () => ({
-      compact: Math.min(window.innerHeight * 0.76, 680),
-      expanded: window.innerHeight - DETAILS_SHEET_GUTTER_PX,
-    }),
+    room: () =>
+      window.innerHeight -
+      DETAILS_SHEET_GUTTER_PX -
+      Math.min(window.innerHeight * 0.76, 680),
+    reducedMotion,
     onSnap: (snap) => {
       if (snap === 'close') onClose()
       else setIsExpanded(snap === 'expanded')
@@ -6787,8 +6788,6 @@ const MovieDetailsCard = ({
     </button>
   )
   const detailsStyle = {
-    '--details-drag-y': `${drag?.offset ?? 0}px`,
-    ...(drag ? { '--details-drag-h': `${drag.height}px` } : null),
     // A mood run dresses the card in the colours of the worlds it was made from.
     ...(premiumMood ? moodCardVars(premiumMood.palette) : null),
     // CSS images are fetched without CORS. A copy cached from such a request
@@ -6919,11 +6918,7 @@ const MovieDetailsCard = ({
         <dialog
           open
           ref={cardRef}
-          className={cn(
-            'warp-details-card',
-            isExpanded && 'is-expanded',
-            drag && 'is-dragging',
-          )}
+          className={cn('warp-details-card', isExpanded && 'is-expanded')}
           style={detailsStyle}
           aria-modal='true'
           data-snap={isExpanded ? 'expanded' : 'compact'}

@@ -1,51 +1,59 @@
 import { describe, expect, it } from 'vitest'
 import {
-  SHEET_CLOSE_PX,
+  SHEET_FLICK_SPEED,
+  SHEET_RESIST,
+  SHEET_THRESHOLD_PX,
   dragVelocity,
-  sheetFrame,
-  sheetSettle,
+  sheetDecision,
+  sheetOffset,
 } from './sheet-drag'
 
-const limits = { compact: 600, expanded: 800 }
-
-describe('sheetFrame', () => {
-  it('grows with an upward drag and stops at the expanded height', () => {
-    expect(sheetFrame(600, -50, limits)).toEqual({ height: 650, offset: 0 })
-    expect(sheetFrame(600, -500, limits)).toEqual({ height: 800, offset: 0 })
+describe('sheetOffset', () => {
+  it('follows a downward drag one to one', () => {
+    expect(sheetOffset(0, 200)).toBe(0)
+    expect(sheetOffset(130, 200)).toBe(130)
+    expect(sheetOffset(130, 0)).toBe(130)
   })
 
-  it('shrinks with a downward drag from expanded, one to one', () => {
-    expect(sheetFrame(800, 120, limits)).toEqual({ height: 680, offset: 0 })
+  it('follows an upward drag one to one for as far as the sheet can grow', () => {
+    expect(sheetOffset(-80, 200)).toBe(-80)
+    expect(sheetOffset(-200, 200)).toBe(-200)
   })
 
-  it('moves the sheet down past compact, resisted, so it can be closed', () => {
-    const frame = sheetFrame(600, 100, limits)
-    expect(frame.height).toBe(600)
-    expect(frame.offset).toBeCloseTo(85)
+  it('resists a pull past the end of the travel', () => {
+    expect(sheetOffset(-300, 200)).toBeCloseTo(-(200 + 100 * SHEET_RESIST))
+    // Already expanded: there is no room, so all of it is resisted.
+    expect(sheetOffset(-100, 0)).toBeCloseTo(-100 * SHEET_RESIST)
   })
 })
 
-describe('sheetSettle', () => {
-  it('goes to whichever resting height is nearer', () => {
-    expect(sheetSettle({ height: 720, offset: 0 }, 0, limits)).toBe('expanded')
-    expect(sheetSettle({ height: 680, offset: 0 }, 0, limits)).toBe('compact')
+describe('sheetDecision', () => {
+  it('closes a compact sheet pulled down far enough, or thrown down', () => {
+    expect(sheetDecision(SHEET_THRESHOLD_PX, 0, false)).toBe('close')
+    expect(sheetDecision(10, SHEET_FLICK_SPEED, false)).toBe('close')
   })
 
-  it('follows a flick, whatever the position', () => {
-    expect(sheetSettle({ height: 620, offset: 0 }, -0.8, limits)).toBe(
-      'expanded',
-    )
-    expect(sheetSettle({ height: 780, offset: 0 }, 0.8, limits)).toBe('compact')
+  it('shrinks an expanded sheet pulled down instead of closing it', () => {
+    expect(sheetDecision(SHEET_THRESHOLD_PX + 40, 0, true)).toBe('compact')
+    expect(sheetDecision(10, SHEET_FLICK_SPEED + 0.2, true)).toBe('compact')
   })
 
-  it('closes after a long pull or a fast throw down from compact', () => {
-    expect(
-      sheetSettle({ height: 600, offset: SHEET_CLOSE_PX + 1 }, 0, limits),
-    ).toBe('close')
-    expect(sheetSettle({ height: 600, offset: 30 }, 1.4, limits)).toBe('close')
-    expect(sheetSettle({ height: 600, offset: 30 }, 0.1, limits)).toBe(
+  it('opens a compact sheet pulled up far enough, or thrown up', () => {
+    expect(sheetDecision(-SHEET_THRESHOLD_PX, 0, false)).toBe('expanded')
+    expect(sheetDecision(-10, -SHEET_FLICK_SPEED, false)).toBe('expanded')
+  })
+
+  it('puts a short pull back where it was', () => {
+    expect(sheetDecision(SHEET_THRESHOLD_PX - 1, 0.1, false)).toBe('compact')
+    expect(sheetDecision(-(SHEET_THRESHOLD_PX - 1), -0.1, false)).toBe(
       'compact',
     )
+    expect(sheetDecision(-20, 0, true)).toBe('expanded')
+    expect(sheetDecision(20, 0, true)).toBe('expanded')
+  })
+
+  it('follows the pull when a late flick points the other way', () => {
+    expect(sheetDecision(-80, 0.6, false)).toBe('expanded')
   })
 })
 

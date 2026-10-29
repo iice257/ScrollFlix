@@ -3311,10 +3311,8 @@
     isolation: isolate;
     pointer-events: auto;
     animation: warp-details-card-in 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
-    transform: translateY(var(--details-drag-y, 0));
-    transition:
-      height 320ms cubic-bezier(0.16, 1, 0.3, 1),
-      transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    transform: translate3d(0, var(--sheet-y, 0px), 0);
+    transition: height 320ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .warp-details-layer[data-motion="exit"] .warp-details-card {
@@ -3323,6 +3321,7 @@
 
   .warp-details-card.is-dragging {
     transition: none;
+    will-change: transform;
   }
 
   .warp-details-ambient {
@@ -6166,7 +6165,14 @@
       height: min(76dvh, 680px);
       padding: 0;
       border-radius: 28px;
-      box-shadow: 0 -32px 140px rgb(0 0 0 / 0.78);
+      /* The second shadow is a strip of sheet colour that fills the gap
+         under a sheet lifted off the bottom (see use-sheet-drag.ts). */
+      box-shadow:
+        0 -32px 140px rgb(0 0 0 / 0.78),
+        0 var(--sheet-tail, 0px) 0 0 rgb(10 10 10 / 0.95);
+      /* The sheet moves by transform only (the hook eases it); its height
+         switches at once. */
+      transition: none;
       /* Backwards only: filling forwards would hold the end keyframe's
          transform over the drag offset. */
       animation: warp-details-sheet-in 520ms cubic-bezier(0.16, 1, 0.3, 1)
@@ -6179,12 +6185,6 @@
 
     .warp-details-card.is-expanded {
       height: calc(100dvh - 64px);
-    }
-
-    /* While a finger is on the sheet its height is the finger's. */
-    .warp-details-card.is-dragging {
-      height: var(--details-drag-h, auto);
-      max-height: none;
     }
 
     .warp-details-ambient {
@@ -6200,7 +6200,7 @@
       height: min(30dvh, 250px);
       margin-top: 50px;
       border-radius: 14px;
-      transition: height 320ms cubic-bezier(0.16, 1, 0.3, 1);
+      transition: height 300ms ease;
     }
 
     .warp-details-card.is-expanded .warp-details-poster {
