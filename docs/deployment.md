@@ -172,6 +172,14 @@ Vercel:
 - `staging.scrollflix.app` is attached to the project with Git branch `staging`.
 - Production branch is `main`, domain `scrollflix.app`.
 
+- Live rooms for Pass the globe (`/api/party`) keep their state in Upstash
+  Redis. Add the **Upstash for Redis** integration to the project in the Vercel
+  Marketplace and connect it to Production and Preview: it sets
+  `KV_REST_API_URL` and `KV_REST_API_TOKEN` (the `UPSTASH_REDIS_REST_*` names
+  also work). Without them the function answers 503 and "Over chat" falls back
+  to passing a link after each turn, so nothing breaks. Rooms expire after 24
+  hours.
+
 Required status check names, exactly: `Lint, unit tests, build`,
 `End-to-end tests`, `smoke/staging` (the last one on `main` only).
 

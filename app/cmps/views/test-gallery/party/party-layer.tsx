@@ -20,9 +20,16 @@ import {
   isFinished,
   partyReducer,
 } from './party-logic'
-import { Dot, type PartyMovieInfo } from './party-parts'
+import { AvatarContext, Dot, type PartyMovieInfo } from './party-parts'
+import {
+  PartyEnded,
+  PartyJoin,
+  PartyLobby,
+  PartyWaiting,
+} from './party-room-ui'
+import { type DrawFilms, PartySetup } from './party-setup'
 import { PartyGuess, PartyReveal, PartyVote } from './party-turn-ui'
-import { PartyFinal, PartyHud, PartySetup } from './party-ui'
+import { PartyFinal, PartyHud } from './party-ui'
 import type { PartyGame } from './use-party'
 
 const ShareSheet = lazy(() => import('../share/share-sheet'))
@@ -34,6 +41,8 @@ type Props = {
   detailsOpen: boolean
   onOpenFilm: (movieId: string) => void
   onCloseDetails: () => void
+  // Films to offer as a player's picture in the setup.
+  drawFilms: DrawFilms
 }
 
 // A small pill that stands in for a screen while the film's card is open.
@@ -64,15 +73,33 @@ const Dock = ({
   </aside>
 )
 
-export const PartyLayer = ({
+// The poster standing in for each player, wherever a game draws their mark.
+export const PartyLayer = (props: Props) => {
+  const { game, movieOf } = props
+  const avatarOf = (index: number) => {
+    const id = game.party.players[index]?.avatar
+    return id ? (movieOf(id)?.posterUrl ?? undefined) : undefined
+  }
+  return (
+    <AvatarContext.Provider value={avatarOf}>
+      <PartyScreens {...props} />
+    </AvatarContext.Provider>
+  )
+}
+
+const PartyScreens = ({
   game,
   movieOf,
   detailsOpen,
   onOpenFilm,
   onCloseDetails,
+  drawFilms,
 }: Props) => {
-  const { party, me, handoff, linkError, dispatch } = game
+  const { party, me, handoff, linkError, dispatch, room } = game
   const online = party.online
+  const view = room?.view ?? null
+  const posterOf = (tmdbId: number) => movieOf(`c${tmdbId}`)?.posterUrl ?? null
+  const roomLive = view?.status === 'live' && me !== null
 
   if (linkError) {
     return (
@@ -85,6 +112,48 @@ export const PartyLayer = ({
         onClose={game.dismissLinkError}
       />
     )
+  }
+  if (game.joining !== null && !room) {
+    return (
+      <PartyJoin
+        initialCode={game.joining}
+        posterOf={posterOf}
+        lookup={game.lookupRoom}
+        onJoin={game.joinRoom}
+        onClose={game.closeJoin}
+      />
+    )
+  }
+  if (room) {
+    if (room.gone || view?.status === 'ended') {
+      return (
+        <PartyEnded
+          host={view?.names[0] ?? 'The host'}
+          closed={room.gone}
+          onClose={game.close}
+        />
+      )
+    }
+    if (view?.status === 'lobby') {
+      return (
+        <PartyLobby
+          view={view}
+          error={game.roomError}
+          posterOf={posterOf}
+          onBegin={() => void game.beginRoom()}
+          onLeave={game.close}
+        />
+      )
+    }
+    // Waiting for the first answer, or for the films to name the game.
+    if (!view || party.phase === 'off' || party.phase === 'setup') {
+      return (
+        <section className='party-layer' aria-label='Joining the room'>
+          <div className='party-backdrop' aria-hidden='true' />
+          <output className='pr-connecting'>Joining the room…</output>
+        </section>
+      )
+    }
   }
   if (handoff) {
     return (
@@ -108,18 +177,37 @@ export const PartyLayer = ({
     />
   )
 
+  const waiting =
+    roomLive && me !== null ? (
+      <PartyWaiting
+        state={party}
+        me={me}
+        host={Boolean(view?.host)}
+        error={game.roomError}
+        onLeave={game.close}
+      />
+    ) : null
+
   switch (party.phase) {
     case 'setup':
       return (
         <PartySetup
-          onStart={(options) => {
+          drawFilms={drawFilms}
+          onStart={async (options) => {
             onCloseDetails()
+            // Over chat tries a live room first and falls back to passing
+            // links where rooms are not available.
+            if (options.online && (await game.openRoom(options))) return
             game.start({ type: 'start', ...options })
           }}
+          onJoin={() => game.openJoin()}
           onClose={game.close}
         />
       )
     case 'turn':
+      if (roomLive && actorIndex(party) !== me) return waiting
+      if (roomLive && !isFinished(party))
+        return <PartyHud state={party} me={me} onEnd={game.close} />
       if ((online && me === null) || isFinished(party)) return board
       return <PartyHud state={party} me={me} onEnd={game.close} />
     case 'guess': {
@@ -177,6 +265,7 @@ export const PartyLayer = ({
     }
     case 'final': {
       const actor = actorIndex(party)
+      if (roomLive && party.settle && me !== actor) return waiting
       if (online && party.settle && me === null) return board
       if (
         online &&
@@ -195,7 +284,7 @@ export const PartyLayer = ({
         <PartyFinal
           state={party}
           primary={primary}
-          onAgain={() => dispatch({ type: 'again' })}
+          onAgain={game.again}
           onDone={game.close}
           onShare={online ? () => void game.passOn(party) : undefined}
         />
@@ -203,6 +292,7 @@ export const PartyLayer = ({
     }
     case 'settle': {
       const actor = actorIndex(party)
+      if (roomLive && me !== actor) return waiting
       if (online && me === null) return board
       if (online && me !== actor) return pass
       return (
@@ -236,8 +326,8 @@ const Tonight = ({
   detailsOpen,
   onOpenFilm,
   onCloseDetails,
-}: Omit<Props, 'game'> & { game: PartyGame }) => {
-  const { party, dispatch } = game
+}: Omit<Props, 'game' | 'drawFilms'> & { game: PartyGame }) => {
+  const { party, room } = game
   const [shareOpen, setShareOpen] = useState(false)
   const id = party.tonight
   if (!id) return null
@@ -269,8 +359,10 @@ const Tonight = ({
         movie={movie}
         onOpenFilm={() => onOpenFilm(id)}
         onShare={() => setShareOpen(true)}
-        onSendGroup={party.online ? () => void game.passOn(party) : null}
-        onAgain={() => dispatch({ type: 'again' })}
+        onSendGroup={
+          party.online && !room ? () => void game.passOn(party) : null
+        }
+        onAgain={game.again}
         onDone={game.close}
       />
       {shareOpen && movie

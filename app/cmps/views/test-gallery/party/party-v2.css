@@ -1028,3 +1028,18 @@ fieldset.party-decades {
 .party-pill[data-phase="turn"] .party-copy small {
   max-width: none;
 }
+
+/* A player's chosen poster, inside the ring their colour makes. */
+.party-dot.has-picture {
+  padding: 2px;
+  overflow: hidden;
+}
+
+.party-dot.has-picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: #101012;
+  object-fit: cover;
+}
